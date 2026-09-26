@@ -16,7 +16,9 @@
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "DATACITE_CONTACT_EMAIL": "${user_config.datacite_contact_email}",
+        "DATACITE_MAX_REQUESTS_PER_5MIN": "${user_config.datacite_max_requests_per_5min}"
       }
     }
   },
@@ -25,5 +27,20 @@
   },
   "tools_generated": true,
   "prompts_generated": true,
-  "user_config": {}
+  "user_config": {
+    "datacite_contact_email": {
+      "type": "string",
+      "title": "DataCite contact email",
+      "description": "Optional. Your contact email, sent in the User-Agent (never a URL). Doubles DataCite's per-IP request allowance.",
+      "required": false,
+      "default": ""
+    },
+    "datacite_max_requests_per_5min": {
+      "type": "string",
+      "title": "Requests per 5 minutes",
+      "description": "Optional. Request budget per 5-minute window (50-1000). Default 800 with a contact email, 400 without.",
+      "required": false,
+      "default": ""
+    }
+  }
 }

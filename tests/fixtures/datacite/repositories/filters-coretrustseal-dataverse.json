@@ -1,0 +1,208 @@
+{
+  "data": [
+    {
+      "id": "gesis.aussda",
+      "type": "repositories",
+      "attributes": {
+        "name": "AUSSDA - The Austrian Social Science Data Archive",
+        "re3data": "https://doi.org/10.17616/R39G72",
+        "opendoar": null,
+        "year": 2017,
+        "alternateName": "AUSSDA",
+        "description": "AUSSDA - The Austrian Social Science Data Archive is a certified, national research infrastructure for the social science community. We offer sustainable and easy-to-use services in the field of digital archiving and preservation. The main beneficiaries are researchers, students, educational institutions and media professionals.\nWe implement international standards to make research data findable, accessible, interoperable and reusable according to the FAIR principles. AUSSDA supports the open science movement to maximize the potential for data reuse. We stand for integrity in archiving and advocate for compliance with data protection and ethical principles in research data management.\nAUSSDA represents Austria as a national service provider in CESSDA ERIC, has locations at the universities of Vienna, Graz, Linz, Innsbruck, Krems, Salzburg, the Vienna University of Economics and Business (WU) and the OeAW (Austrian Academy of Sciences) and works within a network of national and international partners.",
+        "clientType": "repository",
+        "repositoryType": ["multidisciplinary", "disciplinary"],
+        "language": ["en", "de"],
+        "certificate": ["CoreTrustSeal"],
+        "url": "https://data.aussda.at/",
+        "software": "Dataverse",
+        "subjects": [
+          {
+            "lang": null,
+            "subject": "Social sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5"
+          },
+          {
+            "lang": null,
+            "subject": "Psychology",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.1"
+          },
+          {
+            "lang": null,
+            "subject": "Economics and business",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.2"
+          },
+          {
+            "lang": null,
+            "subject": "Educational sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.3"
+          },
+          {
+            "lang": null,
+            "subject": "Political science",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.6"
+          },
+          {
+            "lang": null,
+            "subject": "Social and economic geography",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.7"
+          },
+          {
+            "lang": null,
+            "subject": "Media and communications",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.8"
+          }
+        ],
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "kuih",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": [
+            {
+              "id": "10.11587",
+              "type": "prefixes"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bibsys.uit-ord",
+      "type": "repositories",
+      "attributes": {
+        "name": "DataverseNO",
+        "re3data": "https://doi.org/10.17616/R3TV17",
+        "opendoar": null,
+        "year": 2016,
+        "alternateName": null,
+        "description": "DataverseNO (https://dataverse.no) is a curated, FAIR-aligned national generic repository for open research data from all academic disciplines. DataverseNO commits to facilitating that published data remain accessible and (re)usable in a long-term perspective. The repository is owned and operated by UiT The Arctic University of Norway. DataverseNO accepts submissions from researchers primarily from Norwegian research institutions. Datasets in DataverseNO are grouped into institutional collections as well as special collections. The technical infrastructure of the repository is based on the open source application Dataverse (https://dataverse.org), which is developed by an international developer and user community led by Harvard University.",
+        "clientType": "repository",
+        "repositoryType": ["institutional", "disciplinary", "project-related"],
+        "language": ["en", "no"],
+        "certificate": ["CoreTrustSeal"],
+        "url": "https://dataverse.no/",
+        "software": "Dataverse",
+        "subjects": [],
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "vjhc",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": [
+            {
+              "id": "10.82178",
+              "type": "prefixes"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 2,
+    "totalPages": 1,
+    "page": 1,
+    "years": [
+      {
+        "id": "2017",
+        "title": "2017",
+        "count": 1
+      },
+      {
+        "id": "2016",
+        "title": "2016",
+        "count": 1
+      }
+    ],
+    "providers": [
+      {
+        "id": "kuih",
+        "title": "The Austrian Social Science Data Archive",
+        "count": 1
+      },
+      {
+        "id": "vjhc",
+        "title": "UiT The Arctic University of Norway",
+        "count": 1
+      }
+    ],
+    "clientTypes": [
+      {
+        "id": "repository",
+        "title": "Repository",
+        "count": 2
+      }
+    ],
+    "repositoryTypes": [
+      {
+        "id": "disciplinary",
+        "title": "Disciplinary",
+        "count": 2
+      },
+      {
+        "id": "institutional",
+        "title": "Institutional",
+        "count": 1
+      },
+      {
+        "id": "multidisciplinary",
+        "title": "Multidisciplinary",
+        "count": 1
+      },
+      {
+        "id": "project-related",
+        "title": "Project Related",
+        "count": 1
+      }
+    ],
+    "certificates": [
+      {
+        "id": "CoreTrustSeal",
+        "title": "Core Trust Seal",
+        "count": 2
+      }
+    ],
+    "software": [
+      {
+        "id": "dataverse",
+        "title": "Dataverse",
+        "count": 2
+      }
+    ]
+  },
+  "links": {
+    "self": "https://api.datacite.org/repositories?certificate=CoreTrustSeal&repository-type=disciplinary&software=dataverse&page[size]=2"
+  }
+}

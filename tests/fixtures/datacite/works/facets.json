@@ -1,0 +1,530 @@
+{
+  "data": [],
+  "meta": {
+    "total": 135809087,
+    "totalPages": 0,
+    "page": 1,
+    "resourceTypes": [
+      {
+        "id": "dataset",
+        "title": "Dataset",
+        "count": 74438731
+      },
+      {
+        "id": "physical-object",
+        "title": "Physical Object",
+        "count": 16452636
+      },
+      {
+        "id": "text",
+        "title": "Text",
+        "count": 15694758
+      },
+      {
+        "id": "image",
+        "title": "Image",
+        "count": 12521916
+      },
+      {
+        "id": "journal-article",
+        "title": "Journal Article",
+        "count": 4606793
+      },
+      {
+        "id": "preprint",
+        "title": "Preprint",
+        "count": 2537293
+      },
+      {
+        "id": "other",
+        "title": "Other",
+        "count": 1934815
+      },
+      {
+        "id": "collection",
+        "title": "Collection",
+        "count": 1248681
+      },
+      {
+        "id": "software",
+        "title": "Software",
+        "count": 1107090
+      },
+      {
+        "id": "dissertation",
+        "title": "Dissertation",
+        "count": 880173
+      },
+      {
+        "id": "audiovisual",
+        "title": "Audiovisual",
+        "count": 560776
+      },
+      {
+        "id": "book",
+        "title": "Book",
+        "count": 508264
+      },
+      {
+        "id": "conference-paper",
+        "title": "Conference Paper",
+        "count": 468869
+      },
+      {
+        "id": "report",
+        "title": "Report",
+        "count": 460663
+      },
+      {
+        "id": "book-chapter",
+        "title": "Book Chapter",
+        "count": 350526
+      },
+      {
+        "id": "study-registration",
+        "title": "Study Registration",
+        "count": 269379
+      },
+      {
+        "id": "sound",
+        "title": "Sound",
+        "count": 240076
+      },
+      {
+        "id": "interactive-resource",
+        "title": "Interactive Resource",
+        "count": 175089
+      },
+      {
+        "id": "journal",
+        "title": "Journal",
+        "count": 128606
+      },
+      {
+        "id": "project",
+        "title": "Project",
+        "count": 123350
+      },
+      {
+        "id": "event",
+        "title": "Event",
+        "count": 106392
+      },
+      {
+        "id": "conference-proceeding",
+        "title": "Conference Proceeding",
+        "count": 100350
+      },
+      {
+        "id": "model",
+        "title": "Model",
+        "count": 70780
+      },
+      {
+        "id": "presentation",
+        "title": "Presentation",
+        "count": 60166
+      },
+      {
+        "id": "peer-review",
+        "title": "Peer Review",
+        "count": 33792
+      },
+      {
+        "id": "poster",
+        "title": "Poster",
+        "count": 26025
+      },
+      {
+        "id": "award",
+        "title": "Award",
+        "count": 23176
+      },
+      {
+        "id": "computational-notebook",
+        "title": "Computational Notebook",
+        "count": 20132
+      },
+      {
+        "id": "data-paper",
+        "title": "Data Paper",
+        "count": 18455
+      },
+      {
+        "id": "standard",
+        "title": "Standard",
+        "count": 16507
+      },
+      {
+        "id": "workflow",
+        "title": "Workflow",
+        "count": 15841
+      },
+      {
+        "id": "output-management-plan",
+        "title": "Output Management Plan",
+        "count": 11407
+      },
+      {
+        "id": "instrument",
+        "title": "Instrument",
+        "count": 2000
+      },
+      {
+        "id": "service",
+        "title": "Service",
+        "count": 558
+      }
+    ],
+    "published": [
+      {
+        "id": "2026",
+        "title": "2026",
+        "count": 23910132
+      },
+      {
+        "id": "2025",
+        "title": "2025",
+        "count": 34616748
+      },
+      {
+        "id": "2024",
+        "title": "2024",
+        "count": 16323484
+      },
+      {
+        "id": "2023",
+        "title": "2023",
+        "count": 7800559
+      },
+      {
+        "id": "2022",
+        "title": "2022",
+        "count": 5099697
+      },
+      {
+        "id": "2021",
+        "title": "2021",
+        "count": 7915062
+      },
+      {
+        "id": "2020",
+        "title": "2020",
+        "count": 5672916
+      },
+      {
+        "id": "2019",
+        "title": "2019",
+        "count": 3483769
+      },
+      {
+        "id": "2018",
+        "title": "2018",
+        "count": 3084661
+      },
+      {
+        "id": "2017",
+        "title": "2017",
+        "count": 3232278
+      },
+      {
+        "id": "2016",
+        "title": "2016",
+        "count": 2071535
+      },
+      {
+        "id": "2015",
+        "title": "2015",
+        "count": 4202093
+      },
+      {
+        "id": "2014",
+        "title": "2014",
+        "count": 1924063
+      },
+      {
+        "id": "2013",
+        "title": "2013",
+        "count": 917776
+      },
+      {
+        "id": "2012",
+        "title": "2012",
+        "count": 929471
+      },
+      {
+        "id": "2011",
+        "title": "2011",
+        "count": 820766
+      },
+      {
+        "id": "2010",
+        "title": "2010",
+        "count": 4159515
+      }
+    ],
+    "clients": [
+      {
+        "id": "rpht.nifs",
+        "title": "NIFS",
+        "count": 42264397
+      },
+      {
+        "id": "cern.zenodo",
+        "title": "Zenodo",
+        "count": 13018507
+      },
+      {
+        "id": "ylqb.ybhfwy",
+        "title": "DiSSCo",
+        "count": 12724604
+      },
+      {
+        "id": "gbif.gbif",
+        "title": "Global Biodiversity Information Facility",
+        "count": 4711377
+      },
+      {
+        "id": "vvha.glvitu",
+        "title": "Legacy IGSN ID re-registration for Geoscience Australia SAMPLES data",
+        "count": 4418575
+      },
+      {
+        "id": "figshare.ars",
+        "title": "figshare Academic Research System",
+        "count": 4136912
+      },
+      {
+        "id": "xaqp.tdfirf",
+        "title": "SESAR_ODP",
+        "count": 3915011
+      },
+      {
+        "id": "estdoi.bio",
+        "title": "Plutof.  Data Management and Publishing Platform",
+        "count": 3571776
+      },
+      {
+        "id": "vvha.drnxjp",
+        "title": "IGSN ID registration for Geoscience SAMPLES data",
+        "count": 3184347
+      },
+      {
+        "id": "arxiv.content",
+        "title": "arXiv",
+        "count": 3180774
+      }
+    ],
+    "providers": [
+      {
+        "id": "rpht",
+        "title": "National Institute for Fusion Science",
+        "count": 42264397
+      },
+      {
+        "id": "cern",
+        "title": "CERN - European Organization for Nuclear Research",
+        "count": 13324799
+      },
+      {
+        "id": "ylqb",
+        "title": "Distributed System of Scientific Collections",
+        "count": 12724604
+      },
+      {
+        "id": "vvha",
+        "title": "Geoscience Australia",
+        "count": 7612512
+      },
+      {
+        "id": "xaqp",
+        "title": "Interdisciplinary Earth Data Alliance (IEDA)",
+        "count": 5858710
+      },
+      {
+        "id": "gbif",
+        "title": "Global Biodiversity Information Facility",
+        "count": 4880967
+      },
+      {
+        "id": "otjm",
+        "title": "Figshare Internal",
+        "count": 4137693
+      },
+      {
+        "id": "tawj",
+        "title": "University of Tartu",
+        "count": 3579184
+      },
+      {
+        "id": "arxiv",
+        "title": "arXiv",
+        "count": 3180774
+      },
+      {
+        "id": "stdp",
+        "title": "ETH Zurich",
+        "count": 3109920
+      }
+    ],
+    "affiliations": [
+      {
+        "id": "ror.org/01t3wyv61",
+        "title": "National Institute for Fusion Science",
+        "count": 42264410
+      },
+      {
+        "id": "ror.org/01t3wyv61",
+        "title": "National Institute for Fusion Science (NIFS)",
+        "count": 42264397
+      },
+      {
+        "id": "ror.org/02tyer376",
+        "title": "Leibniz Institute DSMZ - German Collection of Microorganisms and Cell Cultures",
+        "count": 593243
+      },
+      {
+        "id": "ror.org/03p74gp79",
+        "title": "University of Cape Town",
+        "count": 222404
+      },
+      {
+        "id": "ror.org/02skbsp27",
+        "title": "Leibniz Institute of Plant Genetics and Crop Plant Research (IPK) Gatersleben",
+        "count": 210191
+      },
+      {
+        "id": "ror.org/03mrbr458",
+        "title": "The Leibniz Institute for Astrophysics Potsdam (AIP)",
+        "count": 176161
+      },
+      {
+        "id": "ror.org/0287jta43",
+        "title": "Archeologický ústav AV ČR, Praha, v.v.i.",
+        "count": 117470
+      },
+      {
+        "id": "ror.org/057py8t43",
+        "title": "Seismological Facility for the Advancement of Geoscience",
+        "count": 115912
+      },
+      {
+        "id": "ror.org/052gg0110",
+        "title": "University of Oxford",
+        "count": 108071
+      },
+      {
+        "id": "ror.org/04chrp450 ",
+        "title": "Nagoya University",
+        "count": 86160
+      }
+    ],
+    "fieldsOfScience": [
+      {
+        "id": "biological_sciences",
+        "title": "Biological sciences",
+        "count": 7336724
+      },
+      {
+        "id": "agriculture_forestry_and_fisheries",
+        "title": "Agriculture, forestry, and fisheries",
+        "count": 1979982
+      },
+      {
+        "id": "physical_sciences",
+        "title": "Physical sciences",
+        "count": 1735085
+      },
+      {
+        "id": "computer_and_information_sciences",
+        "title": "Computer and information sciences",
+        "count": 1225929
+      },
+      {
+        "id": "mathematics",
+        "title": "Mathematics",
+        "count": 953054
+      },
+      {
+        "id": "health_sciences",
+        "title": "Health sciences",
+        "count": 763610
+      },
+      {
+        "id": "clinical_medicine",
+        "title": "Clinical medicine",
+        "count": 724801
+      },
+      {
+        "id": "sociology",
+        "title": "Sociology",
+        "count": 638095
+      },
+      {
+        "id": "earth_and_related_environmental_sciences",
+        "title": "Earth and related environmental sciences",
+        "count": 381755
+      },
+      {
+        "id": "chemical_sciences",
+        "title": "Chemical sciences",
+        "count": 321785
+      }
+    ],
+    "licenses": [
+      {
+        "id": "cc-by-4.0",
+        "title": "CC-BY-4.0",
+        "count": 16110836
+      },
+      {
+        "id": "cc0-1.0",
+        "title": "CC0-1.0",
+        "count": 15929559
+      },
+      {
+        "id": "cc-by-nc-4.0",
+        "title": "CC-BY-NC-4.0",
+        "count": 4774904
+      },
+      {
+        "id": "cc-by-sa-4.0",
+        "title": "CC-BY-SA-4.0",
+        "count": 1166311
+      },
+      {
+        "id": "cc-by-nc-sa-4.0",
+        "title": "CC-BY-NC-SA-4.0",
+        "count": 805341
+      },
+      {
+        "id": "cc-by-nc-nd-4.0",
+        "title": "CC-BY-NC-ND-4.0",
+        "count": 645298
+      },
+      {
+        "id": "cc-by-3.0",
+        "title": "CC-BY-3.0",
+        "count": 343480
+      },
+      {
+        "id": "notspecified",
+        "title": "notspecified",
+        "count": 315361
+      },
+      {
+        "id": "mit",
+        "title": "MIT",
+        "count": 269661
+      },
+      {
+        "id": "cc-by-nc-sa-3.0",
+        "title": "CC-BY-NC-SA-3.0",
+        "count": 139599
+      }
+    ]
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?page%5Bsize%5D=0&disable-facets=false"
+  }
+}

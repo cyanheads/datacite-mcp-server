@@ -31,6 +31,18 @@
           "format": "string",
           "isRequired": false,
           "default": "info"
+        },
+        {
+          "name": "DATACITE_CONTACT_EMAIL",
+          "description": "Contact email sent in the User-Agent as mailto: (never a URL parameter). Moves requests to DataCite's identified tier (1,000 per 5 minutes per IP instead of 500).",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "DATACITE_MAX_REQUESTS_PER_5MIN",
+          "description": "Request budget per 5-minute window, 50-1000. Default 800 with a contact email, 400 without; divide it across replicas sharing one egress IP.",
+          "format": "number",
+          "isRequired": false
         }
       ],
       "transport": {
@@ -88,6 +100,18 @@
           "format": "string",
           "isRequired": false,
           "default": "info"
+        },
+        {
+          "name": "DATACITE_CONTACT_EMAIL",
+          "description": "Contact email sent in the User-Agent as mailto: (never a URL parameter). Moves requests to DataCite's identified tier (1,000 per 5 minutes per IP instead of 500). Set it on any hosted deployment.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "DATACITE_MAX_REQUESTS_PER_5MIN",
+          "description": "Request budget per 5-minute window, 50-1000. Default 800 with a contact email, 400 without; divide it across replicas sharing one egress IP.",
+          "format": "number",
+          "isRequired": false
         }
       ],
       "transport": {

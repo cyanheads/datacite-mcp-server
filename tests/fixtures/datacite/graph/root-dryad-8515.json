@@ -1,0 +1,55 @@
+{
+  "data": [
+    {
+      "id": "10.5061/dryad.8515",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5061/dryad.8515",
+        "titles": [
+          {
+            "title": "Data from: A new malaria agent in African hominids."
+          }
+        ],
+        "publicationYear": 2011,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "dataset"
+        },
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsCitedBy",
+            "relatedIdentifier": "10.1371/journal.ppat.1000446",
+            "relatedIdentifierType": "DOI"
+          }
+        ],
+        "relatedItems": [],
+        "referenceCount": 1,
+        "citationCount": 1,
+        "partCount": 2,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "dryad.dryad",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=doi:%2210.5061/dryad.8515%22&include=client&affiliation=true&publisher=true&page[size]=1"
+  }
+}

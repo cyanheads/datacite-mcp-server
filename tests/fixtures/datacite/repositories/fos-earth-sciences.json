@@ -1,0 +1,315 @@
+{
+  "data": [
+    {
+      "id": "delft.data4tu",
+      "type": "repositories",
+      "attributes": {
+        "name": "4TU.ResearchData",
+        "re3data": "https://doi.org/10.17616/R3VG6N",
+        "opendoar": null,
+        "year": 2011,
+        "alternateName": null,
+        "description": "4TU.ResearchData, previously known as 4TU.Centre for Research Data, is a research data repository dedicated to the science, engineering and design disciplines. It offers the knowledge, experience and the tools to manage, publish and find scientific research data in a standardized, secure and well-documented manner. 4TU.ResearchData provides the research community with: Customised advice and support on research data management; A long-term repository for scientific research data; Support for current research projects; Tools to enhance reuse of research data.",
+        "clientType": "repository",
+        "repositoryType": ["disciplinary", "institutional"],
+        "language": ["nl", "en"],
+        "certificate": ["CoreTrustSeal"],
+        "url": "https://data.4tu.nl/portal",
+        "software": null,
+        "subjects": [
+          {
+            "lang": null,
+            "subject": "Biological sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "1.6"
+          },
+          {
+            "lang": null,
+            "subject": "Computer and information sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "1.2"
+          },
+          {
+            "lang": null,
+            "subject": "Earth and related environmental sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "1.5"
+          },
+          {
+            "lang": null,
+            "subject": "Civil engineering",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "2.1"
+          },
+          {
+            "lang": null,
+            "subject": "Environmental engineering",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "2.7"
+          },
+          {
+            "lang": null,
+            "subject": "Social and economic geography",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "5.7"
+          }
+        ],
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "scpr",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": [
+            {
+              "id": "10.4121",
+              "type": "prefixes"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cnrimaa.zpvlsk",
+      "type": "repositories",
+      "attributes": {
+        "name": "ACTRIS-ARES Data Portal",
+        "re3data": "https://doi.org/10.17616/R31NJNM5",
+        "opendoar": null,
+        "year": 2022,
+        "alternateName": "ACTRIS ARES DC Unit",
+        "description": "ARES (Aerosol REmote Sensing) is the ACTRIS (Aerosol, Cloud and Trace Gases Research Infrastructure) Data Centre unit for aerosol remote sensing profiling.\nACTRIS-ARES host and manage the ACTRIS-EARLINET database, that represents a comprehensive, quantitative, and statistically significant collection of data for the aerosol distribution on European scale. ARES provides data curation, data processing and data access services for ACTRIS aerosol remote sensing data coming from lidar and photometer observations. Additionally, ARES hosts and manage the EARLINET web site and offers data services and digital tools to EARLINET and beyond.\nMajor objectives also include the development and validation of new synergetic remote sensing algorithms, and the continuous evaluation of the representation of atmospheric aerosol parameters in climate and weather forecast models.",
+        "clientType": "repository",
+        "repositoryType": ["disciplinary", "institutional"],
+        "language": ["en"],
+        "certificate": [],
+        "url": "https://data.earlinet.org",
+        "software": "Other",
+        "subjects": [
+          {
+            "lang": null,
+            "subject": "Earth and related environmental sciences",
+            "valueUri": null,
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "1.5"
+          }
+        ],
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "cnrimaa",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": [
+            {
+              "id": "10.57837",
+              "type": "prefixes"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 28,
+    "totalPages": 14,
+    "page": 1,
+    "years": [
+      {
+        "id": "2024",
+        "title": "2024",
+        "count": 1
+      },
+      {
+        "id": "2023",
+        "title": "2023",
+        "count": 2
+      },
+      {
+        "id": "2022",
+        "title": "2022",
+        "count": 2
+      },
+      {
+        "id": "2021",
+        "title": "2021",
+        "count": 2
+      },
+      {
+        "id": "2020",
+        "title": "2020",
+        "count": 6
+      },
+      {
+        "id": "2018",
+        "title": "2018",
+        "count": 2
+      },
+      {
+        "id": "2017",
+        "title": "2017",
+        "count": 2
+      },
+      {
+        "id": "2016",
+        "title": "2016",
+        "count": 3
+      },
+      {
+        "id": "2014",
+        "title": "2014",
+        "count": 2
+      },
+      {
+        "id": "2013",
+        "title": "2013",
+        "count": 2
+      }
+    ],
+    "providers": [
+      {
+        "id": "cul",
+        "title": "Columbia University Libraries",
+        "count": 2
+      },
+      {
+        "id": "dkrz",
+        "title": "German Climate Computing Center",
+        "count": 2
+      },
+      {
+        "id": "bvbw",
+        "title": "Bundesanstalt für Gewässerkunde",
+        "count": 1
+      },
+      {
+        "id": "cnrimaa",
+        "title": "CNR - Institute of Methodologies for Environmental Analysis",
+        "count": 1
+      },
+      {
+        "id": "dfvb",
+        "title": "ISRIC - World Soil Information",
+        "count": 1
+      },
+      {
+        "id": "dyei",
+        "title": "Royal Netherlands Meteorological Institute",
+        "count": 1
+      },
+      {
+        "id": "euvi",
+        "title": "French Research Institute for Exploitation of the Sea",
+        "count": 1
+      },
+      {
+        "id": "gba",
+        "title": "GeoSphere Austria",
+        "count": 1
+      },
+      {
+        "id": "geo",
+        "title": "Group on Earth Observations (GEO)",
+        "count": 1
+      },
+      {
+        "id": "hain",
+        "title": "Ocean Observatories Initiative",
+        "count": 1
+      }
+    ],
+    "clientTypes": [
+      {
+        "id": "repository",
+        "title": "Repository",
+        "count": 28
+      }
+    ],
+    "repositoryTypes": [
+      {
+        "id": "disciplinary",
+        "title": "Disciplinary",
+        "count": 28
+      },
+      {
+        "id": "institutional",
+        "title": "Institutional",
+        "count": 7
+      },
+      {
+        "id": "project-related",
+        "title": "Project Related",
+        "count": 1
+      }
+    ],
+    "certificates": [
+      {
+        "id": "CoreTrustSeal",
+        "title": "Core Trust Seal",
+        "count": 6
+      },
+      {
+        "id": "WDS",
+        "title": "Wds",
+        "count": 3
+      }
+    ],
+    "software": [
+      {
+        "id": "other",
+        "title": "Other",
+        "count": 7
+      },
+      {
+        "id": "ckan",
+        "title": "CKAN",
+        "count": 1
+      },
+      {
+        "id": "eprints",
+        "title": "EPrints",
+        "count": 1
+      },
+      {
+        "id": "fedora",
+        "title": "Fedora",
+        "count": 1
+      },
+      {
+        "id": "invenio",
+        "title": "Invenio",
+        "count": 1
+      },
+      {
+        "id": "unknown",
+        "title": "Unknown",
+        "count": 1
+      }
+    ]
+  },
+  "links": {
+    "self": "https://api.datacite.org/repositories?query=subjects.subject:%22Earth%20and%20related%20environmental%20sciences%22&page[size]=2",
+    "next": "https://api.datacite.org/repositories?page%5Bnumber%5D=2&page%5Bsize%5D=2&query=subjects.subject%3A%22Earth+and+related+environmental+sciences%22"
+  }
+}

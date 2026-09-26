@@ -17,6 +17,8 @@ export default mergeConfig(
   defineConfig({
     resolve: { alias },
     test: {
+      // Every project inherits the tripwire: real fetch or TCP connects fail loudly.
+      setupFiles: ['./tests/helpers/network-tripwire.ts'],
       projects: [
         {
           extends: true,

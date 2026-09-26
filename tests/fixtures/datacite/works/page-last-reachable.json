@@ -1,0 +1,812 @@
+{
+  "data": [
+    {
+      "id": "10.60807/rf5c851848g1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/rf5c851848g1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/nr1g3519h258",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/nr1g3519h258"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/qx6t8j05d4mc",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/qx6t8j05d4mc"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/3t0t8339b43d",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/3t0t8339b43d"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8m312f3995jg",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8m312f3995jg"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/gz2h0z08s1sz",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/gz2h0z08s1sz"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/gh6v6j94612c",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/gh6v6j94612c"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/6z345m8433cp",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/6z345m8433cp"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/jz386069f9w6",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/jz386069f9w6"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/410h6s1741dc",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/410h6s1741dc"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/f1956264d13v",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/f1956264d13v"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/b62x166181wn",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/b62x166181wn"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/rx4t187226wb",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/rx4t187226wb"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/zx535748z1kx",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/zx535748z1kx"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/5p038t1562m1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/5p038t1562m1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/r8650q24c073",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/r8650q24c073"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/681v6618h29g",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/681v6618h29g"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/g3758q43x6g7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/g3758q43x6g7"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/c51f7027k2ng",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/c51f7027k2ng"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/dt748j17z25r",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/dt748j17z25r"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/rf250v6602t1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/rf250v6602t1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/qg4d3z03q64p",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/qg4d3z03q64p"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/nh6q2z65s183",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/nh6q2z65s183"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0s251m3612hv",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0s251m3612hv"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/03806365h4bf",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/03806365h4bf"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/1f1k8c252623",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/1f1k8c252623"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0r6q0m07j4b1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0r6q0m07j4b1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/v95b8c34v8kc",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/v95b8c34v8kc"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8w572w3481wg",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8w572w3481wg"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/j34c8j09258w",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/j34c8j09258w"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/5f7p6b4338n9",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/5f7p6b4338n9"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8s488m72d805",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8s488m72d805"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/bj9q9b6371x7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/bj9q9b6371x7"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/zd0z1j49x7jr",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/zd0z1j49x7jr"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/dc0m6d32d99t",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/dc0m6d32d99t"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/pj1g3z09103d",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/pj1g3z09103d"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0n9b6s39c35x",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0n9b6s39c35x"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/sq0c072791h0",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/sq0c072791h0"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/jv2t6p787985",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/jv2t6p787985"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8g2f2774k96k",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8g2f2774k96k"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/m4449d97w0d1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/m4449d97w0d1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/gw452w871257",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/gw452w871257"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/d9752f21s5n8",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/d9752f21s5n8"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/gh8h0874g352",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/gh8h0874g352"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/818s2944v8n0",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/818s2944v8n0"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0p799012825g",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0p799012825g"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/27379c67h484",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/27379c67h484"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/902q2267w7bj",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/902q2267w7bj"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/h69x3t05z8gn",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/h69x3t05z8gn"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/dg5z8q5354md",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/dg5z8q5354md"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/kt226630976v",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/kt226630976v"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/s34r2g20121j",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/s34r2g20121j"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/265n2525076f",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/265n2525076f"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/m91r3v0199fm",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/m91r3v0199fm"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/167r6d72m9bt",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/167r6d72m9bt"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/r89s0h41562g",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/r89s0h41562g"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/cr336q735556",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/cr336q735556"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/rs9x0j72r1d4",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/rs9x0j72r1d4"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8q233g70b8z4",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8q233g70b8z4"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/vs892d05p798",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/vs892d05p798"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/th2n8m6949mw",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/th2n8m6949mw"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/041x30518708",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/041x30518708"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/3d493m532707",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/3d493m532707"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/m94d2q51v49g",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/m94d2q51v49g"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/2z1m2d27h0jj",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/2z1m2d27h0jj"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/s51b3v89v804",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/s51b3v89v804"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/5q0j4c75300c",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/5q0j4c75300c"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/7s1s8s436945",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/7s1s8s436945"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/nh6s8n59h8pk",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/nh6s8n59h8pk"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/bt0q6411m3c7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/bt0q6411m3c7"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/9g889p8856zd",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/9g889p8856zd"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/tb5t2c47x2f7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/tb5t2c47x2f7"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/ms3v4b27v73d",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/ms3v4b27v73d"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/g8957z74v8wp",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/g8957z74v8wp"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/d73m7x5989r2",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/d73m7x5989r2"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/8b7f3g74d865",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/8b7f3g74d865"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/6h421c4704h9",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/6h421c4704h9"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/p72j3w08j534",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/p72j3w08j534"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0r3j1f45s7j9",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0r3j1f45s7j9"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/q28s5b52h9m7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/q28s5b52h9m7"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/c27j5d11q9wf",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/c27j5d11q9wf"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/04897s38b3dm",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/04897s38b3dm"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/tx823q2456ns",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/tx823q2456ns"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/5j2p3b69v38d",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/5j2p3b69v38d"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/w792377838v1",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/w792377838v1"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/n89t3s77q59m",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/n89t3s77q59m"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/692v2x38g7qd",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/692v2x38g7qd"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/n7491g56s335",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/n7491g56s335"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/d40j4233t8sn",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/d40j4233t8sn"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/jh0m9w2559t0",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/jh0m9w2559t0"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/rm6r3x45m27f",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/rm6r3x45m27f"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/fd4x7n88w4db",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/fd4x7n88w4db"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/15408z32b6zc",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/15408z32b6zc"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/sx8b3r73z0t0",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/sx8b3r73z0t0"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0q902j1223ds",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0q902j1223ds"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/bb6b3q32k5kt",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/bb6b3q32k5kt"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/km595m3429vp",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/km595m3429vp"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/0q8t9g392345",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/0q8t9g392345"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/r3998x754621",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/r3998x754621"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.60807/hj458d07j91w",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.60807/hj458d07j91w"
+      },
+      "relationships": {}
+    }
+  ],
+  "meta": {
+    "total": 61388,
+    "totalPages": 100,
+    "page": 100
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=glacier&page[size]=100&page[number]=100&fields[dois]=doi&sort=-created"
+  }
+}

@@ -1,0 +1,317 @@
+{
+  "data": [
+    {
+      "id": "10.5061/dryad.234",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5061/dryad.234",
+        "identifiers": [],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/037cnag11",
+                "schemeUri": "https://ror.org",
+                "name": "University of Missouri–St. Louis",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Amy E.",
+            "familyName": "Zanne",
+            "name": "Zanne, Amy E.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/024mrxd33",
+                "schemeUri": "https://ror.org",
+                "name": "University of Leeds",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "G.",
+            "familyName": "Lopez-Gonzalez",
+            "name": "Lopez-Gonzalez, G.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/013meh722",
+                "schemeUri": "https://ror.org",
+                "name": "University of Cambridge",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "David A.",
+            "familyName": "Coomes",
+            "name": "Coomes, David A.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/01ej9dk98",
+                "schemeUri": "https://ror.org",
+                "name": "The University of Melbourne",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Jugo",
+            "familyName": "Ilic",
+            "name": "Ilic, Jugo",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/00ynnr806",
+                "schemeUri": "https://ror.org",
+                "name": "Royal Botanic Gardens, Kew",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Steven",
+            "familyName": "Jansen",
+            "name": "Jansen, Steven",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/024mrxd33",
+                "schemeUri": "https://ror.org",
+                "name": "University of Leeds",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Simon L.",
+            "familyName": "Lewis",
+            "name": "Lewis, Simon L.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Self-employed"
+              }
+            ],
+            "givenName": "Regis B.",
+            "familyName": "Miller",
+            "name": "Miller, Regis B.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/03vek6s52",
+                "schemeUri": "https://ror.org",
+                "name": "Harvard University",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Nathan G.",
+            "familyName": "Swenson",
+            "name": "Swenson, Nathan G.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/031sp1p50",
+                "schemeUri": "https://ror.org",
+                "name": "Forest Products Laboratory",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Michael C.",
+            "familyName": "Wiemann",
+            "name": "Wiemann, Michael C.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/02v6kpv12",
+                "schemeUri": "https://ror.org",
+                "name": "Université Toulouse III - Paul Sabatier",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Jerome",
+            "familyName": "Chave",
+            "name": "Chave, Jerome",
+            "nameIdentifiers": []
+          }
+        ],
+        "titles": [
+          {
+            "title": "Data from: Towards a worldwide wood economics spectrum"
+          }
+        ],
+        "publisher": {
+          "publisherIdentifierScheme": "ROR",
+          "schemeUri": "https://ror.org/",
+          "name": "Dryad",
+          "publisherIdentifier": "https://ror.org/00x6h5n95"
+        },
+        "container": {},
+        "publicationYear": 2009,
+        "subjects": [
+          {
+            "subject": "trade-offs"
+          },
+          {
+            "subject": "functional ecology"
+          },
+          {
+            "schemeUri": "https://github.com/PLOS/plos-thesaurus",
+            "subject": "Wood",
+            "subjectScheme": "PLOS Subject Area Thesaurus"
+          },
+          {
+            "subject": "plant economics"
+          }
+        ],
+        "contributors": [],
+        "dates": [
+          {
+            "date": "2020-04-22T14:58:03Z",
+            "dateType": "Submitted"
+          },
+          {
+            "date": "2009-02-04T23:35:24Z",
+            "dateType": "Issued"
+          },
+          {
+            "date": "2009-02-04T23:35:24Z",
+            "dateType": "Available"
+          }
+        ],
+        "language": "en",
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "dataset"
+        },
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsCitedBy",
+            "relatedIdentifier": "10.1111/j.1461-0248.2009.01285.x",
+            "relatedIdentifierType": "DOI"
+          }
+        ],
+        "relatedItems": [],
+        "sizes": ["2123413 bytes"],
+        "formats": [],
+        "version": "5",
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rightsUri": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+            "schemeUri": "https://spdx.org/licenses/",
+            "rights": "Creative Commons Zero v1.0 Universal",
+            "rightsIdentifier": "cc0-1.0"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Wood performs several essential functions in plants, including\n mechanically supporting aboveground tissue, storing water and other\n resources, and transporting sap. Woody tissues are likely to face\n physiological, structural and defensive trade-offs. How a plant optimizes\n among these competing functions can have major ecological implications,\n which have been under-appreciated by ecologists compared to the focus they\n have given to leaf function. To draw together our current understanding of\n wood function, we identify and collate data on the major wood functional\n traits, including the largest wood density database to date (8412 taxa),\n mechanical strength measures and anatomical features, as well as\n clade-specific features such as secondary chemistry. We then show how wood\n traits are related to one another, highlighting functional trade-offs, and\n to ecological and demographic plant features (growth form, growth rate,\n latitude, ecological setting). We suggest that, similar to the manifold\n that tree species leaf traits cluster around the ‘leaf economics\n spectrum’, a similar ‘wood economics spectrum’ may be defined. We then\n discuss the biogeography, evolution and biogeochemistry of the spectrum,\n and conclude by pointing out the major gaps in our current knowledge of\n wood functional traits."
+          },
+          {
+            "descriptionType": "Other",
+            "description": "Global Wood Density\n DatabasePlease direct all\n correspondence to G. Lopez-Gonzalez\n GlobalWoodDensityDatabase.xls"
+          }
+        ],
+        "geoLocations": [],
+        "fundingReferences": [],
+        "url": "https://datadryad.org/dataset/doi:10.5061/dryad.234",
+        "contentUrl": null,
+        "metadataVersion": 45,
+        "schemaVersion": "http://datacite.org/schema/kernel-4",
+        "source": "mds",
+        "isActive": true,
+        "state": "findable",
+        "reason": null,
+        "viewCount": 56788,
+        "downloadCount": 21834,
+        "referenceCount": 1,
+        "citationCount": 264,
+        "partCount": 1,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0,
+        "created": "2011-11-22T17:26:55Z",
+        "registered": "2010-06-08T02:26:02Z",
+        "published": null,
+        "updated": "2026-01-27T16:21:55Z"
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "dryad.dryad",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "dryad.dryad",
+      "type": "clients",
+      "attributes": {
+        "name": "DRYAD",
+        "symbol": "DRYAD.DRYAD",
+        "year": 2018,
+        "alternateName": null,
+        "description": "Dryad is an open data publishing platform and a community committed to the open availability and routine re-use of all research data.",
+        "language": [],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": "https://doi.org/10.17616/R34S33",
+        "opendoar": null,
+        "issn": {},
+        "url": "https://datadryad.org",
+        "created": "2018-04-24T20:59:15Z",
+        "updated": "2024-08-20T14:34:38Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "dryad",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 74437,
+    "totalPages": 10000,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?client-id=dryad.dryad&resource-type-id=dataset&sort=-citation-count&page%5Bsize%5D=1&include=client&affiliation=true&publisher=true",
+    "next": "https://api.datacite.org/dois?affiliation=true&client-id=dryad.dryad&page%5Bnumber%5D=2&page%5Bsize%5D=1&publisher=true&resource-type-id=dataset"
+  }
+}

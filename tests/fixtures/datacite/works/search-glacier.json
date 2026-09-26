@@ -1,0 +1,451 @@
+{
+  "data": [
+    {
+      "id": "10.48580/dgwv7",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.48580/dgwv7",
+        "titles": [
+          {
+            "title": "Cryptocalciella – a new Mortierellaceae genus from Alpine glacier forefields"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Edoardo",
+            "familyName": "Mandolini",
+            "name": "Mandolini, Edoardo",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-3975-614X"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Sophie",
+            "familyName": "Szedlacsek",
+            "name": "Szedlacsek, Sophie",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0009-0009-3915-3534"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "University of Warsaw, Faculty of Biology, Institute of Evolutionary Biology, Warsaw, Poland"
+            ],
+            "givenName": "Beniamin",
+            "familyName": "Abramczyk",
+            "name": "Abramczyk, Beniamin",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-1245-0984"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Attila",
+            "familyName": "Szucs",
+            "name": "Szucs, Attila",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-2803-7123"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Anastasiya",
+            "familyName": "Staykova",
+            "name": "Staykova, Anastasiya",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0009-0009-0307-7402"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Anna",
+            "familyName": "Seybold",
+            "name": "Seybold, Anna",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0002-2237-3989"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Magdalena",
+            "familyName": "Knapp",
+            "name": "Knapp, Magdalena",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-4483-3031"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "University of Warsaw, Faculty of Biology, Institute of Evolutionary Biology, Warsaw, Poland"
+            ],
+            "givenName": "Julia",
+            "familyName": "Pawłowska",
+            "name": "Pawłowska, Julia",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-4914-5182"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Peter",
+            "familyName": "Ladurner",
+            "name": "Ladurner, Peter",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0002-0323-9266"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Ursula",
+            "familyName": "Peintner",
+            "name": "Peintner, Ursula",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0001-5388-4266"
+              }
+            ]
+          }
+        ],
+        "publicationYear": 2026,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset"
+        },
+        "publisher": "Plazi",
+        "citationCount": 0,
+        "versionCount": 1,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "url": "https://www.checklistbank.org/dataset/314394",
+        "rightsList": [],
+        "descriptions": []
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "gbif.col",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.48580/dgwv7.v4",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.48580/dgwv7.v4",
+        "titles": [
+          {
+            "title": "Cryptocalciella – a new Mortierellaceae genus from Alpine glacier forefields"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Edoardo",
+            "familyName": "Mandolini",
+            "name": "Mandolini, Edoardo",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-3975-614X"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Sophie",
+            "familyName": "Szedlacsek",
+            "name": "Szedlacsek, Sophie",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0009-0009-3915-3534"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "University of Warsaw, Faculty of Biology, Institute of Evolutionary Biology, Warsaw, Poland"
+            ],
+            "givenName": "Beniamin",
+            "familyName": "Abramczyk",
+            "name": "Abramczyk, Beniamin",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-1245-0984"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Attila",
+            "familyName": "Szucs",
+            "name": "Szucs, Attila",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-2803-7123"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Anastasiya",
+            "familyName": "Staykova",
+            "name": "Staykova, Anastasiya",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0009-0009-0307-7402"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Anna",
+            "familyName": "Seybold",
+            "name": "Seybold, Anna",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0002-2237-3989"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Magdalena",
+            "familyName": "Knapp",
+            "name": "Knapp, Magdalena",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-4483-3031"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "University of Warsaw, Faculty of Biology, Institute of Evolutionary Biology, Warsaw, Poland"
+            ],
+            "givenName": "Julia",
+            "familyName": "Pawłowska",
+            "name": "Pawłowska, Julia",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-4914-5182"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": ["Department of Zoology, Universität Innsbruck, Innsbruck, Austria"],
+            "givenName": "Peter",
+            "familyName": "Ladurner",
+            "name": "Ladurner, Peter",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0002-0323-9266"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "Department of Microbiology, Universität Innsbruck, Innsbruck, Austria"
+            ],
+            "givenName": "Ursula",
+            "familyName": "Peintner",
+            "name": "Peintner, Ursula",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0001-5388-4266"
+              }
+            ]
+          }
+        ],
+        "publicationYear": 2026,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset"
+        },
+        "publisher": "Plazi",
+        "citationCount": 0,
+        "versionCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "url": "https://www.checklistbank.org/dataset/314394/imports/4",
+        "rightsList": [],
+        "descriptions": []
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "gbif.col",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.48580/dfckl",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.48580/dfckl",
+        "titles": [
+          {
+            "title": "DNA barcoding and morphology reveal exceptional species diversity of Scoparia (Lepidoptera: Crambidae) from the Hailuogou Glacier area, China"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "College of Agronomy, Jiangxi Agricultural University, Nanchang 330045, China"
+            ],
+            "givenName": "Wei-Chun",
+            "familyName": "Li",
+            "name": "Li, Wei-Chun",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              "College of Agronomy, Jiangxi Agricultural University, Nanchang 330045, China"
+            ],
+            "givenName": "Dong",
+            "familyName": "Liu",
+            "name": "Liu, Dong",
+            "nameIdentifiers": []
+          }
+        ],
+        "publicationYear": 2025,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset"
+        },
+        "publisher": "Plazi",
+        "citationCount": 0,
+        "versionCount": 1,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "url": "https://www.checklistbank.org/dataset/276299",
+        "rightsList": [],
+        "descriptions": []
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "gbif.col",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "gbif.col",
+      "type": "clients",
+      "attributes": {
+        "name": "The Catalogue of Life"
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "gbif",
+            "type": "providers"
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 61386,
+    "totalPages": 3333,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=glacier&page[size]=3&fields[dois]=doi,titles,creators,publicationYear,types,publisher,citationCount,versionCount,viewCount,downloadCount,url,rightsList,descriptions,client&include=client",
+    "next": "https://api.datacite.org/dois?fields%5Bdois%5D=doi%2Ctitles%2Ccreators%2CpublicationYear%2Ctypes%2Cpublisher%2CcitationCount%2CversionCount%2CviewCount%2CdownloadCount%2Curl%2CrightsList%2Cdescriptions%2Cclient&page%5Bnumber%5D=2&page%5Bsize%5D=3&query=glacier"
+  }
+}

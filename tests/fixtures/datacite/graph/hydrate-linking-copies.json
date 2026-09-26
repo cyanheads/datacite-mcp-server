@@ -1,0 +1,99 @@
+{
+  "data": [
+    {
+      "id": "10.5061/dryad.8515",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5061/dryad.8515",
+        "titles": [
+          {
+            "title": "Data from: A new malaria agent in African hominids."
+          }
+        ],
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "dataset"
+        },
+        "publicationYear": 2011,
+        "citationCount": 1,
+        "versionCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "dryad.dryad",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.1038/nature12373",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1038/nature12373",
+        "titles": [
+          {
+            "title": "Nanometre-scale thermometry in a living cell"
+          }
+        ],
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "Text",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "JOUR",
+          "resourceType": "JournalArticle"
+        },
+        "publicationYear": 2013,
+        "citationCount": 94,
+        "versionCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": null
+        }
+      }
+    },
+    {
+      "id": "10.1126/science.1259855",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1126/science.1259855",
+        "titles": [
+          {
+            "title": "Planetary boundaries: Guiding human development on a changing planet"
+          }
+        ],
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "Text",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "JOUR",
+          "resourceType": "JournalArticle"
+        },
+        "publicationYear": 2015,
+        "citationCount": 324,
+        "versionCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": null
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 3,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?ids=10.1038/nature12373,10.5061/DRYAD.8515,10.9999/doesnotexist,10.1126/science.1259855&fields[dois]=doi,titles,types,publicationYear,citationCount,versionCount,client,source&include=client&page[size]=100"
+  }
+}

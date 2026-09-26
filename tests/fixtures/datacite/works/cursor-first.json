@@ -1,0 +1,39 @@
+{
+  "data": [
+    {
+      "id": "10.1594/wdcc/mb_jam_1989-2010",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1594/wdcc/mb_jam_1989-2010",
+        "created": "2011-08-26T08:33:28Z"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.1594/wdcc/mb_hef_1953-2010",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1594/wdcc/mb_hef_1953-2010",
+        "created": "2011-08-31T09:38:36Z"
+      },
+      "relationships": {}
+    },
+    {
+      "id": "10.1594/wdcc/mb_hsg_2007_2010",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1594/wdcc/mb_hsg_2007_2010",
+        "created": "2011-08-31T10:16:19Z"
+      },
+      "relationships": {}
+    }
+  ],
+  "meta": {
+    "total": 2510,
+    "totalPages": 837
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=glacier%20mass%20balance&page[size]=3&fields[dois]=doi,created&page[cursor]=1",
+    "next": "https://api.datacite.org/dois?fields%5Bdois%5D=doi%2Ccreated&page%5Bcursor%5D=MTMxNDc4NTc3OTAwMCwxMC4xNTk0L3dkY2MvbWJfaHNnXzIwMDdfMjAxMA&page%5Bsize%5D=3&query=glacier+mass+balance"
+  }
+}

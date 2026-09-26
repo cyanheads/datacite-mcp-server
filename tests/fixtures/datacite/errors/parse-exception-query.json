@@ -1,0 +1,5 @@
+{
+  "errors": {
+    "title": "parse_exception: Encountered \"\u003cEOF\u003e\" at line 1, column 12.\nWas expecting one of:\n    \u003cNOT\u003e ...\n    \"+\" ...\n    \"-\" ...\n    \u003cBAREOPER\u003e ...\n    \"(\" ...\n    \"*\" ...\n    \u003cQUOTED\u003e ...\n    \u003cTERM\u003e ...\n    \u003cPREFIXTERM\u003e ...\n    \u003cWILDTERM\u003e ...\n    \u003cREGEXPTERM\u003e ...\n    \"[\" ...\n    \"{\" ...\n    \u003cNUMBER\u003e ...\n    \u003cTERM\u003e ...\n    \"*\" ...\n    "
+  }
+}

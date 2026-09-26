@@ -1,0 +1,74 @@
+{
+  "data": [
+    {
+      "id": "10.15468/hnhrg3",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.15468/hnhrg3",
+        "titles": [
+          {
+            "title": "NMNH Extant Specimen Records (USNM, US)"
+          }
+        ],
+        "publicationYear": 2026,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "OCCURRENCE"
+        },
+        "citationCount": 28165,
+        "versionCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "gbif.gbif",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.5061/dryad.234",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5061/dryad.234",
+        "titles": [
+          {
+            "title": "Data from: Towards a worldwide wood economics spectrum"
+          }
+        ],
+        "publicationYear": 2009,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "dataset"
+        },
+        "citationCount": 264,
+        "versionCount": 0
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "dryad.dryad",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 2,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?ids=10.5061/dryad.234,10.15468/hnhrg3&page[size]=10"
+  }
+}

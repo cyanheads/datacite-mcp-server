@@ -1,0 +1,277 @@
+{
+  "data": [
+    {
+      "id": "cedf3a73-a420-49a7-8be8-abd23f277316",
+      "type": "events",
+      "attributes": {
+        "subj-id": "https://doi.org/10.1016/j.jag.2021.102408",
+        "obj-id": "https://doi.org/10.1071/wr13028",
+        "relation-type-id": "references",
+        "source-id": "crossref"
+      },
+      "relationships": {
+        "subj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.jag.2021.102408",
+            "type": "objects"
+          }
+        },
+        "obj": {
+          "data": {
+            "id": "https://doi.org/10.1071/wr13028",
+            "type": "objects"
+          }
+        }
+      }
+    },
+    {
+      "id": "7142a29a-8ab0-4f60-8551-923a80766f21",
+      "type": "events",
+      "attributes": {
+        "subj-id": "https://doi.org/10.1016/j.jag.2021.102408",
+        "obj-id": "https://doi.org/10.1016/j.rse.2005.05.011",
+        "relation-type-id": "references",
+        "source-id": "crossref"
+      },
+      "relationships": {
+        "subj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.jag.2021.102408",
+            "type": "objects"
+          }
+        },
+        "obj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.rse.2005.05.011",
+            "type": "objects"
+          }
+        }
+      }
+    },
+    {
+      "id": "f8008908-8444-4ccf-b9a7-e2de93178f73",
+      "type": "events",
+      "attributes": {
+        "subj-id": "https://doi.org/10.1016/j.jag.2021.102408",
+        "obj-id": "https://doi.org/10.1016/j.rse.2018.02.064",
+        "relation-type-id": "references",
+        "source-id": "crossref"
+      },
+      "relationships": {
+        "subj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.jag.2021.102408",
+            "type": "objects"
+          }
+        },
+        "obj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.rse.2018.02.064",
+            "type": "objects"
+          }
+        }
+      }
+    },
+    {
+      "id": "aa406b67-16a6-46a4-ad5b-0d81df8b5415",
+      "type": "events",
+      "attributes": {
+        "subj-id": "https://doi.org/10.1016/j.jag.2021.102408",
+        "obj-id": "https://doi.org/10.15468/s6ctus",
+        "relation-type-id": "references",
+        "source-id": "crossref"
+      },
+      "relationships": {
+        "subj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.jag.2021.102408",
+            "type": "objects"
+          }
+        },
+        "obj": {
+          "data": {
+            "id": "https://doi.org/10.15468/s6ctus",
+            "type": "objects"
+          }
+        }
+      }
+    },
+    {
+      "id": "a2dd845f-f8ab-4855-8a31-4240d2d97210",
+      "type": "events",
+      "attributes": {
+        "subj-id": "https://doi.org/10.1016/j.jag.2021.102408",
+        "obj-id": "https://doi.org/10.15468/hnhrg3",
+        "relation-type-id": "references",
+        "source-id": "crossref"
+      },
+      "relationships": {
+        "subj": {
+          "data": {
+            "id": "https://doi.org/10.1016/j.jag.2021.102408",
+            "type": "objects"
+          }
+        },
+        "obj": {
+          "data": {
+            "id": "https://doi.org/10.15468/hnhrg3",
+            "type": "objects"
+          }
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 118,
+    "total-pages": 2,
+    "page": 1,
+    "sources": [
+      {
+        "id": "crossref",
+        "title": "Crossref to DataCite",
+        "count": 118
+      }
+    ],
+    "occurred": [
+      {
+        "id": "2022",
+        "title": "2022",
+        "count": 118
+      }
+    ],
+    "prefixes": [
+      {
+        "id": "10.1016",
+        "title": "10.1016",
+        "count": 118
+      },
+      {
+        "id": "10.15468",
+        "title": "10.15468",
+        "count": 19
+      },
+      {
+        "id": "10.1080",
+        "title": "10.1080",
+        "count": 13
+      },
+      {
+        "id": "10.3390",
+        "title": "10.3390",
+        "count": 10
+      },
+      {
+        "id": "10.1111",
+        "title": "10.1111",
+        "count": 9
+      },
+      {
+        "id": "10.1071",
+        "title": "10.1071",
+        "count": 5
+      },
+      {
+        "id": "10.1109",
+        "title": "10.1109",
+        "count": 4
+      },
+      {
+        "id": "10.1023",
+        "title": "10.1023",
+        "count": 3
+      },
+      {
+        "id": "10.1186",
+        "title": "10.1186",
+        "count": 3
+      },
+      {
+        "id": "10.1007",
+        "title": "10.1007",
+        "count": 2
+      }
+    ],
+    "citation-types": [
+      {
+        "id": "Dataset-ScholarlyArticle",
+        "title": "Dataset-ScholarlyArticle",
+        "count": 21,
+        "year-months": [
+          {
+            "id": "2022-04",
+            "title": "2022-04",
+            "sum": 21
+          }
+        ]
+      }
+    ],
+    "relation-types": [
+      {
+        "id": "references",
+        "title": "references",
+        "count": 118,
+        "year-months": [
+          {
+            "id": "2022-04",
+            "title": "2022-04",
+            "sum": 118
+          }
+        ]
+      }
+    ],
+    "registrants": [
+      {
+        "id": "crossref.78",
+        "title": "crossref.78",
+        "count": 118,
+        "years": [
+          {
+            "id": "2022",
+            "title": "2022",
+            "sum": 118
+          }
+        ]
+      },
+      {
+        "id": "datacite.gbif.gbif",
+        "title": "datacite.gbif.gbif",
+        "count": 19,
+        "years": [
+          {
+            "id": "2022",
+            "title": "2022",
+            "sum": 19
+          }
+        ]
+      },
+      {
+        "id": "datacite.bl.nhm",
+        "title": "datacite.bl.nhm",
+        "count": 1,
+        "years": [
+          {
+            "id": "2022",
+            "title": "2022",
+            "sum": 1
+          }
+        ]
+      },
+      {
+        "id": "datacite.uam.macs",
+        "title": "datacite.uam.macs",
+        "count": 1,
+        "years": [
+          {
+            "id": "2022",
+            "title": "2022",
+            "sum": 1
+          }
+        ]
+      }
+    ]
+  },
+  "links": {
+    "self": "https://api.datacite.org/events?subj-id=https://doi.org/10.1016/j.jag.2021.102408&relation-type-id=references,cites&page[size]=100",
+    "next": "https://api.datacite.org/events?page%5Bnumber%5D=2&page%5Bsize%5D=100&relation-type-id=references%2Ccites&subj-id=https%3A%2F%2Fdoi.org%2F10.1016%2Fj.jag.2021.102408"
+  }
+}

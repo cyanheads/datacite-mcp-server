@@ -1,0 +1,96 @@
+{
+  "data": [
+    {
+      "id": "ethz.wgms",
+      "type": "repositories",
+      "attributes": {
+        "name": "World Glacier Monitoring Service",
+        "re3data": "https://doi.org/10.17616/R3WP5N",
+        "opendoar": null,
+        "year": 2012,
+        "alternateName": "WGMS",
+        "description": "The World Glacier Monitoring Service (WGMS) collects standardized observations on changes in mass, volume, area and length of glaciers with time (glacier fluctuations), as well as statistical information on the distribution of perennial surface ice in space (glacier inventories). Such glacier fluctuation and inventory data are high priority key variables in climate system monitoring; they form a basis for hydrological modelling with respect to possible effects of atmospheric warming, and provide fundamental information in glaciology, glacial geomorphology and quaternary geology. The highest information density is found for the Alps and Scandinavia, where long and uninterrupted records are available. As a contribution to the Global Terrestrial/Climate Observing System (GTOS, GCOS), the Division of Early Warning and Assessment and the Global Environment Outlook of UNEP, and the International Hydrological Programme of UNESCO, the WGMS collects and publishes worldwide standardized glacier data.",
+        "clientType": "repository",
+        "repositoryType": ["disciplinary"],
+        "language": ["en"],
+        "certificate": ["WDS", "CoreTrustSeal"],
+        "url": "https://wgms.ch/",
+        "software": null,
+        "subjects": [
+          {
+            "subject": "Earth and related environmental sciences",
+            "schemeUri": "http://www.oecd.org/science/inno/38235147.pdf",
+            "subjectScheme": "Fields of Science and Technology (FOS)",
+            "classificationCode": "1.5"
+          }
+        ],
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "kadq",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": [
+            {
+              "id": "10.5904",
+              "type": "prefixes"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "totalPages": 1,
+    "page": 1,
+    "years": [
+      {
+        "id": "2012",
+        "title": "2012",
+        "count": 1
+      }
+    ],
+    "providers": [
+      {
+        "id": "kadq",
+        "title": "Hauptbibliothek Universität Zürich",
+        "count": 1
+      }
+    ],
+    "clientTypes": [
+      {
+        "id": "repository",
+        "title": "Repository",
+        "count": 1
+      }
+    ],
+    "repositoryTypes": [
+      {
+        "id": "disciplinary",
+        "title": "Disciplinary",
+        "count": 1
+      }
+    ],
+    "certificates": [
+      {
+        "id": "CoreTrustSeal",
+        "title": "Core Trust Seal",
+        "count": 1
+      },
+      {
+        "id": "WDS",
+        "title": "Wds",
+        "count": 1
+      }
+    ],
+    "software": []
+  },
+  "links": {
+    "self": "https://api.datacite.org/repositories?query=glacier&page[size]=3"
+  }
+}

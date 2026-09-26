@@ -4,6 +4,7 @@
     "args": ["-y", "@cyanheads/datacite-mcp-server"],
     "env": {
       "MCP_TRANSPORT_TYPE": "stdio"
-    }
+    },
+    "env_vars": ["DATACITE_CONTACT_EMAIL", "DATACITE_MAX_REQUESTS_PER_5MIN"]
   }
 }

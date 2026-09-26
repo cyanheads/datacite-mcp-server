@@ -1,0 +1,27 @@
+{
+  "data": [
+    {
+      "id": "10.5061/dryad.8515",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5061/dryad.8515",
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsCitedBy",
+            "relatedIdentifier": "10.1371/journal.ppat.1000446",
+            "relatedIdentifierType": "DOI"
+          }
+        ]
+      },
+      "relationships": {}
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=relatedIdentifiers.relatedIdentifier:%2210.1371/journal.ppat.1000446%22&fields[dois]=doi,relatedIdentifiers&page[size]=10"
+  }
+}
