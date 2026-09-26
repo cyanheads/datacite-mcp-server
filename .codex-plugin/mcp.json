@@ -1,0 +1,9 @@
+{
+  "datacite-mcp-server": {
+    "command": "npx",
+    "args": ["-y", "@cyanheads/datacite-mcp-server"],
+    "env": {
+      "MCP_TRANSPORT_TYPE": "stdio"
+    }
+  }
+}

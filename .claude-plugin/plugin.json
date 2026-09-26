@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "datacite-mcp-server",
+  "version": "0.1.0",
+  "description": "Discover datasets, software, and other research outputs; resolve DataCite DOIs; trace scholarly relationships; and generate citations.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://github.com/cyanheads"
+  },
+  "homepage": "https://github.com/cyanheads/datacite-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/datacite-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "datacite",
+    "doi",
+    "research-data",
+    "datasets",
+    "research-software",
+    "scholarly-metadata",
+    "citations"
+  ],
+  "mcpServers": {
+    "datacite-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@cyanheads/datacite-mcp-server"
+      ],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio"
+      }
+    }
+  }
+}
