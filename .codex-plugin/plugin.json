@@ -1,6 +1,6 @@
 {
   "name": "datacite-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations.",
   "author": {
     "name": "cyanheads",
