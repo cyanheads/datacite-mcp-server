@@ -23,8 +23,8 @@ A few things that save a round-trip:
 
 ## What makes an issue actionable
 
-- Server version, `mcp-ts-core` version, runtime (Bun / Node / Workers), and transport (stdio / HTTP).
-- The tool, resource, or prompt involved, and the arguments you called it with.
+- Server version, `mcp-ts-core` version, runtime (Bun / Node), and transport (stdio / HTTP).
+- The tool involved, and the arguments you called it with.
 - Actual vs expected behavior, verbatim: error messages and stack traces as they appeared.
 - For features: the use case first, then the API as you'd want to call it.
 
@@ -41,4 +41,4 @@ Read the relevant one before filing on a user's behalf.
 
 ## Security
 
-Don't open a public issue for a vulnerability. Report it privately — GitHub's **Security** tab → **Report a vulnerability**, or email the maintainer.
+Don't open a public issue for a vulnerability. Report it privately — GitHub's **Security** tab → **Report a vulnerability**, or the email in [SECURITY.md](./SECURITY.md).

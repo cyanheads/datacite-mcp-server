@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "datacite-mcp-server",
   "version": "0.1.0",
-  "description": "Discover datasets, software, and other research outputs; resolve DataCite DOIs; trace scholarly relationships; and generate citations.",
+  "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations.",
   "author": { "name": "cyanheads" },
   "homepage": "https://github.com/cyanheads/datacite-mcp-server#readme",
   "license": "Apache-2.0",

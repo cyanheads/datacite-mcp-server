@@ -2,7 +2,7 @@
   "name": "@cyanheads/datacite-mcp-server",
   "version": "0.1.0",
   "mcpName": "io.github.cyanheads/datacite-mcp-server",
-  "description": "Discover datasets, software, and other research outputs; resolve DataCite DOIs; trace scholarly relationships; and generate citations.",
+  "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations via MCP. STDIO or Streamable HTTP.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -53,7 +53,11 @@
     "datasets",
     "research-software",
     "scholarly-metadata",
-    "citations"
+    "citations",
+    "typescript",
+    "bun",
+    "stdio",
+    "streamable-http"
   ],
   "repository": {
     "type": "git",

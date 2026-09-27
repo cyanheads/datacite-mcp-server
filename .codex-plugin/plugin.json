@@ -1,7 +1,7 @@
 {
   "name": "datacite-mcp-server",
   "version": "0.1.0",
-  "description": "Discover datasets, software, and other research outputs; resolve DataCite DOIs; trace scholarly relationships; and generate citations.",
+  "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations.",
   "author": {
     "name": "cyanheads",
     "email": "casey@caseyjhand.com",
@@ -25,8 +25,8 @@
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "datacite-mcp-server",
-    "shortDescription": "Discover datasets and software, resolve DataCite DOIs, trace relationships, and generate citations.",
-    "longDescription": "Search DataCite's registry of datasets, software, models, workflows, reports, and other research outputs by topic, creator, funder, institution, repository, place, or year. Resolve a DataCite DOI to its full deposited metadata and landing page, trace versions, parts, supplements, and citations with each relationship's direction preserved, find the repositories that publish in a field, and format citations as CSL-styled text, BibTeX, RIS, and other machine formats. Read-only; no API key required.",
+    "shortDescription": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations.",
+    "longDescription": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations via MCP. STDIO or Streamable HTTP.",
     "developerName": "cyanheads",
     "category": "research",
     "capabilities": [
