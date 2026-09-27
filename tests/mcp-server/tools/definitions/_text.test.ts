@@ -32,6 +32,10 @@ describe('tableCell', () => {
     expect(tableCell('a | b\n| c')).toBe('a \\| b \\| c');
   });
 
+  it('escapes backslashes so one before a pipe cannot cancel the pipe escape', () => {
+    expect(tableCell('a\\| b \\')).toBe('a\\\\\\| b \\\\');
+  });
+
   it.each(OTHER_LINE_BREAKS)('keeps a row on one line across %s', (_name, sep) => {
     expect(tableCell(`a${sep}| b |`)).toBe('a \\| b \\|');
   });

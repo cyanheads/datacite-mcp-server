@@ -13,8 +13,12 @@ import { normalizeLineBreaks, singleLine } from '@/services/datacite/query-build
 /** Collapses each run of line breaks to one space so the value stays in its inline slot. */
 export const flattenInline = singleLine;
 
-/** An inline value for a Markdown table cell: flattened, with `|` escaped. */
-export const tableCell = (value: string): string => flattenInline(value).replace(/\|/g, '\\|');
+/**
+ * An inline value for a Markdown table cell: flattened, with `\` and `|` escaped.
+ * Backslashes go first, so one before a pipe cannot cancel the pipe's escape.
+ */
+export const tableCell = (value: string): string =>
+  flattenInline(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 
 /** The value as a Markdown blockquote, one `>` per line. */
 export function blockquote(value: string): string {
