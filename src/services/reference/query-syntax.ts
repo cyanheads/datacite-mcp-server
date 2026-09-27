@@ -71,11 +71,32 @@ export const KNOWN_QUERY_FIELDS = new Set([
 ]);
 
 /**
+ * `query` with each double-quoted phrase replaced by a space, in one pass: a
+ * backslash escapes the character after it, and a quote that never closes
+ * leaves the rest of the query as written. A phrase regex would rescan the
+ * tail from every escaped quote after an unclosed one, quadratic in its length.
+ */
+function blankQuotedPhrases(query: string): string {
+  let result = '';
+  let kept = 0;
+  let open = query.indexOf('"');
+  while (open !== -1) {
+    let at = open + 1;
+    while (at < query.length && query[at] !== '"') at += query[at] === '\\' ? 2 : 1;
+    if (at >= query.length) break;
+    result += `${query.slice(kept, open)} `;
+    kept = at + 1;
+    open = query.indexOf('"', kept);
+  }
+  return result + query.slice(kept);
+}
+
+/**
  * The first `word:` prefix in a caller query that names no known field, ignoring
  * quoted phrases, escaped colons, and URL schemes.
  */
 export function unknownFieldPrefix(query: string): string | undefined {
-  const unquoted = query.replace(/"(?:[^"\\]|\\.)*"/g, ' ');
+  const unquoted = blankQuotedPhrases(query);
   for (const match of unquoted.matchAll(/(?:^|[\s(+!-])([A-Za-z_][\w.]*):(?!\/\/)/g)) {
     const field = match[1] as string;
     if (!KNOWN_QUERY_FIELDS.has(field)) return field;

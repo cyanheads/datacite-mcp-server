@@ -6,8 +6,7 @@
  */
 
 /** Lowercase with every non-alphanumeric character removed. */
-export const canonicalKey = (value: string): string =>
-  value.toLowerCase().replace(/[^a-z0-9]/g, '');
+const canonicalKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
  * Builds a resolver from canonical ids and their accepted spellings. A spelling

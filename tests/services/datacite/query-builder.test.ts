@@ -36,6 +36,7 @@ import {
   dataCite,
   initServices,
   json,
+  OTHER_LINE_BREAKS,
   requestUrl,
   teardownServices,
 } from '../../helpers/harness.js';
@@ -46,9 +47,16 @@ describe('escapeQueryText', () => {
   });
 
   it('escapes every reserved character', () => {
-    expect(escapeQueryText('+-=&|!(){}[]^"~*?:\\/')).toBe(
-      '\\+\\-\\=\\&\\|\\!\\(\\)\\{\\}\\[\\]\\^\\"\\~\\*\\?\\:\\\\\\/',
+    expect(escapeQueryText('+-=&|!(){}[]^"~*?:\\')).toBe(
+      '\\+\\-\\=\\&\\|\\!\\(\\)\\{\\}\\[\\]\\^\\"\\~\\*\\?\\:\\\\',
     );
+  });
+
+  it('leaves / bare, since DataCite escapes it itself and a pre-escaped \\/ fails to parse', () => {
+    expect(escapeQueryText('10.5061/dryad.234 input/output')).toBe(
+      '10.5061/dryad.234 input/output',
+    );
+    expect(escapeQueryText('a\\/b')).toBe('a\\\\/b');
   });
 
   it('lowercases standalone boolean operators only', () => {
@@ -77,6 +85,9 @@ describe('phrases and clauses', () => {
     );
     expect(nameTokensClause('fundingReferences.funderName', 'Wellcome (UK)')).toBe(
       'fundingReferences.funderName:(Wellcome AND \\(UK\\))',
+    );
+    expect(nameTokensClause('fundingReferences.funderName', 'NASA/JPL')).toBe(
+      'fundingReferences.funderName:(NASA/JPL)',
     );
   });
 
@@ -108,6 +119,10 @@ describe('phrases and clauses', () => {
   it('ANDs clauses, and sends * when there are none', () => {
     expect(composeQuery([])).toBe('*');
     expect(composeQuery(['a:1', 'b:2'])).toBe('a:1 AND b:2');
+  });
+
+  it.each(OTHER_LINE_BREAKS)('flattens %s, and a run of breaks, to one space', (_name, sep) => {
+    expect(singleLine(`a${sep}b${sep}\r\n${sep}c`)).toBe('a b c');
   });
 
   it('flattens every kind of line break to a space', () => {

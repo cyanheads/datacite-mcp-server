@@ -27,6 +27,7 @@ import {
   doiRa,
   initServices,
   json,
+  OTHER_LINE_BREAKS,
   requestUrl,
   structured,
   type ToolResultLike,
@@ -228,6 +229,38 @@ describe('found arm', () => {
     expect(text).toContain('## Dates\n- Issued: 2021');
   });
 
+  it('counts and renders relation types named like Object.prototype members on both surfaces', async () => {
+    const types = ['constructor', 'toString', 'valueOf', '__proto__', 'IsCitedBy'];
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/proto', {
+          relatedIdentifiers: types.map((relationType, i) => ({
+            relationType,
+            relatedIdentifier: `10.5555/r${i}`,
+            relatedIdentifierType: 'DOI',
+          })),
+        }),
+      },
+    ]);
+    const result = await run('10.5555/proto');
+    expect(result.isError).toBeFalsy();
+    const out = output(result);
+    expect(out.relatedIdentifiers?.map((r) => r.relationType)).toEqual(types);
+    expect(Object.entries(out.relatedIdentifierCounts ?? {})).toEqual(
+      expect.arrayContaining([
+        ['constructor', 1],
+        ['toString', 1],
+        ['valueOf', 1],
+        ['IsCitedBy', 1],
+      ]),
+    );
+    const text = contentText(result);
+    types.forEach((type, i) => {
+      expect(text).toContain(`**${type}** — 1 of 1\n- 10.5555/r${i} (DOI)`);
+    });
+  });
+
   it('renders a sparse record with explicit markers, zero counts, and no empty sections', async () => {
     initServices([{ match: dataCite('/dois'), respond: recordPage('10.5555/sparse', {}) }]);
     const result = await run('10.5555/sparse');
@@ -330,6 +363,33 @@ describe('found arm', () => {
     expect(text).toContain('> description\n> # INJECTED description\n> - INJECTED description');
     expect(text).not.toMatch(/^(#|-) INJECTED/m);
   });
+
+  it.each(OTHER_LINE_BREAKS)(
+    'keeps depositor text in its slot across %s and keeps structuredContent verbatim',
+    async (_name, sep) => {
+      const evil = (label: string) => `${label}${sep}# INJECTED ${label}${sep}- INJECTED ${label}`;
+      initServices([
+        {
+          match: dataCite('/dois'),
+          respond: recordPage('10.5555/hostile', {
+            titles: [{ title: evil('title') }],
+            subjects: [{ subject: evil('subject') }],
+            descriptions: [{ description: evil('description'), descriptionType: 'Abstract' }],
+          }),
+        },
+      ]);
+      const result = await run('10.5555/hostile');
+      const out = output(result);
+      expect(out.titles?.[0]?.title).toBe(evil('title'));
+      expect(out.subjects?.[0]?.subject).toBe(evil('subject'));
+      expect(out.descriptions?.[0]?.description).toBe(evil('description'));
+      const text = contentText(result);
+      expect(text).toContain('# title # INJECTED title - INJECTED title\n');
+      expect(text).toContain('- subject # INJECTED subject - INJECTED subject\n');
+      expect(text).toContain('> description\n> # INJECTED description\n> - INJECTED description');
+      expect(text).not.toContain(sep);
+    },
+  );
 });
 
 describe('miss arm', () => {
@@ -410,6 +470,28 @@ describe('miss arm', () => {
     expect(http.calls).toHaveLength(2);
   });
 
+  it('answers unclassified when doi.org redirects the agency lookup, without following it', async () => {
+    // doi.org answers the /ra/ lookup for a DOI with `..` segments with a 301 to www.doi.org.
+    const doi = '10.1234/../../10.5061/dryad.234';
+    const { http } = initServices([
+      { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+      {
+        match: doiRa(doi),
+        respond: () =>
+          new Response(null, {
+            status: 301,
+            headers: { location: `https://www.doi.org/ra/${encodeURIComponent(doi)}` },
+          }),
+      },
+    ]);
+    const result = await run(doi);
+    expect(result.isError).toBeFalsy();
+    expect(output(result)).toEqual(unclassified(doi));
+    expect(contentText(result)).toContain('**Miss reason:** unclassified');
+    expect(http.calls).toHaveLength(2);
+    expect(http.calls.map((call) => call.request.redirect)).toEqual(['manual', 'manual']);
+  });
+
   it('answers unclassified when the agency lookup keeps failing with 5xx', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     const doi = '10.1038/nature12373';
@@ -482,6 +564,33 @@ describe('DOI input', () => {
     const result = await run(input);
     expect(output(result)).toMatchObject({ found: true, doi: '10.5061/dryad.234' });
     expect(requestUrl(http).searchParams.get('query')).toBe('doi:"10.5061/dryad.234"');
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('looks up a DOI holding a literal percent-escape as written, and links it with the % encoded', async () => {
+    const doi = '10.18716/nmrshiftdb2/60004113/mrc_methanol-d4%20%28cd3od%29';
+    const url = 'https://doi.org/10.18716/nmrshiftdb2/60004113/mrc_methanol-d4%2520%2528cd3od%2529';
+    const { http } = initServices([{ match: dataCite('/dois'), respond: recordPage(doi, {}) }]);
+    const result = await run(doi);
+    expect(result.isError).toBeFalsy();
+    expect(output(result)).toMatchObject({ found: true, doi, doiUrl: url });
+    expect(contentText(result)).toContain(`**Resolver:** ${url}\n`);
+    expect(requestUrl(http).searchParams.get('query')).toBe(`doi:"${doi}"`);
+
+    expect(output(await run(url))).toMatchObject({ found: true, doi, doiUrl: url });
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('percent-encodes # in doiUrl, and the URL reads back as the same DOI', async () => {
+    const doi = '10.15475/dhz/kfn/1914/1/2#page-8';
+    const url = 'https://doi.org/10.15475/dhz/kfn/1914/1/2%23page-8';
+    const { http } = initServices([{ match: dataCite('/dois'), respond: recordPage(doi, {}) }]);
+    const result = await run(doi);
+    expect(output(result)).toMatchObject({ found: true, doi, doiUrl: url });
+    expect(contentText(result)).toContain(`**Resolver:** ${url}\n`);
+    expect(requestUrl(http).searchParams.get('query')).toBe(`doi:"${doi}"`);
+
+    expect(output(await run(url))).toMatchObject({ found: true, doi, doiUrl: url });
     expect(http.calls).toHaveLength(1);
   });
 

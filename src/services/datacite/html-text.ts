@@ -35,10 +35,13 @@ function decodeEntity(entity: string, body: string): string {
   return Object.hasOwn(NAMED_ENTITIES, body) ? (NAMED_ENTITIES[body] as string) : entity;
 }
 
-/** The visible text of an HTML fragment. */
+/**
+ * The visible text of an HTML fragment. A tag cannot contain `<`, which keeps
+ * the strip linear on a run of unclosed brackets and leaves a stray `<` as text.
+ */
 export function htmlToText(html: string): string {
   return html
-    .replace(/<[^>]*>/g, '')
+    .replace(/<[^<>]*>/g, '')
     .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, decodeEntity)
     .replace(/\s+/g, ' ')
     .trim();

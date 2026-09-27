@@ -11,9 +11,10 @@
 import type { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getCitationTool } from '@/mcp-server/tools/definitions/get-citation.tool.js';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
+import { CITATION_FORMATS } from '@/services/reference/citation.js';
 import { fixtureResponse, fixtureText, rateLimitResponse } from '../../../helpers/fixtures.js';
 import {
   contentText,
@@ -32,7 +33,12 @@ import {
 } from '../../../helpers/harness.js';
 
 type Input = z.input<typeof getCitationTool.input>;
-type Output = z.infer<typeof getCitationTool.output> & { notice?: string };
+type Output = z.infer<typeof getCitationTool.output> & {
+  cap?: number;
+  notice?: string;
+  shown?: number;
+  truncated?: boolean;
+};
 
 const DOI = '10.5061/dryad.8515';
 /** `DOI` as the negotiation path carries it, encoded whole. */
@@ -46,7 +52,10 @@ const CANARY_DEFAULT_HTML = fixtureText('datacite/citations/canary-dryad-234-def
 /** Constructed — a record short enough to render identically in the default and a requested style. */
 const TERSE_HTML = 'Terse. (2020). <i>Terse record</i>. https://doi.org/10.5555/TERSE';
 
-afterEach(teardownServices);
+afterEach(() => {
+  vi.useRealTimers();
+  teardownServices();
+});
 
 const run = (input: Input) => runToolContract(getCitationTool, input);
 const output = (result: ToolResultLike) => structured<Output>(result);
@@ -78,6 +87,29 @@ const DEFAULT_TEXT =
 /** The notice a cached `apa_variant_unconfirmed` verdict carries — no rendering was compared on that call. */
 const CACHED_APA_VARIANT_NOTICE =
   'An earlier check found apa-single-spaced rendering the same text as the default APA style, and APA variants that differ only in layout cannot be told apart from APA, so it could not be confirmed that apa-single-spaced was applied; treat this as APA text if the two styles should differ.';
+
+/**
+ * The answers DataCite gives for a format it cannot render for a record, with
+ * the detail `format_unavailable` names. The 204 is documented but was never
+ * observed; the empty 200 and the 400 (body recorded) were.
+ */
+const UNRENDERABLE = [
+  {
+    name: 'HTTP 204',
+    respond: () => new Response(null, { status: 204 }),
+    detail: 'HTTP 204, no metadata available',
+  },
+  { name: 'an empty HTTP 200', respond: () => text(''), detail: 'HTTP 200 with an empty body' },
+  {
+    name: 'HTTP 400',
+    respond: () =>
+      fixtureResponse('datacite/errors/negotiation-400-unrenderable.json', { status: 400 }),
+    detail: 'HTTP 400 from its renderer',
+  },
+];
+
+const FORMAT_UNAVAILABLE_RECOVERY =
+  'Recovery: Request another format such as datacite_json or csl_json, or call datacite_get_work for the full record.';
 
 describe('formatted citations', () => {
   it('renders APA by default in one request, as plain text and verbatim HTML on both surfaces', async () => {
@@ -129,6 +161,15 @@ describe('formatted citations', () => {
     initServices([{ match: negotiation(TERSE), respond: html(body) }]);
     const content = contentText(await run({ doi: TERSE }));
     expect(content).toContain(`\`\`\`\`\`html\n${body}\n\`\`\`\`\``);
+  });
+
+  it('keeps a stray < in the plain text on both surfaces', async () => {
+    const body = 'Terse. (2020). <i>Below T < 5 K</i> [Dataset]. Dryad.';
+    const plain = 'Terse. (2020). Below T < 5 K [Dataset]. Dryad.';
+    initServices([{ match: negotiation(TERSE), respond: html(body) }]);
+    const result = await run({ doi: TERSE });
+    expect(output(result)).toMatchObject({ citation: plain, citationHtml: body });
+    expect(contentText(result)).toContain(`> ${plain}`);
   });
 });
 
@@ -259,25 +300,36 @@ describe('style verdicts', () => {
     expect(http.calls).toHaveLength(5);
   });
 
-  it('returns the rendering with a notice and caches no verdict when the canary fails', async () => {
-    const style = 'chicago-author-date';
-    initServices([
-      { match: negotiation(TERSE, { style }), respond: html(TERSE_HTML) },
-      { match: negotiation(TERSE), respond: html(TERSE_HTML) },
-      {
-        match: negotiation(CANARY, { style }),
-        respond: fixtureResponse('datacite/errors/negotiation-404.json', { status: 404 }),
-      },
-      { match: negotiation(CANARY), respond: html(CANARY_DEFAULT_HTML) },
-    ]);
-    const result = await run({ doi: TERSE, style });
-    const notice =
-      'The chicago-author-date rendering is identical to the default APA output and the style check could not complete, so it could not be confirmed that chicago-author-date was applied; treat this as APA text if the two styles should differ.';
-    expect(result.isError).toBeFalsy();
-    expect(output(result)).toMatchObject({ found: true, style, citationHtml: TERSE_HTML, notice });
-    expect(contentText(result)).toContain(`> ${notice}`);
-    expect(getDataCiteService().styleVerdicts.get(style)).toBeUndefined();
-  });
+  it.each([
+    {
+      name: 'answers 404',
+      respond: () => fixtureResponse('datacite/errors/negotiation-404.json', { status: 404 }),
+    },
+    { name: 'answers an empty 200', respond: () => text('') },
+  ])(
+    'returns the rendering with a notice and caches no verdict when the canary $name',
+    async ({ respond }) => {
+      const style = 'chicago-author-date';
+      initServices([
+        { match: negotiation(TERSE, { style }), respond: html(TERSE_HTML) },
+        { match: negotiation(TERSE), respond: html(TERSE_HTML) },
+        { match: negotiation(CANARY, { style }), respond },
+        { match: negotiation(CANARY), respond: html(CANARY_DEFAULT_HTML) },
+      ]);
+      const result = await run({ doi: TERSE, style });
+      const notice =
+        'The chicago-author-date rendering is identical to the default APA output and the style check could not complete, so it could not be confirmed that chicago-author-date was applied; treat this as APA text if the two styles should differ.';
+      expect(result.isError).toBeFalsy();
+      expect(output(result)).toMatchObject({
+        found: true,
+        style,
+        citationHtml: TERSE_HTML,
+        notice,
+      });
+      expect(contentText(result)).toContain(`> ${notice}`);
+      expect(getDataCiteService().styleVerdicts.get(style)).toBeUndefined();
+    },
+  );
 
   it('answers a 404 under a requested style with the miss arm and no verdict', async () => {
     const doi = '10.1038/nature12373';
@@ -321,6 +373,12 @@ describe('style verdicts', () => {
       name: 'answers 404 (a stale cached miss)',
       respond: () => fixtureResponse('datacite/errors/negotiation-404.json', { status: 404 }),
     },
+    { name: 'answers an empty 200', respond: () => text('') },
+    {
+      name: 'answers 400',
+      respond: () =>
+        fixtureResponse('datacite/errors/negotiation-400-unrenderable.json', { status: 400 }),
+    },
   ])(
     'returns the requested rendering unverified, with a notice and no verdict, when the default rendering $name',
     async ({ respond }) => {
@@ -354,19 +412,20 @@ describe('style verdicts', () => {
     expect(getDataCiteService().styleVerdicts.get('ieee')).toBeUndefined();
   });
 
-  it('reports a 204 under a requested style as format_unavailable and caches no verdict', async () => {
-    initServices([
-      {
-        match: negotiation(DOI, { style: 'ieee' }),
-        respond: () => new Response(null, { status: 204 }),
-      },
-      { match: negotiation(DOI), respond: () => new Response(null, { status: 204 }) },
-    ]);
-    const result = await run({ doi: DOI, style: 'ieee' });
-    expectToolError(result, 'format_unavailable', JsonRpcErrorCode.NotFound);
-    expect(contentText(result)).toContain('Recovery: Request another format');
-    expect(getDataCiteService().styleVerdicts.get('ieee')).toBeUndefined();
-  });
+  it.each(UNRENDERABLE)(
+    'reports $name under a requested style as format_unavailable and caches no verdict',
+    async ({ respond, detail }) => {
+      initServices([
+        { match: negotiation(DOI, { style: 'ieee' }), respond },
+        { match: negotiation(DOI), respond },
+      ]);
+      const result = await run({ doi: DOI, style: 'ieee' });
+      const error = expectToolError(result, 'format_unavailable', JsonRpcErrorCode.NotFound);
+      expect(error.message).toBe(`DataCite cannot render this DOI in text (${detail}).`);
+      expect(contentText(result)).toContain(FORMAT_UNAVAILABLE_RECOVERY);
+      expect(getDataCiteService().styleVerdicts.get('ieee')).toBeUndefined();
+    },
+  );
 });
 
 describe('locales', () => {
@@ -394,6 +453,25 @@ describe('locales', () => {
     expect(contentText(result)).toContain('Recovery: Pass a CSL locale such as en-GB, de-DE');
     expect(http.calls).toHaveLength(0);
   });
+
+  it.each([
+    { locale: 'tl-PH' },
+    { locale: 'hy-AM' },
+    { locale: 'tl' },
+    { locale: 'hy' },
+    { locale: 'hy', style: 'harvard-cite-them-right' },
+  ])(
+    'rejects %j, a CSL locale DataCite renders as APA in US English, as unsupported_locale before any request',
+    async (input) => {
+      const { http } = initServices([]);
+      const result = await run({ doi: DOI, ...input });
+      expectToolError(result, 'unsupported_locale', JsonRpcErrorCode.ValidationError);
+      expect(contentText(result)).toContain(
+        'Error: locale is not a CSL locale DataCite renders; DataCite would silently render the whole citation as APA in US English.',
+      );
+      expect(http.calls).toHaveLength(0);
+    },
+  );
 });
 
 describe('machine formats', () => {
@@ -498,6 +576,70 @@ describe('machine formats', () => {
   });
 });
 
+describe('payload size', () => {
+  const CAP = 100_000;
+  const DATACITE_JSON = 'application/vnd.datacite.datacite+json';
+  const count = (n: number) => n.toLocaleString('en-US');
+  const sizeNotice = (format: string, total: number, shown = CAP) =>
+    `The ${format} payload runs to ${count(total)} characters, past the ${count(CAP)} this tool returns, so it is cut to its first ${count(shown)}. datacite_get_work returns the record with each long list capped and its full count reported.`;
+
+  it('returns the first 100,000 characters of a longer payload and discloses the cut on both surfaces', async () => {
+    const payload = `{"id":"x","filler":"${'a'.repeat(2_000_000)}"}`;
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+    const result = await run({ doi: DOI, format: 'datacite_json' });
+    const out = output(result);
+    expect(out.citation).toBe(payload.slice(0, CAP));
+    expect(out).toMatchObject({
+      truncated: true,
+      shown: CAP,
+      cap: CAP,
+      notice: sizeNotice('datacite_json', payload.length),
+    });
+    const content = contentText(result);
+    expect(content).toContain(`\`\`\`json\n${payload.slice(0, CAP)}\n\`\`\``);
+    expect(content).toContain(`> ${sizeNotice('datacite_json', payload.length)}`);
+    expect(content.length).toBeLessThan(CAP + 2_000);
+  });
+
+  it('returns a payload of exactly 100,000 characters whole, with no disclosure', async () => {
+    const payload = 'a'.repeat(CAP);
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+    const result = await run({ doi: DOI, format: 'datacite_json' });
+    expect(output(result)).toEqual({
+      found: true,
+      doi: DOI,
+      format: 'datacite_json',
+      mediaType: DATACITE_JSON,
+      citation: payload,
+    });
+    expect(contentText(result)).not.toContain('payload runs to');
+  });
+
+  it('never splits a surrogate pair at the cut', async () => {
+    const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+    const out = output(await run({ doi: DOI, format: 'datacite_json' }));
+    expect(out.citation).toBe('a'.repeat(CAP - 1));
+    expect(out).toMatchObject({ truncated: true, shown: CAP - 1, cap: CAP });
+  });
+
+  it('cuts a formatted citation before deriving its text, keeping a style notice beside the disclosure', async () => {
+    const style = 'apa-single-spaced';
+    const htmlBody = `${'Author, A., '.repeat(10_000)}(2020). <i>Big</i>.`;
+    initServices([{ match: negotiation(DOI, { style }), respond: html(htmlBody) }]);
+    getDataCiteService().styleVerdicts.set(style, 'apa_variant_unconfirmed', 86_400_000);
+    const result = await run({ doi: DOI, style });
+    const out = output(result);
+    expect(out.citationHtml).toBe(htmlBody.slice(0, CAP));
+    expect(out.citation).toBe(htmlBody.slice(0, CAP).trim());
+    const notice = `${CACHED_APA_VARIANT_NOTICE} ${sizeNotice('text', htmlBody.length)}`;
+    expect(out).toMatchObject({ truncated: true, shown: CAP, cap: CAP, notice });
+    const content = contentText(result);
+    expect(content).toContain(`> ${notice}`);
+    expect(content.length).toBeLessThan(2 * CAP + 3_000);
+  });
+});
+
 describe('the miss arm', () => {
   it.each([
     {
@@ -552,6 +694,44 @@ describe('the miss arm', () => {
     },
   );
 
+  it.each([
+    {
+      format: 'bibtex',
+      guidance:
+        "10.1038/nature12373 is registered with Crossref, not DataCite, so DataCite cannot format it. Request it from Crossref's own content negotiation at https://doi.org/10.1038/nature12373 (for example with Accept: application/x-bibtex), or call datacite_trace_relations to find DataCite works linked to it.",
+    },
+    {
+      format: 'jats',
+      guidance:
+        "10.1038/nature12373 is registered with Crossref, not DataCite, so DataCite cannot format it, and only DataCite's content negotiation serves JATS XML. Request CSL JSON or BibTeX from Crossref's own content negotiation at https://doi.org/10.1038/nature12373 (for example with Accept: application/vnd.citationstyles.csl+json), or call datacite_trace_relations to find DataCite works linked to it.",
+    },
+  ] as const)(
+    'fits the other-agency guidance to a $format request',
+    async ({ format, guidance }) => {
+      const doi = '10.1038/nature12373';
+      initServices([
+        {
+          match: negotiation(doi, {}, CITATION_FORMATS[format]),
+          respond: fixtureResponse('datacite/errors/negotiation-404.json', { status: 404 }),
+        },
+        { match: doiRa(doi), respond: fixtureResponse('doi-ra/crossref.json') },
+      ]);
+      const result = await run({ doi, format });
+      expect(output(result)).toEqual({
+        found: false,
+        doi,
+        format,
+        missReason: 'other_agency',
+        registrationAgency: 'Crossref',
+        guidance,
+      });
+      const content = contentText(result);
+      expect(content).toContain(`**Found:** false · **Format:** ${format}\n`);
+      expect(content).toContain(guidance);
+      expect(content).not.toContain('text/x-bibliography');
+    },
+  );
+
   it('flattens the registration agency inside the guidance and keeps it verbatim in structuredContent', async () => {
     const doi = '10.1038/nature12373';
     const agency = 'Crossref\n# INJECTED heading\r\n- INJECTED bullet';
@@ -575,13 +755,14 @@ describe('the miss arm', () => {
 });
 
 describe('declared errors and input', () => {
-  it('logs the input-caused reasons at notice, a 204 at info, and a spent budget at error', () => {
+  it('logs the input-caused reasons at notice, an unrenderable format at info, and upstream faults at error', () => {
     expect(declaredSeverities(getCitationTool.errors)).toEqual({
       invalid_doi: 'notice',
       unsupported_style: 'notice',
       unsupported_locale: 'notice',
       style_requires_text: 'notice',
       format_unavailable: 'info',
+      render_failed: 'error',
       rate_limited: 'error',
     });
   });
@@ -599,6 +780,16 @@ describe('declared errors and input', () => {
     expect(http.calls).toHaveLength(1);
   });
 
+  it('cites a DOI holding a literal percent-escape as written', async () => {
+    const doi = '10.18716/nmrshiftdb2/60004113/mrc_methanol-d4%20%28cd3od%29';
+    const { http } = initServices([{ match: negotiation(doi), respond: html(TERSE_HTML) }]);
+    const result = await run({ doi });
+    expect(result.isError).toBeFalsy();
+    expect(output(result)).toMatchObject({ found: true, doi });
+    expect(contentText(result)).toContain(`**Citation** — ${doi}`);
+    expect(http.calls).toHaveLength(1);
+  });
+
   it.each([
     { format: 'bibtex', style: 'ieee' },
     { format: 'csl_json', locale: 'de' },
@@ -612,23 +803,65 @@ describe('declared errors and input', () => {
     expect(http.calls).toHaveLength(0);
   });
 
-  it('reports a 204 as format_unavailable', async () => {
-    const { http } = initServices([
-      {
-        match: negotiation(DOI, {}, 'application/vnd.datacite.datacite+xml'),
-        respond: () => new Response(null, { status: 204 }),
-      },
-    ]);
-    const result = await run({ doi: DOI, format: 'datacite_xml' });
-    const error = expectToolError(result, 'format_unavailable', JsonRpcErrorCode.NotFound);
-    expect(error.message).toBe(
-      'DataCite has no metadata available in datacite_xml for this DOI (HTTP 204).',
-    );
-    expect(contentText(result)).toContain(
-      'Recovery: Request another format such as datacite_json or csl_json',
-    );
-    expect(http.calls).toHaveLength(1);
-  });
+  it.each(
+    UNRENDERABLE.flatMap((answer) =>
+      (['text', 'bibtex', 'datacite_xml'] as const).map((format) => ({ ...answer, format })),
+    ),
+  )(
+    'reports $name for $format as format_unavailable, naming another format, in one request',
+    async ({ format, respond, detail }) => {
+      const { http } = initServices([
+        { match: negotiation(DOI, {}, CITATION_FORMATS[format]), respond },
+      ]);
+      const result = await run({ doi: DOI, format });
+      const error = expectToolError(result, 'format_unavailable', JsonRpcErrorCode.NotFound);
+      const message = `DataCite cannot render this DOI in ${format} (${detail}).`;
+      expect(error.message).toBe(message);
+      expect(error.data).not.toHaveProperty('body');
+      const content = contentText(result);
+      expect(content).toContain(`Error: ${message}`);
+      expect(content).toContain(FORMAT_UNAVAILABLE_RECOVERY);
+      expect(content).toContain('(reason format_unavailable)');
+      expect(http.calls).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    {
+      input: { format: 'codemeta' },
+      mime: 'application/vnd.codemeta.ld+json',
+      query: {},
+      calls: 3,
+    },
+    // Three attempts at the requested rendering, plus the default rendering beside it.
+    { input: { style: 'ieee' }, mime: 'text/x-bibliography', query: { style: 'ieee' }, calls: 4 },
+  ] as const)(
+    'names another format as the next step when DataCite answers 5xx on every attempt for $input',
+    async ({ input, mime, query, calls }) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      const { http } = initServices([
+        {
+          match: negotiation(DOI, query, mime),
+          respond: () =>
+            fixtureResponse('datacite/errors/negotiation-500-unrenderable.json', { status: 500 }),
+        },
+        { match: negotiation(DOI), respond: html(DEFAULT_HTML) },
+      ]);
+      const pending = run({ doi: DOI, ...input });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await pending;
+      const error = expectToolError(result, 'render_failed', JsonRpcErrorCode.ServiceUnavailable);
+      expect(error.message).toBe('DataCite returned HTTP 500. (failed after 3 attempts)');
+      expect(error.data).toMatchObject({ status: 500, retryable: true });
+      const content = contentText(result);
+      expect(content).toContain(
+        'Recovery: Request another format such as datacite_json or csl_json, or call datacite_get_work for the full record; retry this format later, since DataCite also answers a brief outage with HTTP 5xx.',
+      );
+      expect(content).toContain('(reason render_failed · retryable)');
+      expect(http.calls).toHaveLength(calls);
+      expect(getDataCiteService().styleVerdicts.get('ieee')).toBeUndefined();
+    },
+  );
 
   it.each(['10.12/x', '10.5061/', 'https://doi.org/10.5061/'])(
     'rejects %j as invalid_doi before any request',

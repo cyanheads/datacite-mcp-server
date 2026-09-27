@@ -100,6 +100,36 @@ describe('query parse errors', () => {
     expect(error.message).toMatch(/^DataCite could not parse the query syntax: check/);
   });
 
+  it.each([
+    { path: '/dois', fixture: 'token-mgr-error-query.json', position: '(line 1, column 24)' },
+    {
+      path: '/repositories',
+      fixture: 'token-mgr-error-repositories.json',
+      position: '(line 1, column 19)',
+    },
+  ])(
+    'reads a token_mgr_error lexical error from $path as a parse error too',
+    async ({ path, fixture, position }) => {
+      const { svc } = build([
+        { match: dataCite(path), respond: parse400(`datacite/errors/${fixture}`) },
+      ]);
+      const search = (callerQuery: boolean) =>
+        path === '/dois'
+          ? svc.searchWorks({ ...SEARCH, callerQuery }, createMockContext())
+          : svc.searchRepositories(
+              { callerQuery, page: 1, size: 20, query: 'name:"unbalanced' },
+              createMockContext(),
+            );
+      const caller = await rejection(search(true));
+      expect(caller.code).toBe(JsonRpcErrorCode.ValidationError);
+      expect(caller.data?.reason).toBe('invalid_query');
+      expect(caller.message).toContain(position);
+      const server = await rejection(search(false));
+      expect(server.code).toBe(JsonRpcErrorCode.InternalError);
+      expect(server.data?.reason).toBeUndefined();
+    },
+  );
+
   it('reports a parse error on a server-composed query as an InternalError, never invalid_query', async () => {
     const { svc } = build([
       { match: dataCite('/dois'), respond: parse400('datacite/errors/parse-exception-query.json') },
@@ -207,8 +237,8 @@ describe('hydrate batching', () => {
       ),
     );
 
-  it('batches ids= at 100, sends comma DOIs through a doi: query, and keys records by lowercase DOI', async () => {
-    const plain = Array.from({ length: 150 }, (_, i) => `10.5555/n${i}`);
+  it('batches ids= at 10, sends comma DOIs through a doi: query, and keys records by lowercase DOI', async () => {
+    const plain = Array.from({ length: 60 }, (_, i) => `10.5555/n${i}`);
     const comma = ['10.5555/a,b', '10.5555/c,d'];
     const commaQuery = 'doi:("10.5555/a,b" OR "10.5555/c,d")';
     const { http, svc } = build([
@@ -222,13 +252,19 @@ describe('hydrate batching', () => {
         respond: answer([...comma, '10.5555/unrequested']),
       },
     ]);
-    const records = await svc.hydrate([...plain, ...comma], NODE_FIELDS, createMockContext());
+    const { records, unanswered } = await svc.hydrate(
+      [...plain, ...comma],
+      NODE_FIELDS,
+      createMockContext(),
+    );
 
     const urls = requestUrls(http);
-    expect(urls).toHaveLength(3);
-    expect(
-      urls.filter((url) => url.searchParams.has('ids')).map((url) => url.searchParams.get('ids')),
-    ).toEqual([plain.slice(0, 100).join(','), plain.slice(100).join(',')]);
+    expect(urls).toHaveLength(7);
+    const idsUrls = urls.filter((url) => url.searchParams.has('ids'));
+    expect(idsUrls.map((url) => url.searchParams.get('ids'))).toEqual(
+      Array.from({ length: 6 }, (_, i) => plain.slice(i * 10, i * 10 + 10).join(',')),
+    );
+    expect(idsUrls.map((url) => url.searchParams.get('page[size]'))).toEqual(Array(6).fill('10'));
     const byQuery = urls.find((url) => url.searchParams.has('query'));
     expect(Object.fromEntries(byQuery?.searchParams ?? [])).toEqual({
       query: commaQuery,
@@ -240,11 +276,15 @@ describe('hydrate batching', () => {
     });
     expect([...records.keys()]).toEqual([...plain, ...comma]);
     expect(records.get('10.5555/a,b')?.id).toBe('10.5555/A,B');
+    expect(unanswered.size).toBe(0);
   });
 
   it('makes no request for an empty batch', async () => {
     const { http, svc } = build([]);
-    await expect(svc.hydrate([], NODE_FIELDS, createMockContext())).resolves.toEqual(new Map());
+    await expect(svc.hydrate([], NODE_FIELDS, createMockContext())).resolves.toEqual({
+      records: new Map(),
+      unanswered: new Set(),
+    });
     expect(http.calls).toHaveLength(0);
   });
 });

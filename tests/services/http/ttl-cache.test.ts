@@ -86,4 +86,47 @@ describe('TtlCache', () => {
     expect(cache.get('k1')).toBe(1);
     expect(cache.get('k500')).toBe(500);
   });
+
+  it('evicts the least recently used entries until the total bytes fit the budget', () => {
+    const cache = new TtlCache<string>({ maxBytes: 100, now: manualClock().now });
+    cache.set('a', 'A', 1000, 40);
+    cache.set('b', 'B', 1000, 40);
+    expect(cache.get('a')).toBe('A');
+    cache.set('c', 'C', 1000, 40);
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toBe('A');
+    expect(cache.get('c')).toBe('C');
+  });
+
+  it("counts an overwritten entry's bytes once and frees an expired entry's", () => {
+    const clock = manualClock();
+    const cache = new TtlCache<string>({ maxBytes: 100, now: clock.now });
+    cache.set('a', 'A1', 1000, 60);
+    cache.set('a', 'A2', 1000, 60);
+    cache.set('b', 'B', 5000, 40);
+    expect(cache.get('a')).toBe('A2');
+    expect(cache.get('b')).toBe('B');
+    clock.advance(1000);
+    expect(cache.get('a')).toBeUndefined();
+    cache.set('c', 'C', 1000, 60);
+    expect(cache.get('b')).toBe('B');
+    expect(cache.get('c')).toBe('C');
+  });
+
+  it('never stores an entry larger than the whole budget, and drops the key it replaces', () => {
+    const cache = new TtlCache<string>({ maxBytes: 100, now: manualClock().now });
+    cache.set('a', 'A', 1000, 50);
+    cache.set('b', 'B', 1000, 50);
+    cache.set('b', 'huge', 1000, 101);
+    expect(cache.get('b')).toBeUndefined();
+    expect(cache.get('a')).toBe('A');
+  });
+
+  it('defaults to a 50,000,000-byte budget', () => {
+    const cache = new TtlCache<number>({ now: manualClock().now });
+    for (let i = 0; i <= 50; i++) cache.set(`k${i}`, i, 1000, 1_000_000);
+    expect(cache.get('k0')).toBeUndefined();
+    expect(cache.get('k1')).toBe(1);
+    expect(cache.get('k50')).toBe(50);
+  });
 });

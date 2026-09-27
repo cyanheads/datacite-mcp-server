@@ -2,33 +2,41 @@
  * @fileoverview Render-time helpers for depositor- and caller-supplied text in
  * `format()`: inline slots flatten line breaks, table cells also escape `|`,
  * multi-line fields become blockquotes, and machine payloads get a fence longer
- * than any backtick run inside them. `structuredContent` keeps the verbatim text.
+ * than any backtick run inside them. A line break is every character a reader
+ * may split a line on (`normalizeLineBreaks`), not just CR and LF, so none can
+ * end a slot early. `structuredContent` keeps the verbatim text.
  * @module mcp-server/tools/definitions/_text
  */
 
-const LINE_BREAK_RE = /[\r\n\p{Zl}\p{Zp}]+/gu;
+import { normalizeLineBreaks, singleLine } from '@/services/datacite/query-builder.js';
 
-/** Collapses every line break to a space so the value stays in its inline slot. */
-export const flattenInline = (value: string): string => value.replace(LINE_BREAK_RE, ' ').trim();
+/** Collapses each run of line breaks to one space so the value stays in its inline slot. */
+export const flattenInline = singleLine;
 
 /** An inline value for a Markdown table cell: flattened, with `|` escaped. */
 export const tableCell = (value: string): string => flattenInline(value).replace(/\|/g, '\\|');
 
 /** The value as a Markdown blockquote, one `>` per line. */
 export function blockquote(value: string): string {
-  return value
-    .replace(/\r\n?/g, '\n')
+  return normalizeLineBreaks(value)
     .trim()
     .split('\n')
     .map((line) => (line.trim() === '' ? '>' : `> ${line}`))
     .join('\n');
 }
 
-/** A fenced code block whose fence outruns every backtick run in the payload. */
+/**
+ * A fenced code block whose fence outruns every backtick run in the payload.
+ * Linear in the payload: the runs are folded, never spread into an argument
+ * list, and trailing whitespace goes through `trimEnd`, not a backtracking regex.
+ */
 export function fenced(payload: string, language = ''): string {
-  const longestRun = Math.max(0, ...(payload.match(/`+/g) ?? []).map((run) => run.length));
+  const longestRun = (payload.match(/`+/g) ?? []).reduce(
+    (longest, run) => Math.max(longest, run.length),
+    0,
+  );
   const fence = '`'.repeat(Math.max(3, longestRun + 1));
-  return `${fence}${language}\n${payload.replace(/\s+$/, '')}\n${fence}`;
+  return `${fence}${language}\n${payload.trimEnd()}\n${fence}`;
 }
 
 /** `value`, flattened, or the explicit marker for an absent field. */

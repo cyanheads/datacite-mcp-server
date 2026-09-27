@@ -2,7 +2,8 @@
  * @fileoverview Identifier normalizers for the checks finer than a schema
  * pattern: DOI, ORCID iD, ROR ID, Crossref Funder ID, and ISO 639-1 language.
  * Each normalizes what is certain (case, prefixes, URL forms) and reports what
- * is not as `undefined`, leaving the caller to raise its typed reason.
+ * is not as `undefined`, leaving the caller to raise its typed reason. Also
+ * builds a DOI's doi.org URL, the inverse of reading one.
  * @module services/datacite/normalize
  */
 
@@ -26,20 +27,43 @@ function decodeUri(value: string): string {
 
 /**
  * A DOI in its canonical form — trimmed, `doi:` / `info:doi/` / doi.org URL
- * prefix stripped, URI-decoded, lowercased — or `undefined` when the result is
- * not a DOI.
+ * prefix stripped, lowercased — or `undefined` when the result is not a DOI.
+ * A doi.org URL is percent-decoded, as doi.org reads it; any other form only
+ * when it is not already DOI-shaped (`10.5061%2Fdryad.234`), so a literal `%`
+ * in a DOI suffix survives.
  */
 export function normalizeDoi(value: string): string | undefined {
-  let doi = value.trim().replace(DOI_URL_PREFIX_RE, '');
-  doi = doi.replace(/^(?:info:doi\/|doi:)\s*/i, '');
-  if (doi.includes('%')) doi = decodeUri(doi);
-  doi = doi.trim().toLowerCase();
+  const trimmed = value.trim();
+  const written = trimmed.replace(DOI_URL_PREFIX_RE, '').replace(/^(?:info:doi\/|doi:)\s*/i, '');
+  const decode = DOI_URL_PREFIX_RE.test(trimmed) || !DOI_RE.test(written.trim());
+  const doi = (decode ? decodeUri(written) : written).trim().toLowerCase();
   return DOI_RE.test(doi) ? doi : undefined;
 }
+
+/** Runs of characters a URL path cannot carry bare: everything outside RFC 3986 `pchar` and `/`. */
+const DOI_URL_ESCAPE_RE = /[^A-Za-z0-9\-._~!$&'()*+,;=:@/]+/g;
+
+/**
+ * The doi.org URL of a canonical DOI, percent-encoded as the DOI Handbook
+ * specifies (UTF-8, every byte outside the path characters escaped) except that
+ * `/` and `,` stay bare, so `#`, `?`, and a literal `%` remain part of the DOI.
+ */
+export const doiUrl = (doi: string): string =>
+  `https://doi.org/${doi.replace(DOI_URL_ESCAPE_RE, (run) => encodeURIComponent(run))}`;
 
 /** A doi.org / dx.doi.org URL reduced to its DOI, else `undefined`. */
 export function doiFromUrl(value: string): string | undefined {
   return DOI_URL_PREFIX_RE.test(value.trim()) ? normalizeDoi(value) : undefined;
+}
+
+/**
+ * `value` without its trailing slashes. An index scan, not `/\/+$/`, which
+ * backtracks quadratically on a long run of slashes that does not end the value.
+ */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
 }
 
 /** Whether `value` is shaped like an ORCID iD (bare or URL), valid or not. */
@@ -56,7 +80,9 @@ function orcidCheckCharacter(digits: string): string {
 
 /** An ORCID iD as `0000-0002-1825-0097` with its checksum verified, else `undefined`. */
 export function normalizeOrcid(value: string): string | undefined {
-  const bare = value.trim().replace(ORCID_PREFIX_RE, '').replace(/-/g, '').toUpperCase();
+  const bare = trimTrailingSlashes(value.trim().replace(ORCID_PREFIX_RE, ''))
+    .replace(/-/g, '')
+    .toUpperCase();
   if (!/^\d{15}[\dX]$/.test(bare)) return;
   if (orcidCheckCharacter(bare.slice(0, 15)) !== bare[15]) return;
   return bare.replace(/(.{4})(?=.)/g, '$1-');
@@ -68,7 +94,7 @@ export const looksLikeRor = (value: string): boolean =>
 
 /** A ROR ID as its lowercase bare id, else `undefined`. */
 export function normalizeRor(value: string): string | undefined {
-  const bare = value.trim().replace(ROR_PREFIX_RE, '').replace(/\/+$/, '').toLowerCase();
+  const bare = trimTrailingSlashes(value.trim().replace(ROR_PREFIX_RE, '')).toLowerCase();
   return ROR_RE.test(bare) ? bare : undefined;
 }
 

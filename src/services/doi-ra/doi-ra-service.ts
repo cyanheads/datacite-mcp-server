@@ -7,10 +7,15 @@
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { config } from '@cyanheads/mcp-ts-core/config';
-import { internalError, JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { internalError } from '@cyanheads/mcp-ts-core/errors';
 import { createPacer, type Pacer } from '@cyanheads/mcp-ts-core/utils';
 import { TtlCache } from '@/services/http/ttl-cache.js';
-import { type CachedResponse, UpstreamClient, userAgent } from '@/services/http/upstream-client.js';
+import {
+  type CachedResponse,
+  isUnanswered,
+  UpstreamClient,
+  userAgent,
+} from '@/services/http/upstream-client.js';
 
 /** Why DataCite holds no public record for a DOI. */
 export type MissReason = 'other_agency' | 'does_not_exist' | 'not_public' | 'unclassified';
@@ -33,12 +38,6 @@ export interface RegistrationAgencyServiceOptions {
 }
 
 type RaAnswer = Array<{ DOI?: string; RA?: string; status?: string }>;
-
-const TRANSIENT_CODES = new Set([
-  JsonRpcErrorCode.ServiceUnavailable,
-  JsonRpcErrorCode.Timeout,
-  JsonRpcErrorCode.RateLimited,
-]);
 
 /** doi.org registration-agency client. */
 export class RegistrationAgencyService {
@@ -94,9 +93,7 @@ export class RegistrationAgencyService {
         },
       );
     } catch (error) {
-      if (ctx.signal.aborted || !(error instanceof McpError) || !TRANSIENT_CODES.has(error.code)) {
-        throw error;
-      }
+      if (ctx.signal.aborted || !isUnanswered(error)) throw error;
       ctx.log.warning('Registration-agency lookup did not answer', { code: error.code });
       return { missReason: 'unclassified' };
     }

@@ -28,7 +28,9 @@ import {
   RESOURCE_TYPE_IDS,
   resourceTypeLabel,
   SOFTWARE_PLATFORMS,
+  SORT_ORDER_IDS,
   SORT_ORDERS,
+  type SortOrder,
 } from './vocabularies.js';
 
 export const REFERENCE_TOPICS = [
@@ -91,7 +93,7 @@ const CERTIFICATE_DESCRIPTIONS: Record<(typeof CERTIFICATE_IDS)[number], string>
   'DIN 31644': 'DIN 31644 / nestor seal for trustworthy digital archives.',
 };
 
-const SORT_DESCRIPTIONS: Record<keyof typeof SORT_ORDERS, string> = {
+const SORT_DESCRIPTIONS: Record<SortOrder, string> = {
   relevance: 'Best match first. The default when text or query is set.',
   newest: 'Most recently registered first. The default without text or query.',
   oldest: 'Earliest registered first — the order a cursor walk always uses.',
@@ -124,6 +126,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
         })),
         notes: [
           'Edges returned by datacite_trace_relations keep the direction and relationType the asserting record gave; an edge is never inverted into its inverse type.',
+          "The relation_types input of datacite_trace_relations reads each type from the traced DOI's side: HasPart keeps the DOI's own HasPart assertions and the records asserting IsPartOf it. IsPublishedIn and Other have no inverse and match on either side.",
           'Citation counts count IsCitedBy, IsReferencedBy, and IsSupplementTo on the cited DOI, or Cites, References, and IsSupplementedBy on the citing one.',
           'Event Data carries only the citations group (Cites, IsCitedBy, References, IsReferencedBy, IsSupplementTo, IsSupplementedBy).',
           'relatedIdentifiers.relationType in query syntax is case-sensitive; the relation_types input of datacite_trace_relations is not.',
@@ -219,7 +222,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
     case 'sort_orders':
       return {
         title: 'Work search sort orders',
-        entries: (Object.keys(SORT_ORDERS) as (keyof typeof SORT_ORDERS)[]).map((value) => ({
+        entries: SORT_ORDER_IDS.map((value) => ({
           value,
           label: `sort=${SORT_ORDERS[value]}`,
           description: SORT_DESCRIPTIONS[value],
@@ -235,7 +238,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
         entries: VERIFIED_QUERY_FIELDS.map(({ value, description }) => ({ value, description })),
         notes: [
           'query takes OpenSearch query-string syntax: field:value, field:"exact phrase", AND / OR / NOT (uppercase), parentheses, ranges field:[a TO b], and wildcards (* ?).',
-          'Reserved characters + - = && || > < ! ( ) { } [ ] ^ " ~ * ? : \\ / must be escaped with a backslash to be searched literally.',
+          'Reserved characters + - = && || > < ! ( ) { } [ ] ^ " ~ * ? : \\ must be escaped with a backslash to be searched literally. Leave / bare (10.5061/dryad.234): DataCite escapes it itself, and a pre-escaped \\/ fails as a syntax error.',
           'The colon trap: "Climate change: impacts" reads change as a field name and silently returns zero. Put plain words in text instead — it escapes every reserved character and cannot produce a syntax error.',
           'A field that does not exist matches nothing rather than failing, so a misspelled field returns zero hits.',
         ],
@@ -286,6 +289,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
             .map(([language, locale]) => `${language} → ${locale}`)
             .join(', ')}.`,
           'Omitted, the rendering is US English (en-US). A locale outside this list is rejected, because the upstream silently renders the whole citation as APA en-US for it.',
+          "CSL's tl-PH (Tagalog) and hy-AM (Armenian) are not listed and are rejected: DataCite renders the whole citation as APA in US English for them.",
         ],
       };
     case 'identifier_formats':
@@ -296,7 +300,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
             value: 'DOI',
             label: '10.5061/dryad.234',
             description:
-              'Also doi:…, info:doi/…, https://doi.org/…, http://dx.doi.org/…, or a %2F-encoded DOI. Trimmed, prefix stripped, decoded, lowercased; must match 10.<4–9 digits>/<suffix>.',
+              'Also doi:…, info:doi/…, https://doi.org/…, http://dx.doi.org/…, or a %2F-encoded DOI. Trimmed, prefix stripped, lowercased; must match 10.<4–9 digits>/<suffix>. A doi.org URL is percent-decoded; other forms only when not already DOI-shaped, so a DOI containing a literal % is passed as written.',
           },
           {
             value: 'ORCID iD',

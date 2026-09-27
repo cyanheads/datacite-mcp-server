@@ -93,6 +93,22 @@ export const hang = (request: Request): Promise<Response> =>
     request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true });
   });
 
+/**
+ * Every line break beyond LF and CR that a reader may split a line on: the other
+ * mandatory breaks of Unicode line breaking (UAX #14), and the file, group, and
+ * record separators Python's `str.splitlines` also splits on.
+ */
+export const OTHER_LINE_BREAKS = [
+  ['VT', '\v'],
+  ['FF', '\f'],
+  ['FS', '\x1c'],
+  ['GS', '\x1d'],
+  ['RS', '\x1e'],
+  ['NEL', '\u0085'],
+  ['LS', '\u{2028}'],
+  ['PS', '\u{2029}'],
+] as const;
+
 /** A clock the test advances by hand, for `TtlCache({ now })`. */
 export interface ManualClock {
   advance(ms: number): void;

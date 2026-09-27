@@ -441,6 +441,25 @@ describe('declared errors', () => {
     expect(http.calls).toHaveLength(1);
   });
 
+  it('reports a lexical error (an unterminated quote) on the caller query as invalid_query', async () => {
+    const { http } = initServices([
+      {
+        match: repositories,
+        respond: fixtureResponse('datacite/errors/token-mgr-error-repositories.json', {
+          status: 400,
+        }),
+      },
+    ]);
+    const result = await run({ query: 'name:"unbalanced' });
+    const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toContain('(line 1, column 19)');
+    expect(contentText(result)).toContain('(line 1, column 19)');
+    expect(contentText(result)).toContain(
+      'Recovery: Fix the query syntax, or search a plain repository name',
+    );
+    expect(http.calls).toHaveLength(1);
+  });
+
   it('reports the same parse error on a call without query as an InternalError', async () => {
     initServices([
       {

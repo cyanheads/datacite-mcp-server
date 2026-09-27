@@ -20,8 +20,24 @@ import {
 } from '@/services/reference/citation.js';
 import { buildResolver } from '@/services/reference/lookup.js';
 import { missFields, missGuidance } from './_miss.js';
-import { blankAsUnset, doiString, enumish, optionalString } from './_schemas.js';
-import { blockquote, fenced, flattenInline } from './_text.js';
+import { blankAsUnset, doiString, enumish, MAX_CHARS, optionalString } from './_schemas.js';
+import { blockquote, fenced, flattenInline, num } from './_text.js';
+
+/**
+ * The most of one upstream payload this tool returns, in characters (string
+ * length). A record with thousands of related identifiers renders to megabytes.
+ */
+const MAX_PAYLOAD_CHARS = 100_000;
+
+/** `text` cut to at most `max` characters, never between the halves of a surrogate pair. */
+function cutAt(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const last = text.charCodeAt(max - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
+const cutNotice = (format: CitationFormat, total: number, shown: number): string =>
+  `The ${format} payload runs to ${num(total)} characters, past the ${num(MAX_PAYLOAD_CHARS)} this tool returns, so it is cut to its first ${num(shown)}. datacite_get_work returns the record with each long list capped and its full count reported.`;
 
 const resolveFormat = buildResolver(
   CITATION_FORMAT_IDS.map((id) => ({
@@ -42,6 +58,13 @@ const FENCE_LANGUAGE: Record<CitationFormat, string> = {
   codemeta: 'json',
   jats: 'xml',
 };
+
+/** How DataCite said it cannot render a DOI in a format, by the status it answered. */
+const NO_RENDERING = {
+  200: 'HTTP 200 with an empty body',
+  204: 'HTTP 204, no metadata available',
+  400: 'HTTP 400 from its renderer',
+} as const;
 
 export const getCitationTool = tool('datacite_get_citation', {
   title: 'Get DataCite citation',
@@ -68,7 +91,7 @@ export const getCitationTool = tool('datacite_get_citation', {
     {
       reason: 'unsupported_locale',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'locale is not a CSL locale.',
+      when: 'locale is not a CSL locale DataCite renders (CSL locales tl-PH and hy-AM render as APA in US English).',
       severity: 'notice',
       recovery:
         'Pass a CSL locale such as en-GB, de-DE, or fr-FR from datacite_list_reference topic citation_locales, or omit locale for US English.',
@@ -84,10 +107,19 @@ export const getCitationTool = tool('datacite_get_citation', {
     {
       reason: 'format_unavailable',
       code: JsonRpcErrorCode.NotFound,
-      when: 'DataCite answers 204: no metadata is available in that format for this DOI.',
+      when: 'DataCite cannot render this DOI in the requested format: it answers HTTP 204, HTTP 200 with an empty body, or HTTP 400.',
       severity: 'info',
       recovery:
         'Request another format such as datacite_json or csl_json, or call datacite_get_work for the full record.',
+    },
+    {
+      reason: 'render_failed',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'DataCite answered HTTP 5xx on every attempt; a renderer fault on this record and a brief outage give the same status.',
+      retryable: true,
+      thrownBy: 'service',
+      recovery:
+        'Request another format such as datacite_json or csl_json, or call datacite_get_work for the full record; retry this format later, since DataCite also answers a brief outage with HTTP 5xx.',
     },
     {
       reason: 'rate_limited',
@@ -102,7 +134,7 @@ export const getCitationTool = tool('datacite_get_citation', {
 
   input: z.object({
     doi: doiString().describe(
-      'The DataCite DOI, e.g. 10.5061/dryad.234. Bare, doi:, or a doi.org URL; case-insensitive.',
+      'The DataCite DOI, e.g. 10.5061/dryad.234. Accepted bare, with doi: or info:doi/ prefixes, as a doi.org / dx.doi.org URL, or %2F-encoded; case-insensitive.',
     ),
     format: blankAsUnset(enumish(CITATION_FORMAT_IDS, resolveFormat).default('text')).describe(
       'text (formatted citation, default), csl_json, bibtex, ris, datacite_json, datacite_xml, schema_org, codemeta, or jats.',
@@ -110,6 +142,7 @@ export const getCitationTool = tool('datacite_get_citation', {
     style: optionalString(
       z
         .string()
+        .max(MAX_CHARS.style)
         .regex(
           /^\s*[A-Za-z0-9-]+\s*$/,
           'Expected a CSL style id of letters, digits, and hyphens, such as apa, ieee, or chicago-author-date; verified ids: datacite_list_reference topic citation_styles.',
@@ -144,20 +177,35 @@ export const getCitationTool = tool('datacite_get_citation', {
       .string()
       .optional()
       .describe(
-        'text: the citation as plain text (tags stripped, entities decoded); machine formats: the payload verbatim.',
+        'text: the citation as plain text (tags stripped, entities decoded); machine formats: the payload verbatim. A payload over 100,000 characters is cut to its first 100,000 (truncated: true).',
       ),
     citationHtml: z
       .string()
       .optional()
-      .describe('text only: the upstream HTML markup verbatim (<i>, &amp;, small caps).'),
+      .describe(
+        'text only: the upstream HTML markup verbatim (<i>, &amp;, small caps), cut like citation.',
+      ),
     ...missFields,
   }),
 
   enrichment: {
+    truncated: z
+      .boolean()
+      .optional()
+      .describe('True when the payload ran past 100,000 characters and was cut.'),
+    shown: z
+      .number()
+      .optional()
+      .describe(
+        "Characters of DataCite's payload kept; for text, citation and citationHtml derive from them.",
+      ),
+    cap: z.number().optional().describe('The character cap applied: 100,000.'),
     notice: z
       .string()
       .optional()
-      .describe('Set when the style could not be confirmed as distinct from APA.'),
+      .describe(
+        'Set when the style could not be confirmed as distinct from APA, or when the payload was cut (its full length and the cut).',
+      ),
   },
 
   async handler(input, ctx) {
@@ -180,7 +228,7 @@ export const getCitationTool = tool('datacite_get_citation', {
     if (input.locale && !locale) {
       throw ctx.fail(
         'unsupported_locale',
-        'locale is not a CSL locale; the upstream would silently render an unknown locale as APA in US English.',
+        'locale is not a CSL locale DataCite renders; DataCite would silently render the whole citation as APA in US English.',
         ctx.recoveryFor('unsupported_locale'),
       );
     }
@@ -201,7 +249,7 @@ export const getCitationTool = tool('datacite_get_citation', {
     if (outcome.kind === 'no_content') {
       throw ctx.fail(
         'format_unavailable',
-        `DataCite has no metadata available in ${input.format} for this DOI (HTTP 204).`,
+        `DataCite cannot render this DOI in ${input.format} (${NO_RENDERING[outcome.status]}).`,
         ctx.recoveryFor('format_unavailable'),
       );
     }
@@ -212,11 +260,22 @@ export const getCitationTool = tool('datacite_get_citation', {
         doi,
         format: input.format,
         ...miss,
-        guidance: missGuidance(doi, miss, 'citation'),
+        guidance: missGuidance(doi, miss, input.format),
       };
     }
 
-    if (outcome.notice) ctx.enrich.notice(outcome.notice);
+    const payload = cutAt(outcome.body, MAX_PAYLOAD_CHARS);
+    if (payload.length < outcome.body.length) {
+      ctx.enrich.truncated({
+        shown: payload.length,
+        cap: MAX_PAYLOAD_CHARS,
+        guidance: [outcome.notice, cutNotice(input.format, outcome.body.length, payload.length)]
+          .filter(Boolean)
+          .join(' '),
+      });
+    } else if (outcome.notice) {
+      ctx.enrich.notice(outcome.notice);
+    }
     const isText = input.format === 'text';
     return {
       found: true,
@@ -225,8 +284,8 @@ export const getCitationTool = tool('datacite_get_citation', {
       mediaType: CITATION_FORMATS[input.format],
       ...(isText && { style: style ?? 'apa' }),
       ...(isText && locale && { locale }),
-      citation: isText ? htmlToText(outcome.body) : outcome.body,
-      ...(isText && { citationHtml: outcome.body.trim() }),
+      citation: isText ? htmlToText(payload) : payload,
+      ...(isText && { citationHtml: payload.trim() }),
     };
   },
 

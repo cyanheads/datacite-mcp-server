@@ -302,6 +302,25 @@ describe('response cache', () => {
     expect(perDoi).toEqual([1, 2, 2]);
   });
 
+  it('keeps cached bodies within 50,000,000 bytes, evicting the least recently used', async () => {
+    const body = 'a'.repeat(999_000);
+    const { http, svc } = build([
+      {
+        match: (request) =>
+          new URL(request.url).pathname.startsWith('/dois/text/x-bibliography/10.5555'),
+        respond: () => text(body),
+      },
+    ]);
+    const render = (n: number) =>
+      svc.negotiate(`10.5555/c${n}`, 'text/x-bibliography', {}, createMockContext());
+    for (let n = 0; n < 60; n++) await render(n);
+    expect(http.calls).toHaveLength(60);
+    await render(59);
+    expect(http.calls).toHaveLength(60);
+    await render(0);
+    expect(http.calls).toHaveLength(61);
+  });
+
   it('never caches a response that failed to parse or a status outside the accept-list', async () => {
     const { http, svc } = build([
       {
@@ -432,6 +451,131 @@ describe('response handling', () => {
     expect(error.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
     expect(error.data?.reason).not.toBe('invalid_query');
     expect(http.calls).toHaveLength(3);
+  });
+});
+
+describe('error bodies', () => {
+  it('classifies a parse error from the head of an endless 400 body and cancels the rest unread', async () => {
+    const head = new TextEncoder().encode(
+      '{"errors":{"title":"parse_exception: Encountered \\"<EOF>\\" at line 1, column 12."}}',
+    );
+    let pulls = 0;
+    let cancelled = false;
+    const endless = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            pulls += 1;
+            controller.enqueue(pulls === 1 ? head : new Uint8Array(1024).fill(0x20));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 400 },
+      );
+    const { http, svc } = build([{ match: dataCite('/dois'), respond: endless }]);
+    const error = errorOf(
+      await settle(
+        svc.searchWorks(
+          { ...SEARCH, query: 'titles.title:(glacier', callerQuery: true },
+          createMockContext(),
+        ),
+      ),
+    );
+    expect(error.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(error.data?.reason).toBe('invalid_query');
+    expect(error.message).toContain('(line 1, column 12)');
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(4);
+    expect(http.calls).toHaveLength(1);
+  });
+});
+
+describe('response size', () => {
+  const MB = 1_000_000;
+  const MIME = 'application/vnd.datacite.datacite+json';
+
+  /** A 200 whose body streams `total` bytes in 1 MB chunks, recording pulls and a cancel. */
+  function streamed(total: number) {
+    const chunk = new Uint8Array(MB).fill(0x61);
+    const state = { pulls: 0, cancelled: false };
+    const respond = () => {
+      let sent = 0;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            state.pulls += 1;
+            const size = Math.min(MB, total - sent);
+            if (size <= 0) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(chunk.subarray(0, size));
+            sent += size;
+          },
+          cancel() {
+            state.cancelled = true;
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    return { respond, state };
+  }
+
+  const render = (svc: DataCiteService) =>
+    svc.negotiate('10.5555/big', MIME, {}, createMockContext());
+
+  it('reads a body of exactly 32,000,000 bytes', async () => {
+    const { respond } = streamed(32 * MB);
+    const { svc } = build([{ match: dataCite(`/dois/${MIME}/10.5555%2Fbig`), respond }]);
+    const result = await render(svc);
+    expect(result.body).toHaveLength(32 * MB);
+  });
+
+  it('stops reading past 32,000,000 bytes and fails as ServiceUnavailable after one request', async () => {
+    const { respond, state } = streamed(40 * MB);
+    const { http, svc } = build([{ match: dataCite(`/dois/${MIME}/10.5555%2Fbig`), respond }]);
+    const error = errorOf(await settle(render(svc)));
+    expect(error.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(error.message).toBe(
+      'DataCite answered with more than 32 MB, the most this server reads from one response, so the answer was not read; the record or page is too large to return, and a retry gets the same answer.',
+    );
+    expect(error.data).toEqual({ maxBytes: 32 * MB, retryable: false });
+    expect(state.cancelled).toBe(true);
+    expect(state.pulls).toBeLessThanOrEqual(34);
+    expect(http.calls).toHaveLength(1);
+  });
+});
+
+describe('redirects', () => {
+  const redirect = () =>
+    new Response('<html>Moved</html>', {
+      status: 301,
+      headers: { location: 'https://attacker.example/steal' },
+    });
+
+  it('never follows a redirect: one request, sent with redirect "manual", failing as ServiceUnavailable', async () => {
+    const { http, svc } = build([{ match: dataCite('/dois'), respond: redirect }]);
+    const error = errorOf(await settle(lookup(svc, 1)));
+    expect(error.code).toBe(JsonRpcErrorCode.ServiceUnavailable);
+    expect(error.message).toBe(
+      'DataCite answered with a redirect (HTTP 301), which this server does not follow.',
+    );
+    expect(error.data).toEqual({ status: 301, retryable: false });
+    expect(http.calls).toHaveLength(1);
+    expect(http.calls[0]?.request.redirect).toBe('manual');
+  });
+
+  it('degrades a redirected registration-agency lookup to unclassified after one request', async () => {
+    const http = createFetchMock([{ match: doiRa('10.5555/x'), respond: redirect }]);
+    const ra = buildRa(http, new TtlCache<CachedResponse>());
+    await expect(ra.classifyMiss('10.5555/x', createMockContext())).resolves.toEqual({
+      missReason: 'unclassified',
+    });
+    expect(http.calls).toHaveLength(1);
+    expect(http.calls[0]?.request.redirect).toBe('manual');
   });
 });
 

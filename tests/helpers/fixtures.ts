@@ -16,9 +16,14 @@ import { json } from './harness.js';
  * Recorded files:
  * - `datacite/errors/` — `parse-exception-query.json` and
  *   `parse-exception-repositories.json` (HTTP 400 `parse_exception`, "line 1,
- *   column 12"), `failed-to-parse-date.json` (HTTP 400 `failed to parse`),
+ *   column 12"), `token-mgr-error-query.json` and `token-mgr-error-repositories.json`
+ *   (HTTP 400 `token_mgr_error` lexical errors from an unterminated quote, "line
+ *   1, column 24" and "column 19"), `failed-to-parse-date.json` (HTTP 400 `failed to parse`),
  *   `transient-500-claims-400.json` (HTTP 500 whose body says `"status":400` /
- *   `[503] No server available`), `negotiation-404.json`.
+ *   `[503] No server available`), `negotiation-404.json`,
+ *   `negotiation-400-unrenderable.json` (HTTP 400 for the default text of a
+ *   record DataCite cannot render), `negotiation-500-unrenderable.json` (HTTP
+ *   500 for codemeta on such a record, its body claiming `"status":400`).
  * - `datacite/works/` — `search-glacier.json` (3 rows + included client
  *   `gbif.col` → provider `gbif`), `facets.json` (every mapped facet group,
  *   `total` 135809087), `page-ceiling-clamped.json` (page 101 requested,

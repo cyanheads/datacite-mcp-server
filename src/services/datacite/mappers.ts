@@ -5,7 +5,7 @@
  * @module services/datacite/mappers
  */
 
-import { normalizeOrcid, normalizeRor } from './normalize.js';
+import { doiUrl, normalizeOrcid, normalizeRor } from './normalize.js';
 import type {
   RawClientResource,
   RawCreator,
@@ -17,6 +17,14 @@ import type {
 /** A non-blank trimmed string, else `undefined`. */
 export const text = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+
+/** The non-blank trimmed strings of a list, blanks and non-strings dropped. */
+const texts = (values: readonly unknown[] | null | undefined): string[] =>
+  (values ?? []).flatMap((value) => text(value) ?? []);
+
+/** A record's DOI, lowercase. */
+export const recordDoi = (record: RawDoiResource): string =>
+  (record.attributes.doi ?? record.id).toLowerCase();
 
 const finite = (value: number | null | undefined): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
@@ -91,7 +99,7 @@ export function mapWorkRow(
   const a = record.attributes;
   const clientId = record.relationships?.client?.data?.id;
   const client = clientId ? clients.get(clientId) : undefined;
-  const creators = (a.creators ?? []).map((c) => text(c.name)).filter((n): n is string => !!n);
+  const creators = texts(a.creators?.map((c) => c.name));
   const descriptions = a.descriptions ?? [];
   const description = text(
     (
@@ -104,7 +112,7 @@ export function mapWorkRow(
       ? `${sliceSafe(description, SNIPPET_LENGTH).trimEnd()}…`
       : description;
   return {
-    doi: (a.doi ?? record.id).toLowerCase(),
+    doi: recordDoi(record),
     ...opt('title', firstTitle(a)),
     creators: creators.slice(0, 5),
     creatorCount: creators.length,
@@ -116,9 +124,7 @@ export function mapWorkRow(
     ...opt('repositoryName', text(client?.attributes.name)),
     ...opt('providerId', clientProvider(client)),
     ...opt('version', text(a.version)),
-    licenses: (a.rightsList ?? [])
-      .map((r) => text(r.rightsIdentifier))
-      .filter((l): l is string => !!l),
+    licenses: texts(a.rightsList?.map((r) => r.rightsIdentifier)),
     ...opt('citationCount', finite(a.citationCount)),
     ...opt('viewCount', finite(a.viewCount)),
     ...opt('downloadCount', finite(a.downloadCount)),
@@ -221,7 +227,7 @@ export interface TruncatedList {
 /** Maps a full `/dois` record to the found arm of `datacite_get_work`, with list caps applied. */
 export function mapWork(record: RawDoiResource, client: RawClientResource | undefined) {
   const a = record.attributes;
-  const doi = (a.doi ?? record.id).toLowerCase();
+  const doi = recordDoi(record);
   const truncatedLists: TruncatedList[] = [];
   const cap = <T>(field: keyof typeof RECORD_LIST_CAPS, items: T[]): T[] => {
     const limit = RECORD_LIST_CAPS[field];
@@ -243,14 +249,13 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
       },
     ];
   });
-  const relatedIdentifierCounts: Record<string, number> = {};
+  // Counted in a Map: relationType is depositor text, and a plain object would read `constructor` off its prototype.
+  const relationCounts = new Map<string, number>();
   for (const r of relatedIdentifiers) {
-    relatedIdentifierCounts[r.relationType] = (relatedIdentifierCounts[r.relationType] ?? 0) + 1;
+    relationCounts.set(r.relationType, (relationCounts.get(r.relationType) ?? 0) + 1);
   }
 
-  const contentUrls = (Array.isArray(a.contentUrl) ? a.contentUrl : [a.contentUrl])
-    .map(text)
-    .filter((u): u is string => !!u);
+  const contentUrls = texts(Array.isArray(a.contentUrl) ? a.contentUrl : [a.contentUrl]);
   const publisherRor =
     typeof a.publisher === 'object' &&
     a.publisher &&
@@ -261,7 +266,7 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
   const clientId = record.relationships?.client?.data?.id;
 
   const work = {
-    doiUrl: `https://doi.org/${doi}`,
+    doiUrl: doiUrl(doi),
     ...opt('landingUrl', text(a.url)),
     ...(contentUrls.length > 0 && { contentUrls }),
     titles: (a.titles ?? []).flatMap((t) => {
@@ -349,15 +354,15 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
       return Object.keys(entry).length > 0 ? [entry] : [];
     }),
     metadataLicense: 'CC0-1.0' as const,
-    sizes: (a.sizes ?? []).map(text).filter((s): s is string => !!s),
-    formats: (a.formats ?? []).map(text).filter((f): f is string => !!f),
+    sizes: texts(a.sizes),
+    formats: texts(a.formats),
     alternateIdentifiers: (a.identifiers ?? []).flatMap((i) => {
       const identifier = text(i.identifier);
       const identifierType = text(i.identifierType);
       return identifier && identifierType ? [{ identifier, identifierType }] : [];
     }),
     relatedIdentifiers: cap('relatedIdentifiers', relatedIdentifiers),
-    relatedIdentifierCounts,
+    relatedIdentifierCounts: Object.fromEntries(relationCounts),
     relatedItems: cap(
       'relatedItems',
       (a.relatedItems ?? []).flatMap((item) => {
@@ -410,11 +415,11 @@ export function mapRepository(resource: RawClientResource) {
     ...opt('alternateName', text(a.alternateName)),
     ...opt('providerId', resource.relationships?.provider?.data?.id),
     ...opt('clientType', text(a.clientType)),
-    repositoryTypes: (a.repositoryType ?? []).map(text).filter((t): t is string => !!t),
-    certificates: (a.certificate ?? []).map(text).filter((c): c is string => !!c),
+    repositoryTypes: texts(a.repositoryType),
+    certificates: texts(a.certificate),
     ...opt('software', text(a.software)),
-    subjects: (a.subjects ?? []).map((s) => text(s.subject)).filter((s): s is string => !!s),
-    language: (a.language ?? []).map(text).filter((l): l is string => !!l),
+    subjects: texts(a.subjects?.map((s) => s.subject)),
+    language: texts(a.language),
     ...opt('url', text(a.url)),
     ...opt('re3data', text(a.re3data)),
     ...opt('opendoar', text(a.opendoar)),

@@ -6,19 +6,34 @@
  * @module services/datacite/query-builder
  */
 
-/** Characters OpenSearch query-string syntax reserves (escaped with a backslash). */
-const RESERVED_RE = /[+\-=&|!(){}[\]^"~*?:\\/]/g;
+/**
+ * Characters OpenSearch query-string syntax reserves (escaped with a backslash),
+ * minus `/`: DataCite escapes `/` itself before parsing, so a pre-escaped `\/`
+ * reaches the parser as `\\/`, a literal backslash followed by an unterminated regex.
+ */
+const RESERVED_RE = /[+\-=&|!(){}[\]^"~*?:\\]/g;
 
-/** Any line break, including the Unicode line and paragraph separators. */
-const LINE_BREAK_RE = /[\r\n\p{Zl}\p{Zp}]+/gu;
+/**
+ * One line break, CRLF counted once: any character a reader may split a line on.
+ * That is LF, VT, FF, CR, NEL, U+2028, and U+2029 (every mandatory break in
+ * Unicode line breaking, UAX #14), plus U+001C–U+001E, which Python's
+ * `str.splitlines` also splits on.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: U+001C–U+001E are matched on purpose; Python's str.splitlines breaks lines on them.
+const LINE_BREAK_RE = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u{2028}\u{2029}]/gu;
 
-/** Collapses line breaks to a space; query syntax reads both as whitespace. */
-export const singleLine = (value: string): string => value.replace(LINE_BREAK_RE, ' ').trim();
+/** `value` with every line break as `\n`, so one split or collapse covers them all. */
+export const normalizeLineBreaks = (value: string): string => value.replace(LINE_BREAK_RE, '\n');
+
+/** Collapses each run of line breaks to one space; query syntax reads both as whitespace. */
+export const singleLine = (value: string): string =>
+  normalizeLineBreaks(value).replace(/\n+/g, ' ').trim();
 
 /**
  * Plain words and phrases as a query clause that can never be a syntax error:
- * every reserved character escaped, `<` and `>` (which cannot be escaped)
- * removed, and standalone `AND` / `OR` / `NOT` lowercased so they read as words.
+ * every reserved character but `/` escaped (DataCite escapes that one), `<` and
+ * `>` (which cannot be escaped) removed, and standalone `AND` / `OR` / `NOT`
+ * lowercased so they read as words.
  */
 export function escapeQueryText(text: string): string {
   return singleLine(text)

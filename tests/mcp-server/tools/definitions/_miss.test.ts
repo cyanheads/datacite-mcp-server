@@ -19,17 +19,56 @@ describe('missGuidance', () => {
     );
   });
 
-  it('points a citation request at the other agency’s own content negotiation', () => {
+  it.each([
+    ['text', 'text/x-bibliography'],
+    ['csl_json', 'application/vnd.citationstyles.csl+json'],
+    ['bibtex', 'application/x-bibtex'],
+    ['ris', 'application/x-research-info-systems'],
+  ] as const)(
+    'points a %s request at the other agency’s own content negotiation for %s',
+    (format, mime) => {
+      const text = missGuidance(
+        DOI,
+        { missReason: 'other_agency', registrationAgency: 'Crossref' },
+        format,
+      );
+      expect(text).toBe(
+        `10.1038/nature12373 is registered with Crossref, not DataCite, so DataCite cannot format it. Request it from Crossref's own content negotiation at https://doi.org/10.1038/nature12373 (for example with Accept: ${mime}), or call datacite_trace_relations to find DataCite works linked to it.`,
+      );
+    },
+  );
+
+  it.each([
+    ['datacite_json', 'DataCite JSON'],
+    ['datacite_xml', 'DataCite XML'],
+    ['schema_org', 'Schema.org JSON-LD'],
+    ['codemeta', 'Codemeta JSON-LD'],
+    ['jats', 'JATS XML'],
+  ] as const)(
+    'says only DataCite serves %s and points at a common format the other agency serves',
+    (format, label) => {
+      const text = missGuidance(
+        DOI,
+        { missReason: 'other_agency', registrationAgency: 'Crossref' },
+        format,
+      );
+      expect(text).toBe(
+        `10.1038/nature12373 is registered with Crossref, not DataCite, so DataCite cannot format it, and only DataCite's content negotiation serves ${label}. Request CSL JSON or BibTeX from Crossref's own content negotiation at https://doi.org/10.1038/nature12373 (for example with Accept: application/vnd.citationstyles.csl+json), or call datacite_trace_relations to find DataCite works linked to it.`,
+      );
+    },
+  );
+
+  it('percent-encodes the doi.org link to another agency’s DOI, keeping the DOI itself as written', () => {
+    const doi = '10.1002/(sici)1097-4636(199706)35:4<460::aid-jbm6>3.0.co;2-6';
     const text = missGuidance(
-      DOI,
+      doi,
       { missReason: 'other_agency', registrationAgency: 'Crossref' },
-      'citation',
+      'text',
     );
+    expect(text.startsWith(`${doi} is registered with Crossref`)).toBe(true);
     expect(text).toContain(
-      "Request it from Crossref's own content negotiation at https://doi.org/10.1038/nature12373",
+      'content negotiation at https://doi.org/10.1002/(sici)1097-4636(199706)35:4%3C460::aid-jbm6%3E3.0.co;2-6 (for example',
     );
-    expect(text).toContain('Accept: text/x-bibliography');
-    expect(text).toContain('datacite_trace_relations');
   });
 
   it.each([
@@ -42,7 +81,8 @@ describe('missGuidance', () => {
       const record = missGuidance(DOI, { missReason }, 'record');
       expect(record).toContain(expected);
       expect(record).toContain('datacite_search_works');
-      expect(missGuidance(DOI, { missReason }, 'citation')).toBe(record);
+      expect(missGuidance(DOI, { missReason }, 'bibtex')).toBe(record);
+      expect(missGuidance(DOI, { missReason }, 'jats')).toBe(record);
     },
   );
 });

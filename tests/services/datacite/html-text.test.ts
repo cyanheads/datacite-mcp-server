@@ -45,4 +45,15 @@ describe('htmlToText', () => {
   it('collapses whitespace, non-breaking and thin spaces included, and trims', () => {
     expect(htmlToText('  a\n\n b&nbsp;c&thinsp;d\t ')).toBe('a b c d');
   });
+
+  it('keeps a long run of unclosed angle brackets, in linear time', () => {
+    const run = `${'<'.repeat(100_000)}x`;
+    const start = performance.now();
+    expect(htmlToText(run)).toBe(run);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+
+  it('keeps a stray < as text rather than dropping everything up to the next tag', () => {
+    expect(htmlToText('T < 5 K, <i>in situ</i>')).toBe('T < 5 K, in situ');
+  });
 });

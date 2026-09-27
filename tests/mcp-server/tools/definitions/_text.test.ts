@@ -13,6 +13,7 @@ import {
   orNA,
   tableCell,
 } from '@/mcp-server/tools/definitions/_text.js';
+import { OTHER_LINE_BREAKS } from '../../../helpers/harness.js';
 
 describe('flattenInline', () => {
   it('collapses every kind of line break to one space and trims', () => {
@@ -20,11 +21,19 @@ describe('flattenInline', () => {
       'Title # Injected heading more x y',
     );
   });
+
+  it.each(OTHER_LINE_BREAKS)('flattens %s like LF, a run of them to one space', (_name, sep) => {
+    expect(flattenInline(`a${sep}## x${sep}${sep}- y${sep}`)).toBe('a ## x - y');
+  });
 });
 
 describe('tableCell', () => {
   it('flattens and escapes pipes so a value cannot open a new column', () => {
     expect(tableCell('a | b\n| c')).toBe('a \\| b \\| c');
+  });
+
+  it.each(OTHER_LINE_BREAKS)('keeps a row on one line across %s', (_name, sep) => {
+    expect(tableCell(`a${sep}| b |`)).toBe('a \\| b \\|');
   });
 });
 
@@ -34,6 +43,13 @@ describe('blockquote', () => {
       '> First line\n>\n> # not a heading\n> last',
     );
   });
+
+  it.each(OTHER_LINE_BREAKS)(
+    'starts a quoted line at %s, marking a doubled one blank',
+    (_name, sep) => {
+      expect(blockquote(`${sep}a${sep}## x${sep}${sep}- y${sep}`)).toBe('> a\n> ## x\n>\n> - y');
+    },
+  );
 });
 
 describe('fenced', () => {
@@ -46,6 +62,18 @@ describe('fenced', () => {
     const block = fenced(payload);
     expect(block).toBe(`\`\`\`\`\`\n${payload}\n\`\`\`\`\``);
     expect(block.split('\n')[0]).toHaveLength(5);
+  });
+
+  it('trims trailing whitespace in linear time when a long whitespace run sits mid-payload', () => {
+    const payload = `${' '.repeat(100_000)}x`;
+    const start = performance.now();
+    expect(fenced(`${payload} \n\t`)).toBe(`\`\`\`\n${payload}\n\`\`\``);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+
+  it('sizes the fence over 200,000 backtick runs without exhausting the stack', () => {
+    const payload = `${'`a'.repeat(200_000)}\`\`\`\`b`;
+    expect(fenced(payload)).toBe(`\`\`\`\`\`\n${payload}\n\`\`\`\`\``);
   });
 });
 

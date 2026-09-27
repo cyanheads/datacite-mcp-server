@@ -1,7 +1,8 @@
 /**
  * @fileoverview Citation vocabularies: the content-negotiation formats and their
  * media types, the CSL styles verified to render distinctly upstream, the known
- * silent fallbacks, and the 63 CSL locales with their primary dialects.
+ * silent fallbacks, and the CSL locales DataCite renders with their primary
+ * dialects.
  * @module services/reference/citation
  */
 
@@ -22,6 +23,18 @@ export const CITATION_FORMAT_IDS = Object.keys(CITATION_FORMATS) as [
   CitationFormat,
   ...CitationFormat[],
 ];
+
+/**
+ * Formats another registration agency's content negotiation also serves
+ * (Crossref, verified live). The other five are DataCite's alone: Crossref
+ * answers them 406.
+ */
+export const CROSS_AGENCY_FORMATS: ReadonlySet<CitationFormat> = new Set([
+  'text',
+  'csl_json',
+  'bibtex',
+  'ris',
+]);
 
 export const CITATION_FORMAT_LABELS: Record<CitationFormat, string> = {
   text: 'Formatted citation (CSL style + locale)',
@@ -83,7 +96,11 @@ export const FALLBACK_CITATION_STYLES: ReadonlyArray<{ note: string; value: stri
   },
 ];
 
-/** The 63 CSL locales with English names. */
+/**
+ * The 61 CSL locales DataCite renders, with English names. CSL's other two,
+ * tl-PH and hy-AM, are left out: DataCite answers them with the whole citation
+ * in APA and US English.
+ */
 export const CSL_LOCALES: ReadonlyArray<[locale: string, name: string]> = [
   ['af-ZA', 'Afrikaans'],
   ['ar', 'Arabic'],
@@ -114,7 +131,6 @@ export const CSL_LOCALES: ReadonlyArray<[locale: string, name: string]> = [
   ['hi-IN', 'Hindi'],
   ['hr-HR', 'Croatian'],
   ['hu-HU', 'Hungarian'],
-  ['hy-AM', 'Armenian'],
   ['id-ID', 'Indonesian'],
   ['is-IS', 'Icelandic'],
   ['it-IT', 'Italian'],
@@ -142,7 +158,6 @@ export const CSL_LOCALES: ReadonlyArray<[locale: string, name: string]> = [
   ['sr-Latn-RS', 'Serbian (Latin)'],
   ['sv-SE', 'Swedish'],
   ['th-TH', 'Thai'],
-  ['tl-PH', 'Tagalog'],
   ['tr-TR', 'Turkish'],
   ['uk-UA', 'Ukrainian'],
   ['vi-VN', 'Vietnamese'],
@@ -175,7 +190,6 @@ export const CSL_PRIMARY_DIALECTS: Readonly<Record<string, string>> = {
   hi: 'hi-IN',
   hr: 'hr-HR',
   hu: 'hu-HU',
-  hy: 'hy-AM',
   id: 'id-ID',
   is: 'is-IS',
   it: 'it-IT',
@@ -201,7 +215,6 @@ export const CSL_PRIMARY_DIALECTS: Readonly<Record<string, string>> = {
   sr: 'sr-Latn-RS',
   sv: 'sv-SE',
   th: 'th-TH',
-  tl: 'tl-PH',
   tr: 'tr-TR',
   uk: 'uk-UA',
   vi: 'vi-VN',

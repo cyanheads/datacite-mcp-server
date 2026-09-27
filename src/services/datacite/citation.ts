@@ -29,14 +29,19 @@ export interface CitationRequest {
 export type CitationOutcome =
   | { body: string; kind: 'rendered'; notice?: string }
   | { kind: 'not_found' }
-  | { kind: 'no_content' }
+  /** DataCite cannot render the DOI in that format; `status` is how it said so (200 = empty body). */
+  | { kind: 'no_content'; status: 200 | 204 | 400 }
   | { kind: 'unsupported_style' };
 
 const isApaVariant = (style: string): boolean => style === 'apa' || style.startsWith('apa-');
 
+/** A 200 with a non-blank body: the only answer that is a rendering, or evidence for a verdict. */
+const isRendering = (result: NegotiationResult): boolean =>
+  result.status === 200 && result.body.trim() !== '';
+
 function outcomeOf(result: NegotiationResult, notice?: string): CitationOutcome {
   if (result.status === 404) return { kind: 'not_found' };
-  if (result.status === 204) return { kind: 'no_content' };
+  if (!isRendering(result)) return { kind: 'no_content', status: result.status };
   return { kind: 'rendered', body: result.body, ...(notice && { notice }) };
 }
 
@@ -59,8 +64,9 @@ const uncomparedNotice = (style: string): string =>
 /**
  * Renders one DOI in the requested format, style, and locale. The default
  * rendering and the canary pair are evidence for the style verdict only: when
- * either cannot be compared, the requested answer (rendering, miss, or 204)
- * still stands, the style stays unverified, and no verdict is cached.
+ * either is not a rendering to compare, the requested answer (rendering, miss,
+ * or no rendering) still stands, the style stays unverified, and no verdict is
+ * cached.
  */
 export async function renderCitation(
   service: DataCiteService,
@@ -94,8 +100,8 @@ export async function renderCitation(
   ]);
   if (settledRequest.status === 'rejected') throw settledRequest.reason;
   const requested = settledRequest.value;
-  if (requested.status !== 200) return outcomeOf(requested);
-  if (settledFallback.status === 'rejected' || settledFallback.value.status !== 200) {
+  if (!isRendering(requested)) return outcomeOf(requested);
+  if (settledFallback.status === 'rejected' || !isRendering(settledFallback.value)) {
     if (settledFallback.status === 'rejected' && ctx.signal.aborted) throw settledFallback.reason;
     ctx.log.warning('Style check could not complete', { style });
     return outcomeOf(requested, uncomparedNotice(style));
@@ -112,7 +118,7 @@ export async function renderCitation(
       service.negotiate(STYLE_CANARY_DOI, TEXT, { style }, ctx),
       service.negotiate(STYLE_CANARY_DOI, TEXT, {}, ctx),
     ]);
-    if (canaryStyled.status !== 200 || canaryDefault.status !== 200) {
+    if (!isRendering(canaryStyled) || !isRendering(canaryDefault)) {
       throw new Error(`canary answered ${canaryStyled.status}/${canaryDefault.status}`);
     }
     canaryDiffers = canaryStyled.body !== canaryDefault.body;

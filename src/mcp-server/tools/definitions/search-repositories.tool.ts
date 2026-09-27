@@ -26,6 +26,7 @@ import {
 import {
   blankAsUnset,
   enumish,
+  MAX_CHARS,
   optionalArray,
   optionalString,
   providerIdString,
@@ -83,7 +84,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
   ],
 
   input: z.object({
-    query: optionalString().describe(
+    query: optionalString(z.string().max(MAX_CHARS.query)).describe(
       'Text matched against repository names, alternate names, and descriptions. Query-string syntax is accepted.',
     ),
     field_of_science: blankAsUnset(
@@ -100,7 +101,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     certificates: optionalArray(enumish(CERTIFICATE_IDS, resolveCertificate), 7).describe(
       'Certificates (any match): CoreTrustSeal, WDS, DSA, DINI, RatSWD, CLARIN, DIN 31644; any case.',
     ),
-    software: optionalString().describe(
+    software: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'Software platform slug, lowercased: dataverse, dspace, invenio, ckan, open_journal_systems_ojs, … (free-form upstream; see datacite_list_reference topic software_platforms).',
     ),
     client_type: blankAsUnset(enumish(CLIENT_TYPE_IDS, resolveClientType).optional()).describe(
@@ -291,9 +292,9 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
       `**${result.repositories.length} repositories on this page** (ordered by name)`,
       '',
     ];
+    const list = (values: string[], empty: string) =>
+      values.length > 0 ? values.map(flattenInline).join(', ') : empty;
     for (const r of result.repositories) {
-      const list = (values: string[], empty: string) =>
-        values.length > 0 ? values.map(flattenInline).join(', ') : empty;
       lines.push(`### ${flattenInline(r.name)} (${flattenInline(r.repositoryId)})`);
       lines.push(
         `- **Provider:** ${orNA(r.providerId)} · **Client type:** ${orNA(r.clientType)} · **Types:** ${list(r.repositoryTypes, 'none listed')} · **Certificates:** ${list(r.certificates, 'none')}`,

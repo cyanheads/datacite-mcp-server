@@ -12,6 +12,7 @@ import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.tool.js';
 import { decodeCursor } from '@/services/datacite/cursor.js';
+import { stableHash } from '@/services/datacite/query-builder.js';
 import type {
   RawDoiAttributes,
   RawDoiList,
@@ -349,6 +350,31 @@ describe('request parameters', () => {
     );
   });
 
+  it('sends / in text and name tokens bare, for DataCite to escape itself', async () => {
+    const { http } = zeroHits();
+    const result = await run({
+      text: '10.5061/dryad.234',
+      creator: 'Smith/Jones',
+      funder: 'NASA/JPL',
+    });
+    const composed =
+      '(10.5061/dryad.234) AND creators.name:(Smith/Jones) AND fundingReferences.funderName:(NASA/JPL)';
+    expect(requestUrl(http).searchParams.get('query')).toBe(composed);
+    expect(output(result).effectiveQuery).toBe(composed);
+    expect(contentText(result)).toContain(`Query: ${composed}`);
+  });
+
+  it('reads an orcid.org URL with a trailing slash as the ORCID iD it names', async () => {
+    const { http } = zeroHits();
+    const result = await run({ creator: ' https://orcid.org/0000-0002-1825-0097/ ' });
+    const clause =
+      'creators.nameIdentifiers.nameIdentifier:("0000-0002-1825-0097" OR "https://orcid.org/0000-0002-1825-0097")';
+    expect(result.isError).toBeFalsy();
+    expect(requestUrl(http).searchParams.get('query')).toBe(clause);
+    expect(output(result).appliedFilters).toEqual({ creator: clause });
+    expect(contentText(result)).toContain(`- creator → ${clause}`);
+  });
+
   it('sends a ROR funder as funded-by and adds child organizations only when asked', async () => {
     const { http } = zeroHits();
     const result = await run({ funder: 'ror.org/021nxhr62', include_child_funders: true });
@@ -522,6 +548,7 @@ describe('cursor walks', () => {
       t: CURSOR_TOKEN,
       q: expect.any(String),
       c: FIRST_PAGE_LAST_CREATED,
+      n: 3,
     });
     expect(contentText(first)).toContain(`**Next cursor:** ${out.nextCursor}`);
     const firstUrl = requestUrl(http);
@@ -564,6 +591,77 @@ describe('cursor walks', () => {
     expect(text).not.toContain('**Next cursor:**');
   });
 
+  it('ends a walk on the full page that reaches the total, though DataCite still links a next page', async () => {
+    const page = (dois: string[], created: string, token: string) =>
+      json(
+        doiList(
+          dois.map((doi) => row(doi, { created })),
+          { total: 4 },
+          { next: `https://api.datacite.org/dois?page%5Bcursor%5D=${token}` },
+        ),
+      );
+    const { http } = initServices([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: page(['10.5555/w1', '10.5555/w2'], '2020-01-01T00:00:00Z', 'tokenA'),
+      },
+      {
+        match: dataCite('/dois', param('page[cursor]', 'tokenA')),
+        respond: page(['10.5555/w3', '10.5555/w4'], '2020-01-02T00:00:00Z', 'tokenB'),
+      },
+    ]);
+
+    const first = await run({ text: 'glacier', limit: 2, cursor: '*' });
+    const cursor = output(first).nextCursor as string;
+    expect(decodeCursor(cursor)).toMatchObject({ t: 'tokenA', n: 2 });
+
+    const last = await run({ text: 'glacier', limit: 2, cursor });
+    const out = output(last);
+    expect(out.works.map((w) => w.doi)).toEqual(['10.5555/w3', '10.5555/w4']);
+    expect(out).toMatchObject({ totalCount: 4 });
+    expect(out).not.toHaveProperty('nextCursor');
+    expect(out).not.toHaveProperty('notice');
+    const text = contentText(last);
+    expect(text).toContain('**Last page.**');
+    expect(text).not.toContain('**Next cursor:**');
+    expect(http.calls).toHaveLength(2);
+  });
+
+  it('ends a one-page walk that holds the whole result set on its first page', async () => {
+    initServices([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: json(
+          doiList(
+            [row('10.5555/only', { created: '2020-01-01T00:00:00Z' })],
+            { total: 1 },
+            { next: `https://api.datacite.org/dois?page%5Bcursor%5D=${CURSOR_TOKEN}` },
+          ),
+        ),
+      },
+    ]);
+    const result = await run({ text: 'glacier', limit: 1, cursor: '*' });
+    expect(output(result)).not.toHaveProperty('nextCursor');
+    expect(contentText(result)).toContain('**Last page.**');
+  });
+
+  it('follows the next link when DataCite reports no total', async () => {
+    initServices([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: json({
+          data: [row('10.5555/w1', { created: '2020-01-01T00:00:00Z' })],
+          meta: { totalPages: 1, page: 1 },
+          links: { next: `https://api.datacite.org/dois?page%5Bcursor%5D=${CURSOR_TOKEN}` },
+        }),
+      },
+    ]);
+    const result = await run({ text: 'glacier', limit: 1, cursor: '*' });
+    const cursor = output(result).nextCursor as string;
+    expect(decodeCursor(cursor)).toMatchObject({ t: CURSOR_TOKEN, n: 1 });
+    expect(contentText(result)).toContain(`**Next cursor:** ${cursor}`);
+  });
+
   it('writes every required enrichment field on a cursor page with filters', async () => {
     initServices([firstPage]);
     const result = await run({
@@ -590,6 +688,24 @@ describe('cursor walks', () => {
     expect(error.message).toBe('cursor is neither "*" nor a nextCursor this tool returned.');
     expect(http.calls).toHaveLength(0);
   });
+
+  it.each([
+    { name: 'a negative row count', numbers: '"c":0,"n":-5' },
+    { name: 'a fractional row count', numbers: '"c":0,"n":1.5' },
+    { name: 'a created instant that parses as Infinity', numbers: '"c":1e400,"n":0' },
+  ])(
+    'rejects an envelope forged for this query with $name, before any request',
+    async ({ numbers }) => {
+      const { http } = zeroHits();
+      const fingerprint = stableHash(JSON.stringify({ q: '(glacier)', f: {} }));
+      const forged = Buffer.from(`{"v":1,"t":"${CURSOR_TOKEN}","q":"${fingerprint}",${numbers}}`);
+      const result = await run({ text: 'glacier', cursor: forged.toString('base64url') });
+      const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe('cursor is neither "*" nor a nextCursor this tool returned.');
+      expect(contentText(result)).toContain('Error: cursor is neither "*" nor a nextCursor');
+      expect(http.calls).toHaveLength(0);
+    },
+  );
 
   it.each([
     { name: 'different text', input: { text: 'glacier' } },
@@ -658,6 +774,23 @@ describe('declared errors', () => {
     const result = await run({ query: 'titles.title:(glacier' });
     const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
     expect(error.message).toContain('(line 1, column 12)');
+    expect(contentText(result)).toContain(
+      'Recovery: Fix the query syntax, or move plain words to text',
+    );
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('reports a lexical error (an unterminated quote) on the caller query as invalid_query', async () => {
+    const { http } = initServices([
+      {
+        match: dataCite('/dois'),
+        respond: fixtureResponse('datacite/errors/token-mgr-error-query.json', { status: 400 }),
+      },
+    ]);
+    const result = await run({ query: 'titles.title:"sea ice' });
+    const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toContain('(line 1, column 24)');
+    expect(contentText(result)).toContain('(line 1, column 24)');
     expect(contentText(result)).toContain(
       'Recovery: Fix the query syntax, or move plain words to text',
     );

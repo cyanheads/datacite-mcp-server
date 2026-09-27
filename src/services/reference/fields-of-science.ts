@@ -11,7 +11,7 @@ import { buildResolver } from './lookup.js';
 interface FieldOfScience {
   area: string;
   code: string;
-  id: string;
+  id: FieldOfScienceId;
   label: string;
   /** Other stored spellings of the same label, each searched alongside it. */
   variants?: readonly string[];
@@ -140,7 +140,7 @@ export const FIELDS_OF_SCIENCE: ReadonlyMap<FieldOfScienceId, FieldOfScience> = 
 
 const resolveId = buildResolver(
   [...FIELDS_OF_SCIENCE.values()].map((field) => ({
-    id: field.id as FieldOfScienceId,
+    id: field.id,
     aliases: [field.label, ...(field.variants ?? [])],
   })),
 );

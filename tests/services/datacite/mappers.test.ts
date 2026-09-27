@@ -406,6 +406,26 @@ describe('mapWork', () => {
     expect(work.formats).toEqual(['text/csv']);
   });
 
+  it('counts a relation type named like an Object.prototype member as its own key', () => {
+    const types = ['constructor', '__proto__', 'toString', 'constructor'];
+    const { work } = mapWork(
+      record({
+        relatedIdentifiers: types.map((relationType, i) => ({
+          relationType,
+          relatedIdentifier: `10.5555/r${i}`,
+          relatedIdentifierType: 'DOI',
+        })),
+      }),
+      undefined,
+    );
+    expect(Object.entries(work.relatedIdentifierCounts)).toEqual([
+      ['constructor', 2],
+      ['__proto__', 1],
+      ['toString', 1],
+    ]);
+    expect(Object.getPrototypeOf(work.relatedIdentifierCounts)).toBe(Object.prototype);
+  });
+
   it('reads geolocations from numbers or numeric strings and drops ones with nothing usable', () => {
     const { work } = mapWork(
       record({

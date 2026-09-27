@@ -8,7 +8,13 @@
 
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { config } from '@cyanheads/mcp-ts-core/config';
-import { internalError, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  internalError,
+  JsonRpcErrorCode,
+  McpError,
+  serviceUnavailable,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import { createPacer, type Pacer } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig } from '@/config/server-config.js';
 import {
@@ -19,9 +25,13 @@ import { TtlCache } from '@/services/http/ttl-cache.js';
 import {
   type CachedResponse,
   type CooldownPolicy,
+  isUnanswered,
   UpstreamClient,
+  type UpstreamRequest,
+  upstreamErrorBody,
   userAgent,
 } from '@/services/http/upstream-client.js';
+import { recordDoi } from './mappers.js';
 import { anyPhrase, doiQuery } from './query-builder.js';
 import type {
   RawClientResource,
@@ -46,6 +56,30 @@ export const NODE_WITH_RELATIONS_FIELDS = `${NODE_FIELDS},relatedIdentifiers,rel
 export const REVERSE_FIELDS = `${NODE_FIELDS},relatedIdentifiers`;
 /** Node fields plus the root's own assertions and DataCite counts. */
 export const ROOT_FIELDS = `${NODE_WITH_RELATIONS_FIELDS},referenceCount,versionOfCount,partCount,partOfCount`;
+
+/**
+ * DOIs per `ids=` request. The upstream's time for one grows with the size of the
+ * records it builds, whatever `fields[dois]` leaves out: 10 cold GBIF downloads
+ * answered in 3.5 s, while three of four concurrent batches of 25 larger ones got no
+ * answer inside the 20 s attempt timeout. At 10, a batch of large records stays well
+ * inside one attempt, and one that fails leaves 10 nodes unhydrated rather than 25.
+ */
+const HYDRATE_BATCH = 10;
+
+/**
+ * `ids=` requests one hydration keeps in flight. Concurrent batches of large records
+ * answered no faster than one, and the ones abandoned kept the upstream busy for the
+ * next call; two still halves the time for small records.
+ */
+const HYDRATE_CONCURRENCY = 2;
+
+/** What {@link DataCiteService.hydrate} returned. */
+export interface Hydration {
+  /** Records keyed by lowercase DOI; a DOI DataCite does not hold has none. */
+  records: Map<string, RawDoiResource>;
+  /** DOIs whose request did not answer before the deadline; always empty without one. */
+  unanswered: Set<string>;
+}
 
 /** Filters `/dois` takes as named parameters. */
 export interface WorkSearchFilters {
@@ -94,10 +128,14 @@ export interface EventRequest {
   subjId?: string;
 }
 
-/** Content-negotiation outcome: a body, or the 204 / 404 the path answered. */
+/**
+ * Content-negotiation outcome: a body, or the status the path answered. DataCite
+ * answers a format it cannot render for a record with 204, a 200 with an empty
+ * body, or 400, and an unknown DOI with 404.
+ */
 export interface NegotiationResult {
   body: string;
-  status: 200 | 204 | 404;
+  status: 200 | 204 | 400 | 404;
 }
 
 /** Construction options for {@link DataCiteService}. Every network boundary is injectable. */
@@ -118,18 +156,6 @@ export interface DataCiteServiceOptions {
 /** What the style check concluded about one CSL style id. */
 export type StyleVerdict = 'supported' | 'unsupported' | 'apa_variant_unconfirmed';
 
-const parseJson =
-  <T>(operation: string) =>
-  (response: CachedResponse): T => {
-    try {
-      return JSON.parse(response.body) as T;
-    } catch (error) {
-      throw internalError(`DataCite returned unparseable JSON for ${operation}.`, undefined, {
-        cause: error,
-      });
-    }
-  };
-
 function buildUrl(path: string, params: Array<[string, string | number | undefined]>): string {
   const search = new URLSearchParams();
   for (const [key, value] of params) {
@@ -142,11 +168,39 @@ function buildUrl(path: string, params: Array<[string, string | number | undefin
 const joined = (values?: readonly string[]): string | undefined =>
   values?.length ? values.join(',') : undefined;
 
-/** Whether an upstream 400 is a query-string parse failure. */
+/** A `/dois` page of the records matching a composed query, newest first. */
+const queryUrl = (query: string, fields: string, size: number): string =>
+  buildUrl('/dois', [
+    ['query', query],
+    ['sort', '-created'],
+    ['page[size]', size],
+    ['fields[dois]', fields],
+    ['affiliation', 'true'],
+    ['publisher', 'true'],
+  ]);
+
+/**
+ * Whether an upstream 400 is a query-string parse failure: a `parse_exception`,
+ * a `token_mgr_error` lexical error (an unterminated quote or regex), or a
+ * `failed to parse` value. Reads the body the HTTP boundary kept server-side.
+ */
 function isQueryParseError(error: unknown): error is McpError {
   if (!(error instanceof McpError) || error.data?.status !== 400) return false;
-  const body = String(error.data.body ?? '');
-  return body.includes('parse_exception') || body.includes('failed to parse');
+  const body = upstreamErrorBody(error) ?? '';
+  return (
+    body.includes('parse_exception') ||
+    body.includes('token_mgr_error') ||
+    body.includes('failed to parse')
+  );
+}
+
+/** Whether an upstream error is an HTTP 5xx, classified `ServiceUnavailable`. */
+function isUpstream5xx(error: unknown): error is McpError {
+  return (
+    error instanceof McpError &&
+    error.code === JsonRpcErrorCode.ServiceUnavailable &&
+    Number(error.data?.status) >= 500
+  );
 }
 
 /** DataCite REST client. */
@@ -226,11 +280,7 @@ export class DataCiteService {
       ['publisher', 'true'],
       ['page[size]', 1],
     ]);
-    const list = await this.client.get(
-      { url, operation: 'getWork', acceptStatuses: [200], ttlMs: () => 15 * MINUTE },
-      ctx,
-      parseJson<RawDoiList>('getWork'),
-    );
+    const list = await this.getJson<RawDoiList>(url, 'getWork', 15 * MINUTE, ctx);
     const record = list.data.find((item) => item.attributes.doi?.toLowerCase() === doi);
     if (!record) return;
     const clientId = record.relationships?.client?.data?.id;
@@ -248,75 +298,108 @@ export class DataCiteService {
       ['publisher', 'true'],
       ['page[size]', 1],
     ]);
-    const list = await this.client.get(
-      { url, operation: 'getRecord', acceptStatuses: [200], ttlMs: () => 15 * MINUTE },
-      ctx,
-      parseJson<RawDoiList>('getRecord'),
-    );
+    const list = await this.getJson<RawDoiList>(url, 'getRecord', 15 * MINUTE, ctx);
     return list.data.find((item) => item.attributes.doi?.toLowerCase() === doi);
   }
 
   /** Records matching a composed query, newest first — the reverse-relation lookup. */
   queryRecords(query: string, fields: string, size: number, ctx: Context): Promise<RawDoiList> {
-    const url = buildUrl('/dois', [
-      ['query', query],
-      ['sort', '-created'],
-      ['page[size]', size],
-      ['fields[dois]', fields],
-      ['affiliation', 'true'],
-      ['publisher', 'true'],
-    ]);
-    return this.client.get(
-      { url, operation: 'queryRecords', acceptStatuses: [200], ttlMs: () => 15 * MINUTE },
+    return this.getJson<RawDoiList>(
+      queryUrl(query, fields, size),
+      'queryRecords',
+      15 * MINUTE,
       ctx,
-      parseJson<RawDoiList>('queryRecords'),
     );
   }
 
   /**
-   * Records for a batch of DOIs, keyed by lowercase DOI. `ids=` takes up to 100 per
-   * call and silently drops DOIs it does not hold, so the result is keyed rather
-   * than positional. A DOI containing a comma would split the `ids` list, so those
-   * go through a `doi:("…")` query instead.
+   * Records for a set of DOIs, in `ids=` batches of {@link HYDRATE_BATCH}, at most
+   * {@link HYDRATE_CONCURRENCY} in flight. `ids=` silently drops DOIs it does not
+   * hold, so the result is keyed rather than positional. A DOI containing a comma
+   * would split the `ids` list, so those go through one `doi:("…")` query instead.
+   *
+   * Without `deadline`, every request is retried and any failure throws. With it
+   * (epoch ms), each request gets one attempt: past the deadline no further batch
+   * is sent and those in flight are cancelled, and the DOIs of a batch that did not
+   * answer — cancelled, timed out, or failed as an outage — come back in
+   * `unanswered`. A spent request budget, a cancelled call, and any other failure
+   * still throw.
    */
   async hydrate(
     dois: readonly string[],
     fields: string,
     ctx: Context,
-  ): Promise<Map<string, RawDoiResource>> {
+    deadline?: number,
+  ): Promise<Hydration> {
     const plain = dois.filter((doi) => !doi.includes(','));
     const withComma = dois.filter((doi) => doi.includes(','));
-    const requests: Promise<RawDoiList>[] = [];
-    for (let i = 0; i < plain.length; i += 100) {
-      const batch = plain.slice(i, i + 100);
+    const jobs: Array<{ dois: string[]; url: string }> = [];
+    for (let i = 0; i < plain.length; i += HYDRATE_BATCH) {
+      const batch = plain.slice(i, i + HYDRATE_BATCH);
       const url = buildUrl('/dois', [
         ['ids', batch.join(',')],
         ['sort', '-created'],
         ['fields[dois]', fields],
         ['affiliation', 'true'],
         ['publisher', 'true'],
-        ['page[size]', 100],
+        ['page[size]', HYDRATE_BATCH],
       ]);
-      requests.push(
-        this.client.get(
-          { url, operation: 'hydrate', acceptStatuses: [200], ttlMs: () => 15 * MINUTE },
-          ctx,
-          parseJson<RawDoiList>('hydrate'),
-        ),
-      );
+      jobs.push({ dois: batch, url });
     }
     if (withComma.length > 0) {
-      requests.push(this.queryRecords(anyPhrase('doi', withComma), fields, withComma.length, ctx));
+      const url = queryUrl(anyPhrase('doi', withComma), fields, withComma.length);
+      jobs.push({ dois: withComma, url });
     }
+
+    /** Answers by job index, merged in job order so the result does not depend on timing. */
+    const lists: RawDoiList[] = [];
+    const unanswered = new Set<string>();
+    /** Stops the workers and cancels what they have in flight: at the deadline, or on a failure. */
+    const stop = new AbortController();
+    const timer =
+      deadline === undefined ? undefined : setTimeout(() => stop.abort(), deadline - Date.now());
+    const options = deadline === undefined ? {} : { attempts: 1, signal: stop.signal };
+    let next = 0;
+    const worker = async () => {
+      while (!stop.signal.aborted) {
+        const index = next++;
+        const job = jobs[index];
+        if (!job) return;
+        try {
+          lists[index] = await this.getJson<RawDoiList>(
+            job.url,
+            'hydrate',
+            15 * MINUTE,
+            ctx,
+            options,
+          );
+        } catch (error) {
+          const skipped =
+            deadline !== undefined &&
+            !ctx.signal.aborted &&
+            (stop.signal.aborted ||
+              (isUnanswered(error) && error.code !== JsonRpcErrorCode.RateLimited));
+          if (!skipped) {
+            stop.abort();
+            throw error;
+          }
+          for (const doi of job.dois) unanswered.add(doi);
+        }
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(HYDRATE_CONCURRENCY, jobs.length) }, worker));
+    } finally {
+      clearTimeout(timer);
+    }
+    for (const job of jobs.slice(next)) for (const doi of job.dois) unanswered.add(doi);
     const requested = new Set(dois);
     const records = new Map<string, RawDoiResource>();
-    for (const list of await Promise.all(requests)) {
-      for (const item of list.data) {
-        const doi = (item.attributes.doi ?? item.id).toLowerCase();
-        if (requested.has(doi)) records.set(doi, item);
-      }
+    for (const item of lists.flatMap((list) => list.data)) {
+      const doi = recordDoi(item);
+      if (requested.has(doi)) records.set(doi, item);
     }
-    return records;
+    return { records, unanswered };
   }
 
   /** One page (≤ 100) of Event Data events. */
@@ -327,11 +410,7 @@ export class DataCiteService {
       ['relation-type-id', request.relationTypeIds.join(',')],
       ['page[size]', 100],
     ]);
-    return this.client.get(
-      { url, operation: 'getEvents', acceptStatuses: [200], ttlMs: () => 15 * MINUTE },
-      ctx,
-      parseJson<RawEventList>('getEvents'),
-    );
+    return this.getJson<RawEventList>(url, 'getEvents', 15 * MINUTE, ctx);
   }
 
   /** One page of repository accounts, by search or by id batch. */
@@ -359,8 +438,13 @@ export class DataCiteService {
   /**
    * Content negotiation for one DOI: `/dois/<mime>/<doi>`. The MIME stays
    * unencoded in the path (an encoded slash 404s); the DOI is encoded whole.
+   * A 400 is a result: every parameter is validated before it is sent, so
+   * DataCite answers 400 only when its renderer fails on the record. A 5xx still
+   * failing after retries carries `render_failed`, because DataCite answers both
+   * a renderer fault on one record and a brief outage with 5xx. Its data names
+   * the status only; the upstream body never reaches the caller.
    */
-  negotiate(
+  async negotiate(
     doi: string,
     mediaType: string,
     params: { locale?: string; style?: string },
@@ -370,18 +454,58 @@ export class DataCiteService {
       ['style', params.style],
       ['locale', params.locale],
     ]);
+    try {
+      return await this.client.get(
+        {
+          url,
+          operation: 'negotiate',
+          acceptStatuses: [200, 204, 400, 404],
+          ttlMs: (status) => (status === 200 ? 60 * MINUTE : 5 * MINUTE),
+        },
+        ctx,
+        (response) => ({
+          status: response.status as NegotiationResult['status'],
+          body: response.body,
+        }),
+      );
+    } catch (error) {
+      if (!isUpstream5xx(error)) throw error;
+      const { status, statusText, retryAfter } = error.data ?? {};
+      throw serviceUnavailable(
+        error.message,
+        {
+          status,
+          ...(statusText !== undefined && { statusText }),
+          ...(retryAfter !== undefined && { retryAfter }),
+          reason: 'render_failed',
+          retryable: true,
+          ...ctx.recoveryFor('render_failed'),
+        },
+        { cause: error },
+      );
+    }
+  }
+
+  /** A GET answered 200 with a JSON body. */
+  private getJson<T>(
+    url: string,
+    operation: string,
+    ttlMs: number,
+    ctx: Context,
+    options: Pick<UpstreamRequest, 'attempts' | 'signal'> = {},
+  ): Promise<T> {
     return this.client.get(
-      {
-        url,
-        operation: 'negotiate',
-        acceptStatuses: [200, 204, 404],
-        ttlMs: (status) => (status === 200 ? 60 * MINUTE : 5 * MINUTE),
-      },
+      { url, operation, acceptStatuses: [200], ttlMs: () => ttlMs, ...options },
       ctx,
-      (response) => ({
-        status: response.status as NegotiationResult['status'],
-        body: response.body,
-      }),
+      (response) => {
+        try {
+          return JSON.parse(response.body) as T;
+        } catch (error) {
+          throw internalError(`DataCite returned unparseable JSON for ${operation}.`, undefined, {
+            cause: error,
+          });
+        }
+      },
     );
   }
 
@@ -397,11 +521,7 @@ export class DataCiteService {
     ctx: Context,
   ): Promise<T> {
     try {
-      return await this.client.get(
-        { url, operation, acceptStatuses: [200], ttlMs: () => ttlMs },
-        ctx,
-        parseJson<T>(operation),
-      );
+      return await this.getJson<T>(url, operation, ttlMs, ctx);
     } catch (error) {
       if (!isQueryParseError(error)) throw error;
       if (!callerQuery) {
@@ -411,7 +531,7 @@ export class DataCiteService {
           { cause: error },
         );
       }
-      const position = /line (\d+), column (\d+)/.exec(String(error.data?.body ?? ''));
+      const position = /line (\d+), column (\d+)/.exec(upstreamErrorBody(error) ?? '');
       throw validationError(
         `DataCite could not parse the query syntax${position ? ` (line ${position[1]}, column ${position[2]})` : ''}: check for unbalanced parentheses or quotes, a dangling operator, or an unescaped reserved character.`,
         { reason: 'invalid_query', ...ctx.recoveryFor('invalid_query') },

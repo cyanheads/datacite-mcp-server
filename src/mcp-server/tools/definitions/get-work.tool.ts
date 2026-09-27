@@ -91,7 +91,10 @@ export const getWorkTool = tool('datacite_get_work', {
   output: z.object({
     found: z.boolean().describe('True when DataCite holds a public record for the DOI.'),
     doi: z.string().describe('The DOI, normalized to lowercase bare form.'),
-    doiUrl: z.string().optional().describe(found('Resolver URL, https://doi.org/<doi>.')),
+    doiUrl: z
+      .string()
+      .optional()
+      .describe(found('Resolver URL, https://doi.org/<doi>, with #, ?, and % percent-encoded.')),
     landingUrl: z.string().optional().describe(found("The repository's landing page.")),
     contentUrls: z
       .array(z.string())
@@ -528,19 +531,14 @@ export const getWorkTool = tool('datacite_get_work', {
       }
       if (result.metadataLicense) lines.push(`- Metadata: ${result.metadataLicense}`);
     }
-    if (
-      result.relatedIdentifiers?.length ||
-      Object.keys(result.relatedIdentifierCounts ?? {}).length
-    ) {
+    const counts = new Map(Object.entries(result.relatedIdentifierCounts ?? {}));
+    const related = Map.groupBy(result.relatedIdentifiers ?? [], (r) => r.relationType);
+    const relationTypes = new Set([...counts.keys(), ...related.keys()]);
+    if (relationTypes.size > 0) {
       lines.push('', '## Related identifiers');
-      const counts = result.relatedIdentifierCounts ?? {};
-      const groups = new Map<string, NonNullable<typeof result.relatedIdentifiers>>();
-      for (const r of result.relatedIdentifiers ?? []) {
-        groups.set(r.relationType, [...(groups.get(r.relationType) ?? []), r]);
-      }
-      for (const relationType of new Set([...Object.keys(counts), ...groups.keys()])) {
-        const shown = groups.get(relationType) ?? [];
-        const total = counts[relationType] ?? shown.length;
+      for (const relationType of relationTypes) {
+        const shown = related.get(relationType) ?? [];
+        const total = counts.get(relationType) ?? shown.length;
         lines.push(`**${flattenInline(relationType)}** — ${num(shown.length)} of ${num(total)}`);
         for (const r of shown) {
           const tags = [r.relatedIdentifierType, r.resourceTypeGeneral].filter(Boolean).join(', ');

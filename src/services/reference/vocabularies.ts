@@ -70,8 +70,7 @@ interface RelationTypeEntry {
   note?: string;
 }
 
-/** The DataCite schema relationTypes plus the non-schema `Other`, each with its inverse and group. */
-export const RELATION_TYPES: readonly RelationTypeEntry[] = [
+const RELATION_TYPE_TABLE = [
   { id: 'HasVersion', inverse: 'IsVersionOf', group: 'versions' },
   { id: 'IsVersionOf', inverse: 'HasVersion', group: 'versions' },
   { id: 'IsNewVersionOf', inverse: 'IsPreviousVersionOf', group: 'versions' },
@@ -115,50 +114,21 @@ export const RELATION_TYPES: readonly RelationTypeEntry[] = [
     group: 'other',
     note: 'Not a schema value; seen in a handful of records.',
   },
+] as const satisfies readonly RelationTypeEntry[];
+
+/** The DataCite schema relationTypes plus the non-schema `Other`, each with its inverse and group. */
+export const RELATION_TYPES: readonly RelationTypeEntry[] = RELATION_TYPE_TABLE;
+
+export type RelationTypeId = (typeof RELATION_TYPE_TABLE)[number]['id'];
+export const RELATION_TYPE_IDS = RELATION_TYPE_TABLE.map((entry) => entry.id) as [
+  RelationTypeId,
+  ...RelationTypeId[],
 ];
 
-export const RELATION_TYPE_IDS = [
-  'HasVersion',
-  'IsVersionOf',
-  'IsNewVersionOf',
-  'IsPreviousVersionOf',
-  'HasPart',
-  'IsPartOf',
-  'Cites',
-  'IsCitedBy',
-  'References',
-  'IsReferencedBy',
-  'IsSupplementTo',
-  'IsSupplementedBy',
-  'IsDerivedFrom',
-  'IsSourceOf',
-  'Documents',
-  'IsDocumentedBy',
-  'Describes',
-  'IsDescribedBy',
-  'HasMetadata',
-  'IsMetadataFor',
-  'Continues',
-  'IsContinuedBy',
-  'Compiles',
-  'IsCompiledBy',
-  'IsVariantFormOf',
-  'IsOriginalFormOf',
-  'IsIdenticalTo',
-  'Reviews',
-  'IsReviewedBy',
-  'Requires',
-  'IsRequiredBy',
-  'Obsoletes',
-  'IsObsoletedBy',
-  'Collects',
-  'IsCollectedBy',
-  'HasTranslation',
-  'IsTranslationOf',
-  'IsPublishedIn',
-  'Other',
-] as const;
-export type RelationTypeId = (typeof RELATION_TYPE_IDS)[number];
+const INVERSES = new Map(RELATION_TYPES.map((entry) => [entry.id, entry.inverse ?? entry.id]));
+
+/** The type the other side of a relation asserts (`HasPart` → `IsPartOf`); a type with no inverse is its own. */
+export const inverseRelationType = (id: string): string => INVERSES.get(id) ?? id;
 
 export const resolveRelationType = buildResolver(RELATION_TYPE_IDS.map((id) => ({ id })));
 

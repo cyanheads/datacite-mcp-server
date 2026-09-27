@@ -34,7 +34,7 @@ const COUNTS: Partial<Record<ReferenceTopic, number>> = {
   resource_types: 34,
   relation_types: 39,
   fields_of_science: 48,
-  citation_locales: 63,
+  citation_locales: 61,
   sort_orders: 7,
   identifier_formats: 8,
 };
@@ -124,6 +124,30 @@ describe('datacite_list_reference', () => {
       expect(text).toContain(`| ${cells.map((cell) => tableCell(cell ?? '')).join(' | ')} |`);
     }
     expect(text).toContain('| DOI | 10.5061/dryad.234 |');
+  });
+
+  it('tells query writers to leave / bare, since DataCite escapes it and a pre-escaped \\/ fails', async () => {
+    const result = await run('query_syntax');
+    const reserved = output(result).notes.find((note) => note.startsWith('Reserved characters'));
+    expect(reserved).toBeDefined();
+    expect(reserved).not.toContain('\\ / must be escaped');
+    expect(reserved).toContain('Leave / bare');
+    expect(contentText(result)).toContain(`- ${flattenInline(reserved ?? '')}`);
+  });
+
+  it('leaves out the CSL locales DataCite renders as APA in US English, and says why', async () => {
+    const result = await run('citation_locales');
+    const { entries, notes } = output(result);
+    const values = entries.map((entry) => entry.value);
+    expect(values).not.toContain('tl-PH');
+    expect(values).not.toContain('hy-AM');
+    const selections = notes.find((note) => note.startsWith('A bare language code'));
+    expect(selections).not.toMatch(/\b(tl|hy) →/);
+    const excluded = notes.find((note) => note.includes('tl-PH'));
+    expect(excluded).toBe(
+      "CSL's tl-PH (Tagalog) and hy-AM (Armenian) are not listed and are rejected: DataCite renders the whole citation as APA in US English for them.",
+    );
+    expect(contentText(result)).toContain(`- ${flattenInline(excluded ?? '')}`);
   });
 
   it('groups the 48 fields of science under the 6 OECD areas', async () => {

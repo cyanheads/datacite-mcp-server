@@ -53,6 +53,7 @@ import {
 import {
   blankAsUnset,
   enumish,
+  MAX_CHARS,
   optionalArray,
   optionalString,
   providerIdString,
@@ -172,19 +173,19 @@ export const searchWorksTool = tool('datacite_search_works', {
   ],
 
   input: z.object({
-    text: optionalString().describe(
+    text: optionalString(z.string().max(MAX_CHARS.query)).describe(
       'Plain words and phrases, searched literally: every query-syntax character is escaped, so "Climate change: impacts" works and text can never cause a syntax error. Terms are ANDed.',
     ),
-    query: optionalString().describe(
+    query: optionalString(z.string().max(MAX_CHARS.query)).describe(
       'OpenSearch query-string syntax — field paths (titles.title:"…", creators.name:…, relatedIdentifiers.relationType:…), AND/OR/NOT, ranges, wildcards. Field paths: datacite_list_reference topic query_syntax. ANDed with text and the filters.',
     ),
     resource_types: optionalArray(enumish(RESOURCE_TYPE_IDS, resolveResourceType), 10).describe(
       'resourceTypeGeneral values (any match): dataset, software, computational-notebook, workflow, model, physical-object, … PascalCase accepted. Full list: datacite_list_reference topic resource_types.',
     ),
-    creator: optionalString().describe(
+    creator: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A creator ORCID iD (0000-0002-1825-0097, 16 digits, or an orcid.org URL; checksum verified) or a name — every name token must appear in one creator field.',
     ),
-    affiliation: optionalString().describe(
+    affiliation: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A ROR ID (021nxhr62 or a ror.org URL) — matches creator and contributor affiliations — or an affiliation name phrase.',
     ),
     affiliation_country: optionalString(
@@ -197,14 +198,14 @@ export const searchWorksTool = tool('datacite_search_works', {
     ).describe(
       'ISO 3166-1 alpha-2 country of a creator or contributor affiliation, any case (DE, us). Alpha-3 codes and names are rejected.',
     ),
-    funder: optionalString().describe(
+    funder: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A funder ROR ID, a Crossref Funder ID (10.13039/100000001, its doi.org URL, or the bare digits), or a funder name.',
     ),
     include_child_funders: z
       .boolean()
       .default(false)
       .describe("Also match the ROR funder's child organizations. Only with a ROR funder."),
-    subject: optionalString().describe(
+    subject: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A subject phrase, matched case-insensitively against subject terms.',
     ),
     fields_of_science: optionalArray(
@@ -223,6 +224,7 @@ export const searchWorksTool = tool('datacite_search_works', {
       z
         .string()
         .trim()
+        .max(MAX_CHARS.id)
         .regex(
           /^\s*[A-Za-z0-9.+_-]+\s*$/,
           'Expected an SPDX-style license id without spaces, such as cc-by-4.0, cc0-1.0, or mit; common ids: datacite_list_reference topic licenses.',
@@ -239,7 +241,7 @@ export const searchWorksTool = tool('datacite_search_works', {
           'Expected a two-letter ISO 639-1 code such as en or de; three-letter codes and language names are not matched.',
         ),
     ).describe('ISO 639-1 language code of the work, any case (en, de).'),
-    place: optionalString().describe(
+    place: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A geographic place phrase, matched against deposited place names.',
     ),
     published_from: blankAsUnset(z.number().int().min(1000).max(2100).optional()).describe(
@@ -263,6 +265,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     cursor: optionalString(
       z
         .string()
+        .max(MAX_CHARS.cursor)
         .regex(
           /^\s*(?:\*|[A-Za-z0-9_-]+)\s*$/,
           'Expected "*" to start a walk, or the nextCursor of the previous page, unchanged.',
@@ -401,6 +404,11 @@ export const searchWorksTool = tool('datacite_search_works', {
     const clauses: string[] = [];
     const filters: WorkSearchFilters = {};
     const applied: AppliedFilters = {};
+    /** Adds a query clause and echoes it as the filter's applied value. */
+    const addClause = (filter: keyof AppliedFilters, clause: string) => {
+      clauses.push(clause);
+      applied[filter] = clause;
+    };
     const query = input.query ? singleLine(input.query) : undefined;
     const text = input.text ? escapeQueryText(input.text) : undefined;
     if (query) clauses.push(`(${query})`);
@@ -413,7 +421,6 @@ export const searchWorksTool = tool('datacite_search_works', {
 
     let creatorIsName = false;
     if (input.creator) {
-      let clause: string;
       if (looksLikeOrcid(input.creator)) {
         const orcid = normalizeOrcid(input.creator);
         if (!orcid) {
@@ -423,7 +430,7 @@ export const searchWorksTool = tool('datacite_search_works', {
             expected('creator', 'a valid ORCID iD such as 0000-0002-1825-0097, or a creator name'),
           );
         }
-        clause = orcidClause(orcid);
+        addClause('creator', orcidClause(orcid));
       } else {
         if (!/[\p{L}\p{N}]/u.test(input.creator)) {
           throw ctx.fail(
@@ -433,10 +440,8 @@ export const searchWorksTool = tool('datacite_search_works', {
           );
         }
         creatorIsName = true;
-        clause = nameTokensClause('creators.name', input.creator);
+        addClause('creator', nameTokensClause('creators.name', input.creator));
       }
-      clauses.push(clause);
-      applied.creator = clause;
     }
 
     if (input.affiliation) {
@@ -455,9 +460,7 @@ export const searchWorksTool = tool('datacite_search_works', {
         filters.affiliationId = ror;
         applied.affiliation = `affiliation-id=${ror}`;
       } else {
-        const clause = affiliationNameClause(singleLine(input.affiliation));
-        clauses.push(clause);
-        applied.affiliation = clause;
+        addClause('affiliation', affiliationNameClause(singleLine(input.affiliation)));
       }
     }
 
@@ -494,9 +497,7 @@ export const searchWorksTool = tool('datacite_search_works', {
             ),
           );
         }
-        const clause = funderIdClause(funderId);
-        clauses.push(clause);
-        applied.funder = clause;
+        addClause('funder', funderIdClause(funderId));
       } else {
         if (!/[\p{L}\p{N}]/u.test(input.funder)) {
           throw ctx.fail(
@@ -505,9 +506,7 @@ export const searchWorksTool = tool('datacite_search_works', {
             expected('funder', 'a ROR ID, a Crossref Funder ID, or a funder name'),
           );
         }
-        const clause = nameTokensClause('fundingReferences.funderName', input.funder);
-        clauses.push(clause);
-        applied.funder = clause;
+        addClause('funder', nameTokensClause('fundingReferences.funderName', input.funder));
       }
     }
     if (input.include_child_funders) {
@@ -525,19 +524,14 @@ export const searchWorksTool = tool('datacite_search_works', {
     }
 
     if (input.subject) {
-      const clause = `subjects.subject:${phrase(singleLine(input.subject))}`;
-      clauses.push(clause);
-      applied.subject = clause;
+      addClause('subject', `subjects.subject:${phrase(singleLine(input.subject))}`);
     }
 
     if (input.fields_of_science) {
-      const labels = [...new Set(input.fields_of_science)].flatMap(fieldOfScienceLabels);
-      const clause = anyPhrase(
-        'subjects.subject',
-        labels.map((label) => `FOS: ${label}`),
-      );
-      clauses.push(clause);
-      applied.fields_of_science = clause;
+      const phrases = [...new Set(input.fields_of_science)]
+        .flatMap(fieldOfScienceLabels)
+        .map((label) => `FOS: ${label}`);
+      addClause('fields_of_science', anyPhrase('subjects.subject', phrases));
     }
 
     if (input.repository_ids) {
@@ -564,15 +558,11 @@ export const searchWorksTool = tool('datacite_search_works', {
           expected('language', 'a two-letter ISO 639-1 code such as en or de'),
         );
       }
-      const clause = `language:${language}`;
-      clauses.push(clause);
-      applied.language = clause;
+      addClause('language', `language:${language}`);
     }
 
     if (input.place) {
-      const clause = `geoLocations.geoLocationPlace:${phrase(singleLine(input.place))}`;
-      clauses.push(clause);
-      applied.place = clause;
+      addClause('place', `geoLocations.geoLocationPlace:${phrase(singleLine(input.place))}`);
     }
 
     if (input.published_from !== undefined || input.published_to !== undefined) {
@@ -592,9 +582,7 @@ export const searchWorksTool = tool('datacite_search_works', {
           },
         );
       }
-      const clause = yearRangeClause(input.published_from, input.published_to);
-      clauses.push(clause);
-      applied.published = clause;
+      addClause('published', yearRangeClause(input.published_from, input.published_to));
     }
 
     if (input.min_citations !== undefined) {
@@ -624,8 +612,9 @@ export const searchWorksTool = tool('datacite_search_works', {
     const fingerprint = stableHash(JSON.stringify({ q: effectiveQuery, f: filters }));
     let cursorToken: string | undefined;
     let cursorFloor: number | undefined;
-    if (cursorMode && input.cursor !== '*') {
-      const envelope = decodeCursor(input.cursor as string);
+    let deliveredBefore = 0;
+    if (input.cursor !== undefined && input.cursor !== '*') {
+      const envelope = decodeCursor(input.cursor);
       if (!envelope) {
         throw ctx.fail(
           'invalid_cursor',
@@ -646,6 +635,7 @@ export const searchWorksTool = tool('datacite_search_works', {
       }
       cursorToken = envelope.t;
       cursorFloor = envelope.c;
+      deliveredBefore = envelope.n;
     }
 
     const sortApplied: SortOrder = cursorMode
@@ -695,13 +685,16 @@ export const searchWorksTool = tool('datacite_search_works', {
     let nextPage: number | undefined;
     let nextCursor: string | undefined;
     if (cursorMode) {
+      // DataCite can link a next page from the full page that ends the walk; the row count decides.
       const token = upstreamCursorToken(list.links?.next);
+      const delivered = deliveredBefore + works.length;
       const lastCreated = Date.parse(list.data.at(-1)?.attributes.created ?? '');
-      if (token && works.length > 0) {
+      if (token && works.length > 0 && delivered < (list.meta.total ?? Number.POSITIVE_INFINITY)) {
         nextCursor = encodeCursor({
           t: token,
           q: fingerprint,
           c: Number.isNaN(lastCreated) ? 0 : lastCreated,
+          n: delivered,
         });
       }
     } else if (page * input.limit < total && (page + 1) * input.limit <= PAGE_CEILING) {
