@@ -9,7 +9,6 @@
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createFetchMock, createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.tool.js';
 import {
   DataCiteService,
   getDataCiteService,
@@ -79,15 +78,12 @@ describe('query parse errors', () => {
     const { http, svc } = build([
       { match: dataCite('/dois'), respond: parse400('datacite/errors/parse-exception-query.json') },
     ]);
-    const error = await rejection(
-      svc.searchWorks(SEARCH, createMockContext({ errors: searchWorksTool.errors })),
-    );
+    const error = await rejection(svc.searchWorks(SEARCH, createMockContext()));
     expect(error.code).toBe(JsonRpcErrorCode.ValidationError);
     expect(error.data?.reason).toBe('invalid_query');
     expect(error.message).toBe(
       'DataCite could not parse the query syntax (line 1, column 12): check for unbalanced parentheses or quotes, a dangling operator, or an unescaped reserved character.',
     );
-    expect(error.data?.recovery).toEqual(expect.objectContaining({ hint: expect.any(String) }));
     expect(http.calls).toHaveLength(1);
   });
 

@@ -204,7 +204,6 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
         throw ctx.fail(
           'conflicting_lookup',
           'repository_ids cannot be combined with query or filters: DataCite answers an id lookup without applying them.',
-          ctx.recoveryFor('conflicting_lookup'),
         );
       }
       ids = [...new Set(input.repository_ids.map((id) => id.toLowerCase()))];

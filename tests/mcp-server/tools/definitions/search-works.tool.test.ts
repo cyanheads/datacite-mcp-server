@@ -774,6 +774,9 @@ describe('declared errors', () => {
     const result = await run({ query: 'titles.title:(glacier' });
     const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
     expect(error.message).toContain('(line 1, column 12)');
+    expect(error.data?.recovery).toEqual({
+      hint: 'Fix the query syntax, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
+    });
     expect(contentText(result)).toContain(
       'Recovery: Fix the query syntax, or move plain words to text',
     );

@@ -214,14 +214,12 @@ export const getCitationTool = tool('datacite_get_citation', {
       throw ctx.fail(
         'invalid_doi',
         'The doi input is not a DOI after normalization; expected 10.<registrant>/<suffix>, bare or as a doi.org URL.',
-        ctx.recoveryFor('invalid_doi'),
       );
     }
     if (input.format !== 'text' && (input.style || input.locale)) {
       throw ctx.fail(
         'style_requires_text',
         `style and locale apply only to format text, not ${input.format}.`,
-        ctx.recoveryFor('style_requires_text'),
       );
     }
     const locale = input.locale ? resolveCslLocale(input.locale) : undefined;
@@ -229,7 +227,6 @@ export const getCitationTool = tool('datacite_get_citation', {
       throw ctx.fail(
         'unsupported_locale',
         'locale is not a CSL locale DataCite renders; DataCite would silently render the whole citation as APA in US English.',
-        ctx.recoveryFor('unsupported_locale'),
       );
     }
     const style = input.style?.toLowerCase();
@@ -243,14 +240,12 @@ export const getCitationTool = tool('datacite_get_citation', {
       throw ctx.fail(
         'unsupported_style',
         'DataCite renders the requested style as the default APA citation, so that style id is not supported upstream (unknown, retired, wrong-case, or a dependent journal style).',
-        ctx.recoveryFor('unsupported_style'),
       );
     }
     if (outcome.kind === 'no_content') {
       throw ctx.fail(
         'format_unavailable',
         `DataCite cannot render this DOI in ${input.format} (${NO_RENDERING[outcome.status]}).`,
-        ctx.recoveryFor('format_unavailable'),
       );
     }
     if (outcome.kind === 'not_found') {

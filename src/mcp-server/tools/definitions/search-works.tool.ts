@@ -596,7 +596,6 @@ export const searchWorksTool = tool('datacite_search_works', {
       throw ctx.fail(
         'conflicting_paging',
         `cursor cannot be combined with ${input.page !== undefined ? 'page' : 'sort'}.`,
-        ctx.recoveryFor('conflicting_paging'),
       );
     }
     const page = input.page ?? 1;
@@ -604,7 +603,6 @@ export const searchWorksTool = tool('datacite_search_works', {
       throw ctx.fail(
         'page_ceiling',
         `page ${page} × limit ${input.limit} = ${page * input.limit} exceeds the ${num(PAGE_CEILING)}-match ceiling of ranked paging.`,
-        ctx.recoveryFor('page_ceiling'),
       );
     }
 
@@ -663,7 +661,6 @@ export const searchWorksTool = tool('datacite_search_works', {
       throw ctx.fail(
         'page_ceiling',
         `DataCite served page ${list.meta.page} instead of the requested page ${page}.`,
-        ctx.recoveryFor('page_ceiling'),
       );
     }
     const firstCreated = Date.parse(list.data[0]?.attributes.created ?? '');

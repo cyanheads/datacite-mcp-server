@@ -353,7 +353,6 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       throw ctx.fail(
         'invalid_doi',
         'The doi input is not a DOI after normalization; expected 10.<registrant>/<suffix>, bare or as a doi.org URL.',
-        ctx.recoveryFor('invalid_doi'),
       );
     }
     const relationTypes = input.relation_types && [...new Set(input.relation_types)];

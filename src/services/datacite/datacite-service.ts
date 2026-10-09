@@ -479,7 +479,6 @@ export class DataCiteService {
           ...(retryAfter !== undefined && { retryAfter }),
           reason: 'render_failed',
           retryable: true,
-          ...ctx.recoveryFor('render_failed'),
         },
         { cause: error },
       );
@@ -534,7 +533,7 @@ export class DataCiteService {
       const position = /line (\d+), column (\d+)/.exec(upstreamErrorBody(error) ?? '');
       throw validationError(
         `DataCite could not parse the query syntax${position ? ` (line ${position[1]}, column ${position[2]})` : ''}: check for unbalanced parentheses or quotes, a dangling operator, or an unescaped reserved character.`,
-        { reason: 'invalid_query', ...ctx.recoveryFor('invalid_query') },
+        { reason: 'invalid_query' },
         { cause: error },
       );
     }

@@ -204,12 +204,7 @@ export class UpstreamClient {
         async (attempt) => {
           const response = await this.options.pacer.run(
             (signal) =>
-              this.fetchOnce(
-                request,
-                signal,
-                Math.min(ATTEMPT_TIMEOUT_MS, attempt.remainingMs),
-                ctx,
-              ),
+              this.fetchOnce(request, signal, Math.min(ATTEMPT_TIMEOUT_MS, attempt.remainingMs)),
             { signal: attempt.signal, maxWaitMs: attempt.remainingMs },
           );
           const parsed = parse(response);
@@ -237,12 +232,7 @@ export class UpstreamClient {
         const retryAfter = Math.max(1, Number(error.data.retryAfter) || 1);
         throw rateLimited(
           `This deployment's shared ${service} request budget is spent for the current window; retry in ${retryAfter} seconds.`,
-          {
-            reason: 'rate_limited',
-            retryAfter,
-            retryable: true,
-            ...ctx.recoveryFor('rate_limited'),
-          },
+          { reason: 'rate_limited', retryAfter, retryable: true },
           { cause: error },
         );
       }
@@ -260,7 +250,6 @@ export class UpstreamClient {
     request: UpstreamRequest,
     signal: AbortSignal,
     timeoutMs: number,
-    ctx: Context,
   ): Promise<CachedResponse> {
     const { service } = this.options;
     const timer = new AbortController();
@@ -273,7 +262,7 @@ export class UpstreamClient {
       });
       if (response.status === 429) {
         await response.body?.cancel();
-        throw this.rateLimitError(response, ctx);
+        throw this.rateLimitError(response);
       }
       if (response.status >= 300 && response.status < 400) {
         await response.body?.cancel();
@@ -330,7 +319,7 @@ export class UpstreamClient {
    * `min(max(base · 2^(n−1), Retry-After), max)` for the n-th consecutive 429 —
    * so the wait is defined whether or not the upstream sends the header.
    */
-  private rateLimitError(response: Response, ctx: Context): McpError {
+  private rateLimitError(response: Response): McpError {
     const { cooldown, service } = this.options;
     this.consecutive429s += 1;
     const hintMs = parseRetryAfterHeader(response.headers.get('retry-after'));
@@ -341,7 +330,7 @@ export class UpstreamClient {
     const retryAfter = Math.ceil(gateMs / 1000);
     const error = rateLimited(
       `${service} rate limit reached (HTTP 429); this deployment's shared request budget is spent for the current window — retry in ${retryAfter} seconds.`,
-      { reason: 'rate_limited', retryAfter, retryable: true, ...ctx.recoveryFor('rate_limited') },
+      { reason: 'rate_limited', retryAfter, retryable: true },
     );
     upstream429s.set(error, hintMs !== undefined);
     return error;
