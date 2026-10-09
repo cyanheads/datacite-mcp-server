@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -19,11 +19,17 @@
 
 </div>
 
+<div align="center">
+
+**Public Hosted Server:** [https://datacite.caseyjhand.com/mcp](https://datacite.caseyjhand.com/mcp)
+
+</div>
+
 ---
 
 ## Overview
 
-DOI metadata from DataCite for datasets, software, samples, workflows, and other research outputs that repositories deposit worldwide. Search it, open a record in full, trace a DOI's relations (versions, parts, supplements, citations), find the repositories that publish in a field, and format citations. Runs without an API key, as a stdio process or a local Streamable HTTP server.
+DOI metadata from DataCite for datasets, software, samples, workflows, and other research outputs that repositories deposit worldwide. Search it, open a record in full, trace a DOI's relations (versions, parts, supplements, citations), find the repositories that publish in a field, and format citations. Runs without an API key, as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
 
 ### Tools
 
@@ -101,6 +107,25 @@ Agent-friendly output:
 - In the text output, depositor-supplied text (titles, descriptions, names) is blockquoted or flattened and machine payloads are fenced, so deposited content can't pose as structure; `structuredContent` keeps it verbatim
 
 ## Getting started
+
+### Public Hosted Instance
+
+A public instance is available at `https://datacite.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "datacite-mcp-server": {
+      "type": "streamable-http",
+      "url": "https://datacite.caseyjhand.com/mcp"
+    }
+  }
+}
+```
+
+Every caller of the hosted instance shares one DataCite request budget of 800 requests per 5 minutes. For sustained use, run your own instance.
+
+### Self-Hosted / Local
 
 Add the following to your MCP client configuration file. No API key is needed; the contact email is optional.
 
