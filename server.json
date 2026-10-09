@@ -6,7 +6,7 @@
     "url": "https://github.com/cyanheads/datacite-mcp-server",
     "source": "github"
   },
-  "version": "0.1.1",
+  "version": "0.1.2",
   "remotes": [
     {
       "type": "streamable-http",
@@ -19,7 +19,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/datacite-mcp-server",
       "runtimeHint": "npx",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "environmentVariables": [
         {
           "name": "MCP_LOG_LEVEL",
@@ -50,7 +50,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/datacite-mcp-server",
       "runtimeHint": "npx",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "environmentVariables": [
         {
           "name": "MCP_TRANSPORT_TYPE",

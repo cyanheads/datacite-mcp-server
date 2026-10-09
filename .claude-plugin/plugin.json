@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "datacite-mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations.",
   "author": {
     "name": "cyanheads",

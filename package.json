@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/datacite-mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "mcpName": "io.github.cyanheads/datacite-mcp-server",
   "description": "Search DataCite datasets and software, fetch DOI metadata, trace relations, format citations via MCP. STDIO or Streamable HTTP.",
   "type": "module",

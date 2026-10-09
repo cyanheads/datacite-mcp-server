@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-09-27 01:17:08
+Generated on: 2026-10-09 07:43:16
 
 ```text
 datacite-mcp-server/
@@ -126,9 +126,11 @@ datacite-mcp-server/
 │   ├── clean-mcpb.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
+│   ├── install-otel.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   └── tree.ts
 ├── src/
