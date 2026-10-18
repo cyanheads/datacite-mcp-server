@@ -4,7 +4,8 @@
  * multi-line fields become blockquotes, and machine payloads get a fence longer
  * than any backtick run inside them. A line break is every character a reader
  * may split a line on (`normalizeLineBreaks`), not just CR and LF, so none can
- * end a slot early. `structuredContent` keeps the verbatim text.
+ * end a slot early. Titles and snippets arrive normalized; descriptions and
+ * other deposited fields retain their original text in `structuredContent`.
  * @module mcp-server/tools/definitions/_text
  */
 
@@ -12,6 +13,10 @@ import { normalizeLineBreaks, singleLine } from '@/services/datacite/query-build
 
 /** Collapses each run of line breaks to one space so the value stays in its inline slot. */
 export const flattenInline = singleLine;
+
+/** Escapes literal angles without decoding already-normalized title/snippet entities again. */
+export const escapeAngles = (value: string): string =>
+  value.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
  * An inline value for a Markdown table cell: flattened, with `\` and `|` escaped.

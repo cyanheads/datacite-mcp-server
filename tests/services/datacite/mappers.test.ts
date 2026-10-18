@@ -33,6 +33,17 @@ const clientsOf = (list: RawDoiList) =>
   new Map((list.included ?? []).map((client) => [client.id, client]));
 
 describe('mapWorkRow', () => {
+  it('normalizes title and snippet before the surrogate-safe snippet cap', () => {
+    const row = mapWorkRow(
+      record({
+        titles: [{ title: '<em>A</em> &amp; B' }],
+        descriptions: [{ description: `<p>${'a'.repeat(299)}&#x1f600;tail</p>` }],
+      }),
+      new Map(),
+    );
+    expect(row.title).toBe('A & B');
+    expect(row.descriptionSnippet).toBe(`${'a'.repeat(299)}…`);
+  });
   const page = fixtureJson<RawDoiList>('datacite/works/search-glacier.json');
 
   it('maps a recorded search hit, with repository and provider from the included client', () => {
@@ -340,11 +351,11 @@ describe('mapWork', () => {
       undefined,
     );
     expect(truncatedLists).toEqual([
-      { field: 'creators', shown: 100, total: 120 },
-      { field: 'subjects', shown: 100, total: 101 },
-      { field: 'geoLocations', shown: 50, total: 60 },
-      { field: 'relatedIdentifiers', shown: 100, total: 130 },
-      { field: 'relatedItems', shown: 25, total: 30 },
+      { field: 'creators', shown: 100, total: 120, nextOffset: 100 },
+      { field: 'subjects', shown: 100, total: 101, nextOffset: 100 },
+      { field: 'geoLocations', shown: 50, total: 60, nextOffset: 50 },
+      { field: 'relatedIdentifiers', shown: 100, total: 130, nextOffset: 100 },
+      { field: 'relatedItems', shown: 25, total: 30, nextOffset: 25 },
     ]);
     expect(work.creators).toHaveLength(RECORD_LIST_CAPS.creators);
     expect(work.contributors).toHaveLength(100);

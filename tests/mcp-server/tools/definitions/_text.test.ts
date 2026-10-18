@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   blockquote,
+  escapeAngles,
   fenced,
   flattenInline,
   num,
@@ -14,6 +15,14 @@ import {
   tableCell,
 } from '@/mcp-server/tools/definitions/_text.js';
 import { OTHER_LINE_BREAKS } from '../../../helpers/harness.js';
+
+describe('escapeAngles', () => {
+  it('escapes scientific comparisons and literal tags without decoding nested entities', () => {
+    expect(escapeAngles('T < 5 and p > 0; <i>x</i>; &lt;i&gt; &amp;lt;')).toBe(
+      'T &lt; 5 and p &gt; 0; &lt;i&gt;x&lt;/i&gt;; &lt;i&gt; &amp;lt;',
+    );
+  });
+});
 
 describe('flattenInline', () => {
   it('collapses every kind of line break to one space and trims', () => {

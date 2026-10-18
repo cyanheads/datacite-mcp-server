@@ -89,17 +89,21 @@ export const doiForms = (doi: string): string[] => [
 ];
 
 /**
- * Records whose `relatedIdentifiers` point at any of `dois` in any stored form,
+ * Records whose assertion lists point at any of `dois` in any stored form,
  * optionally narrowed to relation types (case-sensitive upstream).
  */
 export function reverseRelationQuery(
   dois: readonly string[],
   relationTypes?: readonly string[],
 ): string {
-  const target = anyPhrase('relatedIdentifiers.relatedIdentifier', dois.flatMap(doiForms));
-  return relationTypes?.length
-    ? `${target} AND relatedIdentifiers.relationType:(${relationTypes.join(' OR ')})`
-    : target;
+  const forms = dois.flatMap(doiForms);
+  const branch = (field: string, types: string) => {
+    const target = anyPhrase(field, forms);
+    return relationTypes?.length
+      ? `(${target} AND ${types}:(${relationTypes.join(' OR ')}))`
+      : `(${target})`;
+  };
+  return `(${branch('relatedIdentifiers.relatedIdentifier', 'relatedIdentifiers.relationType')} OR ${branch('relatedItems.relatedItemIdentifier.relatedItemIdentifier', 'relatedItems.relationType')})`;
 }
 
 /** ANDs clauses together; `*` when there are none. */

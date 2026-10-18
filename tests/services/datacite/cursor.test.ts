@@ -19,6 +19,30 @@ const encodeJsonText = (json: string): string =>
 const encodeRaw = (value: unknown): string => encodeJsonText(JSON.stringify(value));
 
 describe('encodeCursor / decodeCursor', () => {
+  it.each([{ id: '10.13039/501100001659' }, { id: '10.13039/501100001659', ror: '018mejw64' }])(
+    'round-trips a bounded canonical FundRef match choice %j',
+    (f) => {
+      const cursor = { t: 'second', q: 'hash', c: 0, n: 1, f };
+      expect(decodeCursor(encodeCursor(cursor))).toEqual({ v: 1, ...cursor });
+    },
+  );
+  it.each([
+    null,
+    [],
+    'literal',
+    {},
+    { id: '501100001659' },
+    { id: '10.13039/0501100001659' },
+    { id: `10.13039/${'1'.repeat(500)}` },
+    { id: '10.13039/501100001659', ror: 'https://ror.org/018mejw64' },
+    { id: '10.13039/501100001659', ror: '018MEJW64' },
+    { id: '10.13039/501100001659', ror: 'not-a-ror' },
+    { id: '10.13039/501100001659', ror: null },
+  ])('rejects malformed or noncanonical cursor FundRef identity %j', (f) => {
+    expect(
+      decodeCursor(encodeRaw({ v: 1, t: 'second', q: 'hash', c: 0, n: 1, f })),
+    ).toBeUndefined();
+  });
   it('round-trips an envelope through URL-safe base64 without padding', () => {
     const cursor = {
       t: 'MTMxNDc4NTc3OTAwMCwxMC4xNTk0L3dkY2MvbWJfaHNnXzIwMDdfMjAxMA',

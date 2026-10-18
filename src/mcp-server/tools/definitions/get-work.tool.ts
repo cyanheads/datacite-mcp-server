@@ -8,12 +8,13 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
+import { htmlToText } from '@/services/datacite/html-text.js';
 import { mapWork } from '@/services/datacite/mappers.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
 import { missFields, missGuidance } from './_miss.js';
-import { doiString } from './_schemas.js';
-import { blockquote, flattenInline, num, orNA } from './_text.js';
+import { blankAsUnset, doiString } from './_schemas.js';
+import { blockquote, escapeAngles, flattenInline, num, orNA } from './_text.js';
 
 const PersonSchema = z
   .object({
@@ -55,14 +56,31 @@ const PersonSchema = z
   .describe('A creator or contributor.');
 
 const found = (description: string) => `${description} Found arm only.`;
+const recordLists = [
+  'creators',
+  'contributors',
+  'relatedIdentifiers',
+  'subjects',
+  'fundingReferences',
+  'relatedItems',
+  'geoLocations',
+] as const;
 
 export const getWorkTool = tool('datacite_get_work', {
   title: 'Get DataCite work',
   description:
-    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with their full counts reported; use datacite_trace_relations for the complete relation graph. A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
+    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with exact list/offset continuation recipes; select a list to retrieve later entries without losing the other metadata. datacite_trace_relations maps a bounded graph (at most 100 nodes and 1,000 edges). A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
+    {
+      reason: 'offset_without_list',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'An offset is supplied without a selected list.',
+      severity: 'notice',
+      recovery:
+        'Pass list naming the capped record list to page, or omit offset to fetch the default record.',
+    },
     {
       reason: 'invalid_doi',
       code: JsonRpcErrorCode.ValidationError,
@@ -83,12 +101,32 @@ export const getWorkTool = tool('datacite_get_work', {
   ],
 
   input: z.object({
+    list: blankAsUnset(z.enum(recordLists).optional()).describe(
+      'One capped list to page in deposit order; other record fields keep their default caps.',
+    ),
+    offset: blankAsUnset(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()).describe(
+      'Zero-based offset into valid mapped entries of list. Defaults to zero with list; requires list.',
+    ),
     doi: doiString().describe(
       'The DOI, e.g. 10.5061/dryad.234: 10., a 4–9 digit registrant, a slash, and a suffix. Accepted bare, with doi: or info:doi/ prefixes, as a doi.org / dx.doi.org URL, or %2F-encoded; case-insensitive.',
     ),
   }),
 
   output: z.object({
+    listPage: z
+      .object({
+        list: z.enum(recordLists).describe('The selected record list.'),
+        offset: z.number().describe('Requested zero-based offset into valid mapped entries.'),
+        total: z.number().describe('Total valid mapped entries before capping.'),
+        nextOffset: z
+          .number()
+          .optional()
+          .describe('Next offset for this same list and DOI; absent at the end.'),
+      })
+      .optional()
+      .describe(
+        found('Paging metadata for the selected list, including empty and past-end pages.'),
+      ),
     found: z.boolean().describe('True when DataCite holds a public record for the DOI.'),
     doi: z.string().describe('The DOI, normalized to lowercase bare form.'),
     doiUrl: z
@@ -104,7 +142,11 @@ export const getWorkTool = tool('datacite_get_work', {
       .array(
         z
           .object({
-            title: z.string().describe('Title text.'),
+            title: z
+              .string()
+              .describe(
+                'Plain-text title, with formatting tags removed and entities decoded once.',
+              ),
             titleType: z
               .string()
               .optional()
@@ -120,11 +162,19 @@ export const getWorkTool = tool('datacite_get_work', {
     creators: z
       .array(PersonSchema)
       .optional()
-      .describe(found('Creators, capped at 100 (full count in truncatedLists).')),
+      .describe(
+        found(
+          'Creators, up to 100; full count in truncatedLists by default or listPage when selected.',
+        ),
+      ),
     contributors: z
       .array(PersonSchema)
       .optional()
-      .describe(found('Contributors, capped at 100 (full count in truncatedLists).')),
+      .describe(
+        found(
+          'Contributors, up to 100; full count in truncatedLists by default or listPage when selected.',
+        ),
+      ),
     publisher: z
       .object({
         name: z.string().describe('Publisher name.'),
@@ -176,7 +226,11 @@ export const getWorkTool = tool('datacite_get_work', {
           .describe('One subject.'),
       )
       .optional()
-      .describe(found('Subjects, capped at 100 (full count in truncatedLists).')),
+      .describe(
+        found(
+          'Subjects, up to 100; full count in truncatedLists by default or listPage when selected.',
+        ),
+      ),
     descriptions: z
       .array(
         z
@@ -212,7 +266,11 @@ export const getWorkTool = tool('datacite_get_work', {
           .describe('One funding reference.'),
       )
       .optional()
-      .describe(found('Funding, capped at 100 (full count in truncatedLists).')),
+      .describe(
+        found(
+          'Funding, up to 100; full count in truncatedLists by default or listPage when selected.',
+        ),
+      ),
     geoLocations: z
       .array(
         z
@@ -238,7 +296,11 @@ export const getWorkTool = tool('datacite_get_work', {
           .describe('One geolocation.'),
       )
       .optional()
-      .describe(found('Geolocations, capped at 50 (full count in truncatedLists).')),
+      .describe(
+        found(
+          'Geolocations, up to 50; full count in truncatedLists by default or listPage when selected.',
+        ),
+      ),
     rights: z
       .array(
         z
@@ -312,14 +374,17 @@ export const getWorkTool = tool('datacite_get_work', {
               .optional()
               .describe('The related item identifier, when deposited.'),
             identifierType: z.string().optional().describe('Its type.'),
-            title: z.string().optional().describe('Related item title.'),
+            title: z
+              .string()
+              .optional()
+              .describe('Plain-text related item title, normalized once.'),
           })
           .describe('One related item.'),
       )
       .optional()
       .describe(
         found(
-          'Related items described inline in this record — typically the journal, book, or series it appears in — capped at 25 (full count in truncatedLists).',
+          'Related items described inline in this record — typically the journal, book, or series it appears in — up to 25; full count in truncatedLists by default or listPage when selected.',
         ),
       ),
     counts: z
@@ -360,6 +425,9 @@ export const getWorkTool = tool('datacite_get_work', {
             field: z.string().describe('The capped list.'),
             shown: z.number().describe('Entries returned.'),
             total: z.number().describe('Entries in the record.'),
+            nextOffset: z
+              .number()
+              .describe('First unread offset; call again with list set to field and this offset.'),
           })
           .describe('One capped list.'),
       )
@@ -369,11 +437,12 @@ export const getWorkTool = tool('datacite_get_work', {
   enrichmentTrailer: {
     truncatedLists: {
       render: (lists) =>
-        `**Truncated lists:** ${(lists ?? []).map((l) => `${l.field}: ${num(l.shown)} of ${num(l.total)}`).join('; ')}`,
+        `**Truncated lists:** ${(lists ?? []).map((l) => `${l.field}: ${num(l.shown)} of ${num(l.total)}; continue datacite_get_work with the same doi, list: "${l.field}", offset: ${l.nextOffset}`).join('; ')}`,
     },
   },
 
   async handler(input, ctx) {
+    if (input.offset !== undefined && !input.list) throw ctx.fail('offset_without_list');
     const doi = normalizeDoi(input.doi);
     if (!doi) {
       throw ctx.fail(
@@ -387,20 +456,30 @@ export const getWorkTool = tool('datacite_get_work', {
       ctx.log.info('DOI not held by DataCite', { missReason: miss.missReason });
       return { found: false, doi, ...miss, guidance: missGuidance(doi, miss, 'record') };
     }
-    const { work, truncatedLists } = mapWork(hit.record, hit.client);
+    const { work, truncatedLists, listPage } = mapWork(
+      hit.record,
+      hit.client,
+      input.list ? { list: input.list, offset: input.offset ?? 0 } : undefined,
+    );
     if (truncatedLists.length > 0) ctx.enrich({ truncatedLists });
-    return { found: true, doi, ...work };
+    return { found: true, doi, ...work, ...(listPage && { listPage }) };
   },
 
   format: (result) => {
     const lines: string[] = [
       result.found
-        ? `# ${flattenInline(result.titles?.[0]?.title ?? result.doi)}`
+        ? `# ${escapeAngles(flattenInline(result.titles?.[0]?.title ?? result.doi))}`
         : `**Not found in DataCite** — ${result.doi}`,
       '',
       `**DOI:** ${result.doi} · **Found:** ${result.found}`,
     ];
     if (result.missReason) lines.push(`**Miss reason:** ${result.missReason}`);
+    if (result.listPage) {
+      const p = result.listPage;
+      lines.push(
+        `**List page:** ${p.list} · offset ${p.offset} · total ${p.total}${p.nextOffset === undefined ? ' · end of list' : ` · next offset ${p.nextOffset}; continue datacite_get_work with doi: "${result.doi}", list: "${p.list}", offset: ${p.nextOffset}`}`,
+      );
+    }
     if (result.registrationAgency)
       lines.push(`**Registration agency:** ${flattenInline(result.registrationAgency)}`);
     if (result.guidance) lines.push('', flattenInline(result.guidance));
@@ -442,7 +521,9 @@ export const getWorkTool = tool('datacite_get_work', {
       lines.push('', '## Titles');
       for (const t of result.titles) {
         const tags = [t.titleType, t.lang].filter(Boolean).join(', ');
-        lines.push(`- ${flattenInline(t.title)}${tags ? ` (${flattenInline(tags)})` : ''}`);
+        lines.push(
+          `- ${escapeAngles(flattenInline(t.title))}${tags ? ` (${flattenInline(tags)})` : ''}`,
+        );
       }
     }
     const people = (heading: string, list: typeof result.creators) => {
@@ -486,7 +567,7 @@ export const getWorkTool = tool('datacite_get_work', {
       for (const d of result.descriptions) {
         const tags = [d.descriptionType, d.lang].filter(Boolean).join(', ');
         if (tags) lines.push(`**${flattenInline(tags)}**`);
-        lines.push(blockquote(d.description), '');
+        lines.push(blockquote(escapeAngles(htmlToText(d.description))), '');
       }
     }
     if (result.fundingReferences?.length) {
@@ -553,7 +634,7 @@ export const getWorkTool = tool('datacite_get_work', {
         const parts = [
           item.relatedItemType,
           item.identifier && `${item.identifierType ?? 'id'} ${item.identifier}`,
-          item.title && `"${item.title}"`,
+          item.title && `"${escapeAngles(item.title)}"`,
         ].filter(Boolean);
         lines.push(
           `- ${flattenInline(item.relationType)}: ${flattenInline(parts.join('; ') || 'no identifier')}`,

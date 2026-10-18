@@ -5,6 +5,7 @@
  * @module services/datacite/mappers
  */
 
+import { htmlToText } from './html-text.js';
 import { doiUrl, normalizeOrcid, normalizeRor } from './normalize.js';
 import type {
   RawClientResource,
@@ -51,7 +52,10 @@ export const publicationYear = (attributes: RawDoiAttributes): number | undefine
 };
 
 export const firstTitle = (attributes: RawDoiAttributes): string | undefined =>
-  attributes.titles?.map((t) => text(t.title)).find((t) => t !== undefined);
+  attributes.titles?.map((t) => plainText(t.title)).find((t) => t !== undefined);
+
+const plainText = (value: unknown): string | undefined =>
+  typeof value === 'string' ? text(htmlToText(value)) : undefined;
 
 const publisherName = (attributes: RawDoiAttributes): string | undefined =>
   typeof attributes.publisher === 'string'
@@ -101,7 +105,7 @@ export function mapWorkRow(
   const client = clientId ? clients.get(clientId) : undefined;
   const creators = texts(a.creators?.map((c) => c.name));
   const descriptions = a.descriptions ?? [];
-  const description = text(
+  const description = plainText(
     (
       descriptions.find((d) => d.descriptionType === 'Abstract' && text(d.description)) ??
       descriptions.find((d) => text(d.description))
@@ -220,19 +224,48 @@ export const RECORD_LIST_CAPS = {
 
 export interface TruncatedList {
   field: string;
+  nextOffset: number;
   shown: number;
   total: number;
 }
 
+/** A selectable capped list in a deposited record. */
+export type RecordList = keyof typeof RECORD_LIST_CAPS;
+
+/** Paging of one selected list; offsets address valid mapped entries. */
+export interface RecordListPage {
+  list: RecordList;
+  nextOffset?: number;
+  offset: number;
+  total: number;
+}
+
 /** Maps a full `/dois` record to the found arm of `datacite_get_work`, with list caps applied. */
-export function mapWork(record: RawDoiResource, client: RawClientResource | undefined) {
+export function mapWork(
+  record: RawDoiResource,
+  client: RawClientResource | undefined,
+  selection?: { list: RecordList; offset: number },
+) {
   const a = record.attributes;
   const doi = recordDoi(record);
   const truncatedLists: TruncatedList[] = [];
+  let listPage: RecordListPage | undefined;
   const cap = <T>(field: keyof typeof RECORD_LIST_CAPS, items: T[]): T[] => {
     const limit = RECORD_LIST_CAPS[field];
+    if (selection?.list === field) {
+      const offset = selection.offset;
+      const page = items.slice(offset, offset + limit);
+      const nextOffset = offset + page.length;
+      listPage = {
+        list: field,
+        offset,
+        total: items.length,
+        ...(nextOffset < items.length && { nextOffset }),
+      };
+      return page;
+    }
     if (items.length <= limit) return items;
-    truncatedLists.push({ field, shown: limit, total: items.length });
+    truncatedLists.push({ field, shown: limit, total: items.length, nextOffset: limit });
     return items.slice(0, limit);
   };
 
@@ -270,7 +303,7 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
     ...opt('landingUrl', text(a.url)),
     ...(contentUrls.length > 0 && { contentUrls }),
     titles: (a.titles ?? []).flatMap((t) => {
-      const title = text(t.title);
+      const title = plainText(t.title);
       return title
         ? [{ title, ...opt('titleType', text(t.titleType)), ...opt('lang', text(t.lang)) }]
         : [];
@@ -374,7 +407,7 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
             ...opt('relatedItemType', text(item.relatedItemType)),
             ...opt('identifier', text(item.relatedItemIdentifier?.relatedItemIdentifier)),
             ...opt('identifierType', text(item.relatedItemIdentifier?.relatedItemIdentifierType)),
-            ...opt('title', item.titles?.map((t) => text(t.title)).find(Boolean)),
+            ...opt('title', item.titles?.map((t) => plainText(t.title)).find(Boolean)),
           },
         ];
       }),
@@ -401,7 +434,7 @@ export function mapWork(record: RawDoiResource, client: RawClientResource | unde
     ...opt('updated', text(a.updated)),
     ...opt('schemaVersion', text(a.schemaVersion)),
   };
-  return { doi, work, truncatedLists };
+  return { doi, work, truncatedLists, listPage };
 }
 
 // ─── Repositories ───────────────────────────────────────────────────────────

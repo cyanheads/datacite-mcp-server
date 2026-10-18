@@ -103,8 +103,8 @@ const CASES: PatternCase[] = [
     tool: searchWorksTool,
     field: 'licenses',
     array: true,
-    accepted: ['cc-by-4.0', 'MIT', ' CC0-1.0 '],
-    rejected: ['cc by 4.0', 'cc/by'],
+    accepted: ['cc-by-4.0', 'MIT', ' CC0-1.0 ', 'CC0 1.0', 'cc by 4.0', '\tCC0  1.0\n'],
+    rejected: ['cc,by', 'cc/by', 'cc\nby'],
   },
   {
     tool: searchWorksTool,
@@ -165,6 +165,34 @@ const inputFor = (c: PatternCase, value: string) => ({
 });
 
 describe('advertised identifier patterns', () => {
+  it('scans license patterns with bounded thread CPU across 64-fold growth', () => {
+    const pattern = advertisedPattern(searchWorksTool, 'licenses');
+    const shapes = [
+      (n: number) => '('.repeat(n),
+      (n: number) => '[('.repeat(n / 2),
+      (n: number) => `a${' a'.repeat(n / 2)}!`,
+      (n: number) => `${'a'.repeat(n)}\n!`,
+      (n: number) => `${'a\n'.repeat(n / 2)}!`,
+      (n: number) => `a${' '.repeat(n)}!`,
+    ];
+    for (const shape of shapes) {
+      const times: number[] = [];
+      for (const size of [625, 1250, 2500, 5000, 10_000, 20_000, 40_000, 80_000]) {
+        const value = shape(size);
+        const results: boolean[] = [];
+        const started = process.threadCpuUsage();
+        for (let repeat = 0; repeat < 200; repeat++) results.push(pattern.test(value));
+        const used = process.threadCpuUsage(started);
+        const elapsed = used.user + used.system;
+        expect(results).toEqual(Array<boolean>(200).fill(false));
+        expect(elapsed).toBeLessThan(500_000);
+        times.push(Math.max(1, elapsed));
+      }
+      // Keep the slope below Bun's large-input regex execution-mode boundary.
+      expect(times[6]! / times[0]!).toBeLessThan(256);
+    }
+    // Thread CPU above bounds the work; allow wall time for descheduling in the full suite.
+  }, 20_000);
   it('cover every patterned input across the tool surface', () => {
     const patterned = TOOLS.flatMap((tool) =>
       Object.entries(properties(tool))

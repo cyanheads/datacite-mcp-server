@@ -11,6 +11,7 @@ import type { CreateAppOptions } from '@cyanheads/mcp-ts-core';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
+import { getRorService } from '@/services/ror/ror-service.js';
 
 const createApp = vi.hoisted(() => vi.fn());
 
@@ -77,7 +78,7 @@ describe('createApp options', () => {
 });
 
 describe('lifecycle hooks', () => {
-  it('wires both services in setup and disposes them in teardown', () => {
+  it('wires all upstream services in setup and disposes them in teardown', () => {
     vi.stubEnv('DATACITE_CONTACT_EMAIL', '');
     vi.stubEnv('DATACITE_MAX_REQUESTS_PER_5MIN', '');
     expect(() => getDataCiteService()).toThrow('DataCiteService not initialized');
@@ -85,11 +86,13 @@ describe('lifecycle hooks', () => {
     options.setup?.({} as never);
     expect(getDataCiteService()).toBeDefined();
     expect(getRegistrationAgencyService()).toBeDefined();
+    expect(getRorService()).toBeDefined();
 
     options.teardown?.({} as never);
     expect(() => getDataCiteService()).toThrow('DataCiteService not initialized');
     expect(() => getRegistrationAgencyService()).toThrow(
       'RegistrationAgencyService not initialized',
     );
+    expect(() => getRorService()).toThrow('RorService not initialized');
   });
 });

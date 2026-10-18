@@ -8,11 +8,14 @@
  */
 
 import { base64ToString, stringToBase64 } from '@cyanheads/mcp-ts-core/utils';
+import { normalizeFunderId, normalizeRor } from './normalize.js';
 
 /** The decoded envelope. */
 export interface WorkCursor {
   /** Epoch ms of the last row's `created` on the page that issued the cursor. */
   c: number;
+  /** Crossref Funder identity selected when the walk began; no ROR means literal matching. */
+  f?: { id: string; ror?: string };
   /** Rows the walk delivered through the page that issued the cursor. */
   n: number;
   /** Fingerprint of the composed query and filters. */
@@ -49,7 +52,7 @@ export function decodeCursor(value: string): WorkCursor | undefined {
       base64ToString(padded.padEnd(Math.ceil(padded.length / 4) * 4, '=')),
     );
     if (typeof parsed !== 'object' || parsed === null) return;
-    const { v, t, q, c, n } = parsed as Record<string, unknown>;
+    const { v, t, q, c, n, f } = parsed as Record<string, unknown>;
     if (
       v !== 1 ||
       typeof t !== 'string' ||
@@ -60,7 +63,15 @@ export function decodeCursor(value: string): WorkCursor | undefined {
     ) {
       return;
     }
-    return { v, t, q, c, n };
+    let funder: WorkCursor['f'];
+    if (f !== undefined) {
+      if (typeof f !== 'object' || f === null) return;
+      const { id, ror } = f as Record<string, unknown>;
+      if (typeof id !== 'string' || id.length > 500 || normalizeFunderId(id) !== id) return;
+      if (ror !== undefined && (typeof ror !== 'string' || normalizeRor(ror) !== ror)) return;
+      funder = { id, ...(ror !== undefined && { ror }) };
+    }
+    return { v, t, q, c, n, ...(funder && { f: funder }) };
   } catch {
     return;
   }

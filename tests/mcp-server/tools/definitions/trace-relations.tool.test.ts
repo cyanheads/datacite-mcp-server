@@ -64,7 +64,7 @@ const ARTICLE = '10.1016/j.jag.2021.102408';
 const ROOT_FIELDS =
   'doi,titles,types,publicationYear,citationCount,versionCount,client,relatedIdentifiers,relatedItems,referenceCount,versionOfCount,partCount,partOfCount';
 const REVERSE_FIELDS =
-  'doi,titles,types,publicationYear,citationCount,versionCount,client,relatedIdentifiers';
+  'doi,titles,types,publicationYear,citationCount,versionCount,client,relatedIdentifiers,relatedItems';
 const NODE_FIELDS = 'doi,titles,types,publicationYear,citationCount,versionCount,client';
 const NODE_WITH_RELATIONS_FIELDS = `${NODE_FIELDS},relatedIdentifiers,relatedItems`;
 const CITATION_KEBAB =
@@ -77,6 +77,8 @@ afterEach(() => {
 
 const run = (input: Input) => runToolContract(traceRelationsTool, input);
 const output = (result: ToolResultLike) => structured<Output>(result);
+const eventRecovery = (doi: string, cap: number) =>
+  `To read Event Data without metadata consuming the node cap, call datacite_trace_relations with ${JSON.stringify({ doi, event_offset: 0, max_nodes: Math.max(2, cap) })} and the same filters. Upstream ordering can change between calls; only the first 10,000 ranked events are accessible.`;
 
 /** The five stored forms of a DOI, written out as the design lists them. */
 const doiForms = (doi: string) => [
@@ -88,11 +90,13 @@ const doiForms = (doi: string) => [
 ];
 
 /** The reverse-relation query the design specifies for `dois`, optionally narrowed. */
-const reverseQuery = (dois: string[], types?: string[]) =>
-  `relatedIdentifiers.relatedIdentifier:(${dois
+const reverseQuery = (dois: string[], types?: string[]) => {
+  const forms = dois
     .flatMap(doiForms)
     .map((form) => `"${form}"`)
-    .join(' OR ')})${types ? ` AND relatedIdentifiers.relationType:(${types.join(' OR ')})` : ''}`;
+    .join(' OR ');
+  return `((relatedIdentifiers.relatedIdentifier:(${forms})${types ? ` AND relatedIdentifiers.relationType:(${types.join(' OR ')})` : ''}) OR (relatedItems.relatedItemIdentifier.relatedItemIdentifier:(${forms})${types ? ` AND relatedItems.relationType:(${types.join(' OR ')})` : ''}))`;
+};
 
 /** `/dois` routes by call shape: the exact-DOI root read, a reverse query, an `ids=` batch. */
 const rootRead = (doi: string) => dataCite('/dois', param('query', `doi:"${doi}"`));
@@ -189,6 +193,495 @@ const expectToolError = (result: ToolResultLike, reason: string, code: number) =
   expect(contentText(result)).toContain(`(reason ${reason}`);
   return error;
 };
+
+describe('related-item assertion paths', () => {
+  it('verifies related-item pairs, deduplicates mixed lists, and applies inverse filters at both hops', async () => {
+    const item = (target: string, relationType = 'IsPartOf') => ({
+      relationType,
+      relatedItemIdentifier: { relatedItemIdentifier: target, relatedItemIdentifierType: 'URL' },
+    });
+    const first = record(PART1, {
+      relatedIdentifiers: [
+        { relationType: 'IsPartOf', relatedIdentifier: ROOT, relatedIdentifierType: 'DOI' },
+      ],
+      relatedItems: [item(`https://doi.org/${ROOT.toUpperCase()}`), item(ROOT, 'Cites')],
+    });
+    const second = record(PART2, { relatedItems: [item(`https://doi.org/${PART1}`)] });
+    const falsePositive = record(PPAT, { relatedItems: [item(ROOT, 'Cites'), item(PPAT)] });
+    const { http } = initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      {
+        match: reverseRead([ROOT], ['IsPartOf']),
+        respond: (request) => {
+          expect(new URL(request.url).searchParams.get('fields[dois]')).toContain('relatedItems');
+          return json(doiList([first, falsePositive]));
+        },
+      },
+      {
+        match: reverseRead([PART1], ['IsPartOf']),
+        respond: json(doiList([second, falsePositive])),
+      },
+      { match: idsRead, respond: byIds([first, second]) },
+    ]);
+    const result = await run({
+      doi: ROOT,
+      depth: 2,
+      relation_types: ['HasPart'],
+      include_event_data: false,
+    });
+    const out = output(result);
+    expect(out.edges).toEqual([
+      { from: PART1, to: ROOT, relationType: 'IsPartOf', sources: ['reverse_metadata'] },
+      { from: PART2, to: PART1, relationType: 'IsPartOf', sources: ['reverse_metadata'] },
+    ]);
+    expect(out.nodes.map((node) => [node.id, node.depth])).toEqual([
+      [ROOT, 0],
+      [PART1, 1],
+      [PART2, 2],
+    ]);
+    expect(contentText(result)).toContain(`${PART2} —IsPartOf→ ${PART1} [reverse_metadata]`);
+    expect(contentText(result)).not.toContain(`${PPAT} —`);
+    expect(
+      requestUrls(http).filter((url) => url.searchParams.get('query')?.includes('relatedItems')),
+    ).toHaveLength(2);
+  });
+
+  it('counts heavy relatedItems against the first-page reverse bound', async () => {
+    const records = Array.from({ length: 10 }, (_, i) =>
+      record(`${PART1}-${i}`, {
+        relatedItems: Array.from({ length: 1001 }, () => ({
+          relationType: 'IsPartOf',
+          relatedItemIdentifier: { relatedItemIdentifier: ROOT, relatedItemIdentifierType: 'DOI' },
+        })),
+      }),
+    );
+    const { http } = initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      { match: reverseRead([ROOT]), respond: paged(records, 100) },
+    ]);
+    const result = await run({ doi: ROOT, include_event_data: false });
+    expect(output(result).coverage.reverseMetadata).toMatchObject({ fetched: 10, total: 100 });
+    expect(output(result).notice).toContain('10,010 related identifiers');
+    expect(output(result).notice).toContain(
+      'relatedItems.relatedItemIdentifier.relatedItemIdentifier',
+    );
+    expect(contentText(result)).toContain(output(result).notice);
+    expect(
+      requestUrls(http).filter((url) => url.searchParams.get('query') === reverseQuery([ROOT])),
+    ).toHaveLength(1);
+  });
+  it('characterizes own related items and mixed-list deduplication on both surfaces', async () => {
+    initServices([
+      {
+        match: rootRead(ROOT),
+        respond: json(
+          doiList([
+            record(ROOT, {
+              relatedIdentifiers: [
+                { relationType: 'HasPart', relatedIdentifier: PART1, relatedIdentifierType: 'DOI' },
+              ],
+              relatedItems: [
+                {
+                  relationType: 'HasPart',
+                  relatedItemIdentifier: {
+                    relatedItemIdentifier: `https://doi.org/${PART1}`,
+                    relatedItemIdentifierType: 'URL',
+                  },
+                },
+              ],
+            }),
+          ]),
+        ),
+      },
+      { match: reverseRead([ROOT]), respond: json(emptyDoiList()) },
+      { match: idsRead, respond: byIds([]) },
+    ]);
+    const result = await run({ doi: ROOT, include_event_data: false });
+    expect(output(result).edges).toEqual([
+      { from: ROOT, to: PART1, relationType: 'HasPart', sources: ['metadata'] },
+    ]);
+    expect(contentText(result)).toContain(`${ROOT} —HasPart→ ${PART1} [metadata]`);
+  });
+});
+
+describe('Event Data offset continuations', () => {
+  it('offers offset zero when default totals are absent but upstream advertises another page', async () => {
+    initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      { match: reverseRead([ROOT]), respond: json(emptyDoiList()) },
+      {
+        match: eventsRead,
+        respond: json({
+          data: Array.from({ length: 100 }, () => event(ROOT, 'cites', PPAT)),
+          meta: { page: 1 },
+          links: { next: 'https://api.datacite.org/events?page[number]=2' },
+        }),
+      },
+      { match: idsRead, respond: byIds([]) },
+    ]);
+    const result = await run({ doi: ROOT });
+    expect(output(result).notice).toContain('"event_offset":0');
+    expect(output(result).coverage.eventData.hasNextPage).toBe(true);
+    expect(contentText(result)).toContain('"event_offset":0');
+    expect(contentText(result)).toContain('hasNextPage true');
+  });
+
+  it.each([{ rows: [] }, { rows: [event(ROOT, 'cites', PPAT)] }])(
+    'does not exhaust an inconsistent in-range page with $rows',
+    async ({ rows }) => {
+      initServices(
+        offsetRoutes({
+          data: rows,
+          meta: { total: 273, page: 2, 'total-pages': 3 },
+          links: { next: 'next' },
+        }),
+      );
+      const result = await run({ doi: ROOT, event_offset: 100 });
+      expect(output(result).coverage.eventData.status).toBe('unavailable');
+      expect(output(result).coverage.eventData.nextEventOffset).toBeUndefined();
+      expect(output(result).coverage.eventData.progress).toBeUndefined();
+      expect(contentText(result)).toContain('retry the same event_offset');
+      expect(contentText(result)).not.toContain('progress exhausted');
+      expect(contentText(result)).not.toContain('No relations');
+    },
+  );
+  const offsetRoutes = (list: RawEventList) => [
+    { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+    { match: eventsRead, respond: json(list) },
+    { match: idsRead, respond: byIds([]) },
+  ];
+
+  it('treats an unknown-total ranked ceiling as a ceiling even without a next link', async () => {
+    initServices(
+      offsetRoutes({
+        data: Array.from({ length: 100 }, () => event(ROOT, 'cites', PPAT)),
+        meta: { page: 100, 'total-pages': 100 },
+        links: { next: null },
+      }),
+    );
+    const result = await run({ doi: ROOT, event_offset: 9900 });
+    expect(output(result).coverage.eventData.progress).toBe('ceiling');
+    expect(output(result).coverage.eventData.nextEventOffset).toBeUndefined();
+    expect(contentText(result)).toContain('not exhaustion');
+  });
+
+  it('treats a short unknown-total page with a next link as unavailable', async () => {
+    initServices(offsetRoutes({ data: [], meta: { page: 2 }, links: { next: 'next' } }));
+    const result = await run({ doi: ROOT, event_offset: 100 });
+    expect(output(result).coverage.eventData.status).toBe('unavailable');
+    expect(output(result).coverage.eventData.progress).toBeUndefined();
+    expect(contentText(result)).toContain('retry the same event_offset');
+  });
+
+  it('keeps incoming event direction when filtering from the root side', async () => {
+    initServices(
+      offsetRoutes(eventList([event(PPAT, 'cites', ROOT), event(ROOT, 'cites', ARTICLE)])),
+    );
+    const result = await run({
+      doi: ROOT,
+      event_offset: 0,
+      relation_types: ['IsCitedBy'],
+      max_nodes: 2,
+    });
+    expect(output(result).edges).toEqual([
+      {
+        from: PPAT,
+        to: ROOT,
+        relationType: 'Cites',
+        sources: ['event_data'],
+        eventSources: ['crossref'],
+      },
+    ]);
+    expect(output(result).coverage.eventData.progress).toBe('exhausted');
+    expect(contentText(result)).toContain(`${PPAT} —Cites→ ${ROOT}`);
+    expect(contentText(result)).not.toContain(`${ROOT} —Cites→ ${ARTICLE}`);
+  });
+
+  it('retries an uncertain non-DataCite endpoint at its raw position rather than skipping it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let answer = false;
+    initServices([
+      { match: rootRead(ARTICLE), respond: json(emptyDoiList()) },
+      {
+        match: eventsRead,
+        respond: json(eventList([event(ARTICLE, 'cites', PPAT), event(ARTICLE, 'cites', PART1)])),
+      },
+      {
+        match: idsRead,
+        respond: (request) =>
+          !answer && new URL(request.url).searchParams.get('ids')?.includes(PPAT)
+            ? hang(request)
+            : byIds([record(PPAT), record(PART1)])(request),
+      },
+    ]);
+    const pending = run({ doi: ARTICLE, event_offset: 0, depth: 2 });
+    await vi.advanceTimersByTimeAsync(20_000);
+    const first = await pending;
+    expect(output(first).edges).toEqual([]);
+    expect(output(first).coverage.eventData).toMatchObject({
+      progress: 'blocked',
+      nextEventOffset: 0,
+      kept: 0,
+    });
+    expect(contentText(first)).toContain('retry nextEventOffset before advancing');
+    answer = true;
+    const retried = await run({ doi: ARTICLE, event_offset: 0 });
+    expect(output(retried).edges.map((edge) => edge.to)).toEqual([PPAT, PART1]);
+    expect(output(retried).coverage.eventData.progress).toBe('exhausted');
+    expect(contentText(retried)).toContain(`${ARTICLE} —Cites→ ${PPAT}`);
+  });
+
+  it('preserves root-side direction, provenance and non-DataCite exclusions', async () => {
+    initServices([
+      { match: rootRead(ARTICLE), respond: json(emptyDoiList()) },
+      {
+        match: eventsRead,
+        respond: json(
+          eventList([
+            event(PART1, 'cites', ARTICLE),
+            event(ARTICLE, 'cites', PPAT),
+            event(ARTICLE, 'cites', PART1),
+            event(ARTICLE, 'cites', PART1),
+            { id: 'malformed', attributes: { 'obj-id': `https://doi.org/${PART2}` } },
+          ]),
+        ),
+      },
+      { match: idsRead, respond: byIds([record(PPAT, {}, null), record(PART1)]) },
+    ]);
+    const result = await run({
+      doi: ARTICLE,
+      event_offset: 0,
+      max_nodes: 2,
+      relation_types: ['Cites'],
+    });
+    expect(output(result).edges).toEqual([
+      {
+        from: ARTICLE,
+        to: PART1,
+        relationType: 'Cites',
+        sources: ['event_data'],
+        eventSources: ['crossref'],
+      },
+    ]);
+    expect(output(result).coverage.eventData).toMatchObject({ kept: 2, progress: 'exhausted' });
+    expect(contentText(result)).toContain(
+      `${ARTICLE} —Cites→ ${PART1} [event_data, event source crossref]`,
+    );
+  });
+
+  it.each(['outage', 'clamped'])('does not claim completion when the page is %s', async (kind) => {
+    initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      {
+        match: eventsRead,
+        respond:
+          kind === 'outage'
+            ? rateLimitResponse()
+            : json({ data: [], meta: { total: 150, page: 1 } }),
+      },
+    ]);
+    const result = await run({ doi: ROOT, event_offset: 100 });
+    expect(output(result).coverage.eventData).toMatchObject({ status: 'unavailable', offset: 100 });
+    expect(output(result).coverage.eventData.progress).toBeUndefined();
+    expect(output(result).coverage.eventData.nextEventOffset).toBeUndefined();
+    expect(contentText(result)).toContain('retry the same event_offset');
+  });
+
+  it('never converts caller cancellation during the page read into degraded success', async () => {
+    const controller = new AbortController();
+    const started = Promise.withResolvers<void>();
+    initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      {
+        match: eventsRead,
+        respond: (request) => {
+          started.resolve();
+          return hang(request);
+        },
+      },
+    ]);
+    const pending = runToolContract(
+      traceRelationsTool,
+      { doi: ROOT, event_offset: 100 },
+      { context: { signal: controller.signal } },
+    );
+    await started.promise;
+    controller.abort();
+    const result = await pending;
+    expect(toolError(result).code).toBe(JsonRpcErrorCode.RequestCancelled);
+    expect(contentText(result)).toContain('aborted');
+  });
+
+  it('walks raw first, second, last and past-end pages with duplicates and excluded events', async () => {
+    const raw = Array.from({ length: 273 }, (_, i) =>
+      i % 4 === 0
+        ? event(PART1, 'has-part', ROOT)
+        : event(ROOT, 'cites', i % 3 === 0 ? PPAT : `${ARTICLE}-${i}`),
+    );
+    const { http } = initServices([
+      { match: rootRead(ROOT), respond: json(doiList([record(ROOT)])) },
+      {
+        match: eventsRead,
+        respond: (request) => {
+          const page = Number(new URL(request.url).searchParams.get('page[number]'));
+          return json({
+            data: raw.slice((page - 1) * 100, page * 100),
+            meta: { total: raw.length, page, 'total-pages': 3 },
+            links: { next: page < 3 ? 'next' : null },
+          });
+        },
+      },
+      { match: idsRead, respond: byIds([]) },
+    ]);
+    const represented = new Set<string>();
+    let offset: number | undefined = 0;
+    let calls = 0;
+    while (offset !== undefined) {
+      expect(++calls).toBeLessThan(150);
+      const result = await run({
+        doi: ROOT,
+        event_offset: offset,
+        max_nodes: 4,
+        depth: 2,
+        relation_types: ['Cites'],
+      });
+      const out = output(result);
+      expect(out.coverage.ownMetadata.status).toBe('skipped');
+      expect(out.coverage.reverseMetadata.status).toBe('skipped');
+      expect(out.nodes.every((node) => node.depth <= 1)).toBe(true);
+      expect(out.edges.every((edge) => edge.sources.join() === 'event_data')).toBe(true);
+      for (const edge of out.edges) {
+        represented.add(edge.to);
+        expect(contentText(result)).toContain(`${edge.from} —${edge.relationType}→ ${edge.to}`);
+      }
+      const next = out.coverage.eventData.nextEventOffset;
+      if (next !== undefined) expect(next).toBeGreaterThan(offset);
+      offset = next;
+    }
+    expect(represented).toEqual(
+      new Set(
+        raw
+          .filter((row) => row.attributes['relation-type-id'] === 'cites')
+          .map((row) => row.attributes['obj-id']?.replace('https://doi.org/', '')),
+      ),
+    );
+    const past = await run({ doi: ROOT, event_offset: 300 });
+    expect(output(past).coverage.eventData).toMatchObject({
+      page: 4,
+      progress: 'exhausted',
+      fetched: 0,
+    });
+    expect(output(past).coverage.eventData.nextEventOffset).toBeUndefined();
+    expect(contentText(past)).toContain('progress exhausted');
+    expect(
+      requestUrls(http)
+        .filter((url) => url.pathname === '/dois' && !url.searchParams.has('ids'))
+        .every((url) => url.searchParams.get('query') === `doi:"${ROOT}"`),
+    ).toBe(true);
+  });
+
+  it.each([
+    [0, [], { total: 0, page: 1 }, undefined, 'exhausted'],
+    [
+      100,
+      Array.from({ length: 100 }, () => event(PART1, 'has-part', ROOT)),
+      { total: 250, page: 2 },
+      200,
+      'more',
+    ],
+    [
+      9900,
+      Array.from({ length: 100 }, () => event(ROOT, 'cites', PPAT)),
+      { total: 10001, page: 100 },
+      undefined,
+      'ceiling',
+    ],
+  ] as const)(
+    'reports terminal and empty-admission boundaries at offset %s',
+    async (offset, rows, meta, next, progress) => {
+      initServices(offsetRoutes({ data: [...rows], meta }));
+      const result = await run({ doi: ROOT, event_offset: offset, max_nodes: 2 });
+      expect(output(result).coverage.eventData).toMatchObject({ offset, progress });
+      expect(output(result).coverage.eventData.nextEventOffset).toBe(next);
+      expect(contentText(result)).toContain(`progress ${progress}`);
+      if (progress === 'ceiling') expect(output(result).notice).toContain('not exhaustion');
+    },
+  );
+
+  it('keeps a root-only call actionable and preserves filters in its recipe', async () => {
+    initServices(offsetRoutes(eventList([event(ROOT, 'cites', PPAT)])));
+    const result = await run({
+      doi: ROOT,
+      event_offset: 0,
+      max_nodes: 1,
+      relation_types: ['Cites'],
+    });
+    expect(output(result).coverage.eventData.nextEventOffset).toBe(0);
+    expect(output(result).notice).toContain('Raise max_nodes to at least 2');
+    expect(output(result).notice).toContain('"relation_types":["Cites"]');
+    expect(contentText(result)).toContain('Raise max_nodes to at least 2');
+    expect(contentText(result)).not.toContain('No relations');
+  });
+
+  it.each([{ include_event_data: false }, { relation_types: ['HasPart'] }])(
+    'does not claim progress after a skipped read %j',
+    async (options) => {
+      initServices(offsetRoutes(eventList()));
+      const result = await run({ doi: ROOT, event_offset: 100, ...options });
+      expect(output(result).coverage.eventData.status).toBe('skipped');
+      expect(output(result).coverage.eventData.nextEventOffset).toBeUndefined();
+      expect(output(result).coverage.eventData.progress).toBeUndefined();
+      expect(contentText(result)).toContain('Event Data:** skipped');
+      expect(contentText(result)).not.toContain('No relations');
+    },
+  );
+
+  it.each([-1, 1.5, 10000, true])(
+    'rejects invalid offset %s on both error surfaces',
+    async (event_offset) => {
+      // Deliberately exercise wrong-type contract input.
+      const result = await runToolContract(traceRelationsTool, { doi: ROOT, event_offset });
+      expect(result.isError).toBe(true);
+      expect(toolError(result).code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(contentText(result)).toContain('event_offset');
+    },
+  );
+  it('resumes before the next endpoint that cannot fit and emits no metadata', async () => {
+    initServices([
+      {
+        match: rootRead(ROOT),
+        respond: json(
+          doiList([
+            record(ROOT, {
+              relatedIdentifiers: [
+                { relationType: 'HasPart', relatedIdentifier: PART2, relatedIdentifierType: 'DOI' },
+              ],
+            }),
+          ]),
+        ),
+      },
+      { match: reverseRead([ROOT]), respond: json(emptyDoiList()) },
+      {
+        match: eventsRead,
+        respond: json(eventList([event(ROOT, 'cites', PPAT), event(ROOT, 'cites', ARTICLE)])),
+      },
+      { match: idsRead, respond: byIds([]) },
+    ]);
+    const result = await run({ doi: ROOT, event_offset: 0, max_nodes: 2 });
+    expect(result.isError).toBeFalsy();
+    expect(output(result).edges).toEqual([
+      {
+        from: ROOT,
+        to: PPAT,
+        relationType: 'Cites',
+        sources: ['event_data'],
+        eventSources: ['crossref'],
+      },
+    ]);
+    expect(output(result).coverage.eventData).toMatchObject({ offset: 0, nextEventOffset: 1 });
+    expect(contentText(result)).toContain('nextEventOffset 1');
+  });
+});
 
 describe('a DataCite root', () => {
   it('merges own, reverse, and Event Data edges and hydrates every node on both surfaces', async () => {
@@ -324,7 +817,7 @@ describe('a DataCite root', () => {
     });
     const [reverse, hydrate] = byPath('/dois');
     expect(Object.fromEntries(reverse?.searchParams ?? [])).toEqual({
-      query: `relatedIdentifiers.relatedIdentifier:("${ROOT}" OR "https://doi.org/${ROOT}" OR "http://doi.org/${ROOT}" OR "https://dx.doi.org/${ROOT}" OR "http://dx.doi.org/${ROOT}")`,
+      query: reverseQuery([ROOT]),
       sort: '-created',
       'page[size]': '10',
       'fields[dois]': REVERSE_FIELDS,
@@ -606,7 +1099,7 @@ describe('a journal-article root', () => {
         kept: 2,
       },
     });
-    const notice = `${ARTICLE} is not a DataCite DOI, so it has no DataCite metadata of its own; edges shown are DataCite records that point at it and, from Event Data, the DataCite works its own reference list cites.`;
+    const notice = `${eventRecovery(ARTICLE, 3)} ${ARTICLE} is not a DataCite DOI, so it has no DataCite metadata of its own; edges shown are DataCite records that point at it and, from Event Data, the DataCite works its own reference list cites.`;
     expect(out.notice).toBe(notice);
     // The dropped Crossref objects never spent the node budget: 3 nodes fit max_nodes 3.
     expect(out).not.toHaveProperty('truncated');
@@ -697,6 +1190,41 @@ describe('a journal-article root', () => {
 });
 
 describe('depth 2', () => {
+  it('normalizes root, hydrated first-hop and second-hop titles once on both surfaces', async () => {
+    const root = record(ROOT, {
+      titles: [{ title: '<b>Root</b> &lt;i&gt;' }],
+      relatedIdentifiers: [
+        { relationType: 'HasPart', relatedIdentifier: PART1, relatedIdentifierType: 'DOI' },
+      ],
+    });
+    const first = record(PART1, {
+      titles: [{ title: '<em>First</em> &amp;lt;i&amp;gt;' }],
+      relatedIdentifiers: [
+        { relationType: 'HasPart', relatedIdentifier: PART2, relatedIdentifierType: 'DOI' },
+      ],
+    });
+    const second = record(PART2, { titles: [{ title: '<p>Second</p><p>T < 5 and p > 0</p>' }] });
+    initServices([
+      { match: rootRead(ROOT), respond: json(doiList([root])) },
+      { match: reverseRead([ROOT]), respond: json(emptyDoiList()) },
+      { match: reverseRead([PART1]), respond: json(emptyDoiList()) },
+      { match: idsRead, respond: byIds([first, second]) },
+    ]);
+    const result = await run({ doi: ROOT, depth: 2, include_event_data: false });
+    const out = output(result);
+    expect(out.root.title).toBe('Root <i>');
+    expect(out.nodes.find((n) => n.id === PART1)).toMatchObject({
+      title: 'First &lt;i&gt;',
+      depth: 1,
+    });
+    expect(out.nodes.find((n) => n.id === PART2)).toMatchObject({
+      title: 'Second T < 5 and p > 0',
+      depth: 2,
+    });
+    expect(contentText(result)).toContain('**Title:** Root &lt;i&gt;');
+    expect(contentText(result)).toContain('First &lt;i&gt;');
+    expect(contentText(result)).toContain('Second T &lt; 5 and p &gt; 0');
+  });
   const PART1_WITH_RELATIONS = dryad8515Part(1);
   PART1_WITH_RELATIONS.attributes.relatedIdentifiers?.push(
     {
@@ -779,7 +1307,9 @@ describe('depth 2', () => {
     expect(http.calls).toHaveLength(7);
     for (const url of dois) expect(url.searchParams.get('sort')).toBe('-created');
     const frontier = dois.find(
-      (url) => url.searchParams.get('fields[dois]') === NODE_WITH_RELATIONS_FIELDS,
+      (url) =>
+        url.searchParams.has('ids') &&
+        url.searchParams.get('fields[dois]') === NODE_WITH_RELATIONS_FIELDS,
     );
     expect(frontier?.searchParams.get('ids')).toBe(`${PART1},${PART2}`);
     const reverse2 = dois.find(
@@ -1050,7 +1580,7 @@ describe('depth 2', () => {
       spokes: 100,
       maxNodes: 100,
       relationTypes: ['HasPart'],
-      notice: `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query relatedIdentifiers.relatedIdentifier:"10.5555/wide-hub" to datacite_search_works to list the DataCite records that point at this DOI. The first hop filled max_nodes=100, so the second hop was not expanded and the relations of 99 DataCite neighbours went untraced; ${noRoom} trace a neighbour directly to follow its relations.`,
+      notice: `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query ${reverseQuery(['10.5555/wide-hub'])} to datacite_search_works to list the DataCite records that point at this DOI. The first hop filled max_nodes=100, so the second hop was not expanded and the relations of 99 DataCite neighbours went untraced; ${noRoom} trace a neighbour directly to follow its relations.`,
     },
   ])('$name', async ({ spokes, maxNodes, relationTypes, notice }) => {
     const hub = '10.5555/wide-hub';
@@ -1158,8 +1688,7 @@ describe('the node cap', () => {
     initServices(dryad8515Routes());
     const result = await run({ doi: ROOT, max_nodes: 1 });
     const out = output(result);
-    const notice =
-      '0 of 3 related identifiers fit max_nodes=1; raise max_nodes (≤ 100) or narrow relation_types. DataCite records 1 citation for this DOI; 0 are shown. max_nodes=1 left 1 citing work out.';
+    const notice = `${eventRecovery(ROOT, 1)} 0 of 3 related identifiers fit max_nodes=1; raise max_nodes (≤ 100) or narrow relation_types. DataCite records 1 citation for this DOI; 0 are shown. max_nodes=1 left 1 citing work out.`;
     expect(out).toMatchObject({ truncated: true, shown: 1, cap: 1, edges: [], notice });
     const text = contentText(result);
     expect(text).toContain(`> ${notice}`);
@@ -1180,16 +1709,25 @@ describe('the node cap', () => {
   it.each([
     {
       name: 'offers narrowing, not a higher max_nodes, at the maximum',
+      maxNodes: 100,
       relationTypes: undefined,
       notice:
         '99 of 101 related identifiers fit max_nodes=100 (the maximum); narrow relation_types.',
     },
     {
       name: 'names no step at the maximum when relation_types names one type and no record points at the DOI',
+      maxNodes: 100,
       relationTypes: ['IsDocumentedBy'],
       notice: '99 of 101 related identifiers fit max_nodes=100 (the maximum).',
     },
-  ])('$name', async ({ relationTypes, notice }) => {
+    {
+      name: 'uses the applied cap throughout admission and guidance at the hard ceiling',
+      maxNodes: 10_000,
+      relationTypes: undefined,
+      notice:
+        'Requested max_nodes=10000; applied max_nodes=100. 99 of 101 related identifiers fit max_nodes=100 (the maximum); narrow relation_types.',
+    },
+  ])('$name', async ({ relationTypes, notice, maxNodes }) => {
     initServices([
       { match: rootRead(WIDE), respond: json(doiList([wideRoot(101)])) },
       {
@@ -1200,7 +1738,7 @@ describe('the node cap', () => {
     ]);
     const result = await run({
       doi: WIDE,
-      max_nodes: 100,
+      max_nodes: maxNodes,
       ...(relationTypes && { relation_types: relationTypes }),
     });
     const out = output(result);
@@ -1218,7 +1756,7 @@ describe('the node cap', () => {
     ]);
     const result = await run({ doi: hub, max_nodes: 100, relation_types: ['HasPart'] });
     const out = output(result);
-    const notice = `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query relatedIdentifiers.relatedIdentifier:"${hub}" to datacite_search_works to list the DataCite records that point at this DOI.`;
+    const notice = `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query ${reverseQuery([hub])} to datacite_search_works to list the DataCite records that point at this DOI.`;
     expect(out).toMatchObject({ truncated: true, shown: 100, cap: 100, notice });
     expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total: 101, fetched: 100 });
     // The first 10 spokes list one related identifier each, so the page of 100 is read.
@@ -1287,6 +1825,7 @@ describe('the edge cap', () => {
     const result = await run({ doi: DENSE, max_nodes: 4 });
     const out = output(result);
     const notice = [
+      eventRecovery(DENSE, 4),
       '3 of 4 related identifiers fit max_nodes=4; raise max_nodes (≤ 100) or narrow relation_types.',
       '1,000 of 1,004 edges between the returned nodes are shown (at most 1,000 per call), in the order found: own metadata, records pointing at the root, Event Data, then the second hop; narrow relation_types or trace a returned node directly to see the rest of its edges.',
       'DataCite records 3 citations for this DOI; 0 are shown. max_nodes=4 left 1 citing work out. The 1,000-edge cap dropped the edges recording 2 citing works.',
@@ -1364,7 +1903,7 @@ describe('large reverse records', () => {
       relationType: 'IsDerivedFrom',
       sources: ['reverse_metadata'],
     });
-    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query relatedIdentifiers.relatedIdentifier:"${DATASET}" to datacite_search_works to list them all.`;
+    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query ${reverseQuery([DATASET])} to datacite_search_works to list them all.`;
     expect(out.notice).toBe(notice);
     expect(out).not.toHaveProperty('truncated');
     const text = contentText(result);
@@ -1387,7 +1926,7 @@ describe('large reverse records', () => {
       { match: eventsRead, respond: json(eventList()) },
     ]);
     const result = await run({ doi: DATASET });
-    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query relatedIdentifiers.relatedIdentifier:"${DATASET}" to datacite_search_works to list them all. DataCite records 50 citations for this DOI; 0 are shown. This call read 10 of the 9,262 DataCite records whose related identifiers name this DOI, the most one call reads of records that large.`;
+    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query ${reverseQuery([DATASET])} to datacite_search_works to list them all. DataCite records 50 citations for this DOI; 0 are shown. This call read 10 of the 9,262 DataCite records whose related identifiers name this DOI, the most one call reads of records that large.`;
     expect(output(result).notice).toBe(notice);
     expect(contentText(result)).toContain(`> ${notice}`);
   });
@@ -1802,8 +2341,7 @@ describe('the citation-count notice', () => {
       kept: 100,
     });
     expect(out.nodes).toHaveLength(51);
-    const notice =
-      'DataCite records 80 citations for this DOI; 50 are shown. This call read 100 of the 160 Event Data events on this DOI, the most one call reads; a call per citation type (relation_types IsCitedBy, IsReferencedBy, or IsSupplementTo) reads the first 100 of each.';
+    const notice = `${eventRecovery(CITED, 100)} DataCite records 80 citations for this DOI; 50 are shown. This call read 100 of the 160 Event Data events on this DOI, the most one call reads; a call per citation type (relation_types IsCitedBy, IsReferencedBy, or IsSupplementTo) reads the first 100 of each.`;
     expect(out.notice).toBe(notice);
     expect(out).not.toHaveProperty('truncated');
     const text = contentText(result);
@@ -1816,8 +2354,7 @@ describe('the citation-count notice', () => {
     initServices(citedRoutes({ attributes: { citationCount: 50 }, events: citationEvents(50) }));
     const result = await run({ doi: CITED, max_nodes: 20 });
     const out = output(result);
-    const notice =
-      '19 of 50 related identifiers fit max_nodes=20; raise max_nodes (≤ 100) or narrow relation_types. DataCite records 50 citations for this DOI; 19 are shown. max_nodes=20 left 31 citing works out.';
+    const notice = `${eventRecovery(CITED, 20)} 19 of 50 related identifiers fit max_nodes=20; raise max_nodes (≤ 100) or narrow relation_types. DataCite records 50 citations for this DOI; 19 are shown. max_nodes=20 left 31 citing works out.`;
     expect(out).toMatchObject({ truncated: true, shown: 20, cap: 20, notice });
     expect(contentText(result)).toContain(`> ${notice}`);
   });
@@ -2175,6 +2712,14 @@ describe('relation_types and Event Data', () => {
 });
 
 describe('declared errors and input', () => {
+  it('clamps oversized max_nodes without claiming the cap was returned', async () => {
+    initServices(dryad8515Routes());
+    const result = await run({ doi: ROOT, max_nodes: 500 });
+    expect(result.isError).toBeFalsy();
+    expect(output(result).notice).toContain('Requested max_nodes=500; applied max_nodes=100.');
+    expect(contentText(result)).toContain('Requested max_nodes=500; applied max_nodes=100.');
+    expect(output(result).nodes.length).toBeLessThanOrEqual(100);
+  });
   it.each(['10.12/x', '10.5061/', 'https://doi.org/10.5061/'])(
     'rejects %j as invalid_doi before any request',
     async (doi) => {
@@ -2237,7 +2782,13 @@ describe('declared errors and input', () => {
 
   it('treats blank depth, max_nodes, and relation_types entries as unset', async () => {
     const { http } = initServices(dryad8515Routes());
-    const input = { doi: ROOT, depth: '', max_nodes: ' ', relation_types: ['', '  '] };
+    const input = {
+      doi: ROOT,
+      depth: '',
+      max_nodes: ' ',
+      event_offset: ' ',
+      relation_types: ['', '  '],
+    };
     expect(traceRelationsTool.input.parse(input)).toEqual({
       doi: ROOT,
       depth: 1,
@@ -2257,7 +2808,7 @@ describe('declared errors and input', () => {
     { doi: ROOT, depth: 0 },
     { doi: ROOT, depth: 3 },
     { doi: ROOT, max_nodes: 0 },
-    { doi: ROOT, max_nodes: 101 },
+    { doi: ROOT, max_nodes: 10_001 },
     { doi: ROOT, relation_types: ['Likes'] },
   ])('rejects the malformed input %j at the schema', async (input) => {
     const { http } = initServices(dryad8515Routes());

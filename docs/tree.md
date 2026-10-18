@@ -164,13 +164,15 @@ datacite-mcp-server/
 │   │   ├── http/
 │   │   │   ├── ttl-cache.ts
 │   │   │   └── upstream-client.ts
-│   │   └── reference/
-│   │       ├── citation.ts
-│   │       ├── fields-of-science.ts
-│   │       ├── lookup.ts
-│   │       ├── query-syntax.ts
-│   │       ├── topics.ts
-│   │       └── vocabularies.ts
+│   │   ├── reference/
+│   │   │   ├── citation.ts
+│   │   │   ├── fields-of-science.ts
+│   │   │   ├── lookup.ts
+│   │   │   ├── query-syntax.ts
+│   │   │   ├── topics.ts
+│   │   │   └── vocabularies.ts
+│   │   └── ror/
+│   │       └── ror-service.ts
 │   └── index.ts
 ├── tests/
 │   ├── config/
@@ -257,8 +259,10 @@ datacite-mcp-server/
 │   │   ├── http/
 │   │   │   ├── ttl-cache.test.ts
 │   │   │   └── upstream-client.test.ts
-│   │   └── reference/
-│   │       └── query-syntax.test.ts
+│   │   ├── reference/
+│   │   │   └── query-syntax.test.ts
+│   │   └── ror/
+│   │       └── ror-service.test.ts
 │   └── index.test.ts
 ├── .dockerignore
 ├── .env.example

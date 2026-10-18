@@ -12,6 +12,7 @@ import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getWorkTool } from '@/mcp-server/tools/definitions/get-work.tool.js';
+import { RECORD_LIST_CAPS, type RecordList } from '@/services/datacite/mappers.js';
 import type { RawDoiAttributes, RawDoiResource } from '@/services/datacite/types.js';
 import {
   doiList,
@@ -36,7 +37,7 @@ import {
 } from '../../../helpers/harness.js';
 
 type Output = z.infer<typeof getWorkTool.output> & {
-  truncatedLists?: Array<{ field: string; shown: number; total: number }>;
+  truncatedLists?: Array<{ field: string; shown: number; total: number; nextOffset: number }>;
 };
 
 afterEach(() => {
@@ -58,7 +59,203 @@ const DRYAD_234 = {
   respond: fixtureResponse('datacite/works/record-dryad-234.json'),
 };
 
+const listEntry = (list: RecordList, i: number) => {
+  const label = `${list}-${i}`;
+  switch (list) {
+    case 'creators':
+    case 'contributors':
+      return { name: label, affiliation: [{ name: `Affiliation ${i}` }] };
+    case 'relatedIdentifiers':
+      return { relationType: 'Cites', relatedIdentifier: label };
+    case 'relatedItems':
+      return { relationType: 'IsPartOf', titles: [{ title: label }] };
+    case 'subjects':
+      return { subject: label };
+    case 'fundingReferences':
+      return { funderName: label, awardNumber: `Award ${i}` };
+    case 'geoLocations':
+      return { geoLocationPlace: label };
+  }
+};
+
+describe('selected record lists', () => {
+  it.each(Object.entries(RECORD_LIST_CAPS) as Array<[RecordList, number]>)(
+    'walks %s after filtering invalid entries without changing other fields',
+    async (list, cap) => {
+      const attributes = Object.fromEntries(
+        Object.entries(RECORD_LIST_CAPS).map(([field, limit]) => [
+          field,
+          [
+            {},
+            ...Array.from({ length: limit * 2 + 3 }, (_, i) => listEntry(field as RecordList, i)),
+            {},
+          ],
+        ]),
+      );
+      initServices([
+        { match: dataCite('/dois'), respond: recordPage('10.5555/pages', attributes) },
+      ]);
+      const defaultResult = await run('10.5555/pages');
+      const baseline = output(defaultResult);
+      for (const truncated of baseline.truncatedLists ?? []) {
+        expect(contentText(defaultResult)).toContain(
+          `list: "${truncated.field}", offset: ${truncated.nextOffset}`,
+        );
+      }
+      const labels: string[] = [];
+      for (const offset of [0, cap, cap * 2, cap * 2 + 3, cap * 3]) {
+        const result = await runToolContract(getWorkTool, { doi: '10.5555/pages', list, offset });
+        expect(result.isError).toBeFalsy();
+        const out = output(result);
+        const remaining = Math.max(0, cap * 2 + 3 - offset);
+        expect(out[list]).toHaveLength(Math.min(cap, remaining));
+        expect(out.listPage).toEqual({
+          list,
+          offset,
+          total: cap * 2 + 3,
+          ...(remaining > cap && { nextOffset: offset + cap }),
+        });
+        const markdown = contentText(result);
+        expect(markdown).toContain(`${list} · offset ${offset} · total ${cap * 2 + 3}`);
+        for (let i = offset; i < Math.min(offset + cap, cap * 2 + 3); i++) {
+          const label = `${list}-${i}`;
+          expect(JSON.stringify(out[list])).toContain(label);
+          expect(markdown).toContain(label);
+          labels.push(label);
+        }
+        for (const [field, value] of Object.entries(baseline)) {
+          if (field !== list && field !== 'truncatedLists')
+            expect(out[field as keyof Output]).toEqual(value);
+        }
+        expect(out.truncatedLists).toEqual(
+          baseline.truncatedLists?.filter((entry) => entry.field !== list),
+        );
+        expect(markdown).toContain(
+          remaining > cap ? `list: "${list}", offset: ${offset + cap}` : 'end of list',
+        );
+      }
+      expect(labels).toEqual(Array.from({ length: cap * 2 + 3 }, (_, i) => `${list}-${i}`));
+      expect(new Set(labels).size).toBe(labels.length);
+    },
+  );
+
+  it.each(Object.entries(RECORD_LIST_CAPS) as Array<[RecordList, number]>)(
+    'handles empty and exact-cap %s, default and blank offsets',
+    async (list, cap) => {
+      initServices([
+        {
+          match: dataCite('/dois'),
+          respond: recordPage('10.5555/exact', {
+            [list]: Array.from({ length: cap }, (_, i) => listEntry(list, i)),
+          }),
+        },
+      ]);
+      for (const offset of [undefined, '', 0, cap, cap + 1, Number.MAX_SAFE_INTEGER]) {
+        const result = await runToolContract(getWorkTool, { doi: '10.5555/exact', list, offset });
+        const out = output(result);
+        expect(out.listPage).toEqual({
+          list,
+          offset: typeof offset === 'number' ? offset : 0,
+          total: cap,
+        });
+        expect(out[list]).toHaveLength(typeof offset === 'number' && offset >= cap ? 0 : cap);
+        expect(out).not.toHaveProperty('truncatedLists');
+        expect(contentText(result)).toContain('end of list');
+      }
+      teardownServices();
+      initServices([{ match: dataCite('/dois'), respond: recordPage('10.5555/empty', {}) }]);
+      const empty = await runToolContract(getWorkTool, { doi: '10.5555/empty', list });
+      expect(output(empty)).toMatchObject({ [list]: [], listPage: { list, offset: 0, total: 0 } });
+      expect(contentText(empty)).toContain(`${list} · offset 0 · total 0 · end of list`);
+    },
+  );
+
+  it('treats blank selections as unset and rejects offset without list with actionable recovery', async () => {
+    initServices([DRYAD_234]);
+    expect(
+      output(
+        await runToolContract(getWorkTool, { doi: '10.5061/dryad.234', list: ' ', offset: '' }),
+      ),
+    ).not.toHaveProperty('listPage');
+    for (const input of [{ offset: 0 }, { offset: 1, list: '' }]) {
+      const result = await runToolContract(getWorkTool, { doi: '10.5061/dryad.234', ...input });
+      expect(toolError(result)).toMatchObject({
+        code: JsonRpcErrorCode.ValidationError,
+        data: {
+          reason: 'offset_without_list',
+          recovery: { hint: expect.stringContaining('Pass list') },
+        },
+      });
+      expect(contentText(result)).toContain('Pass list');
+      expect(contentText(result)).toContain('(reason offset_without_list)');
+    }
+    for (const input of [
+      { list: 'unknown' },
+      ...[-1, 0.5, Number.MAX_SAFE_INTEGER + 1, '10'].map((offset) => ({
+        list: 'creators',
+        offset,
+      })),
+    ]) {
+      const result = await runToolContract(getWorkTool, { doi: '10.5061/dryad.234', ...input });
+      expect(toolError(result).code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(contentText(result)).toContain('Input validation error');
+    }
+  });
+});
+
 describe('found arm', () => {
+  it('characterizes unchanged unselected record fields across calls', async () => {
+    initServices([DRYAD_234]);
+    const first = output(await run('10.5061/dryad.234'));
+    expect(output(await run('10.5061/dryad.234'))).toEqual(first);
+  });
+  it('normalizes titles once and only renders descriptions as plain text', async () => {
+    const description = '<p>T < 5 and p > 0</p><div>&amp;lt;i&amp;gt;</div>';
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/html', {
+          titles: [{ title: '<em>A</em> &amp;lt;i&amp;gt; &lt;b&gt;' }],
+          relatedItems: [{ relationType: 'IsPartOf', titles: [{ title: '<b>B</b> &amp;lt;' }] }],
+          descriptions: [{ description }],
+        }),
+      },
+    ]);
+    const result = await run('10.5555/html');
+    expect(output(result)).toMatchObject({
+      titles: [{ title: 'A &lt;i&gt; <b>' }],
+      relatedItems: [{ title: 'B &lt;' }],
+      descriptions: [{ description }],
+    });
+    expect(contentText(result)).toContain('# A &lt;i&gt; &lt;b&gt;');
+    expect(contentText(result)).toContain('> T &lt; 5 and p &gt; 0 &lt;i&gt;');
+  });
+  it('pages valid mapped creators while preserving other lists and counts', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/pages', {
+          creators: [
+            { name: '' },
+            ...Array.from({ length: 205 }, (_, i) => ({ name: `Creator ${i}` })),
+          ],
+          subjects: [{ subject: 'Unchanged' }],
+        }),
+      },
+    ]);
+    const result = await runToolContract(getWorkTool, {
+      doi: '10.5555/pages',
+      list: 'creators',
+      offset: 100,
+    });
+    expect(output(result)).toMatchObject({
+      listPage: { list: 'creators', offset: 100, total: 205, nextOffset: 200 },
+      subjects: [{ subject: 'Unchanged' }],
+    });
+    expect(output(result).creators?.[0]?.name).toBe('Creator 100');
+    expect(output(result).creators).toHaveLength(100);
+    expect(contentText(result)).toContain('creators · offset 100 · total 205 · next offset 200');
+  });
   it('returns the recorded dryad.234 record with nested creators and normalized ROR IDs', async () => {
     const { http } = initServices([DRYAD_234]);
     const result = await run('10.5061/dryad.234');
@@ -173,10 +370,10 @@ describe('found arm', () => {
     const result = await run('10.5555/big');
     const out = output(result);
     expect(out.truncatedLists).toEqual([
-      { field: 'creators', shown: 100, total: 120 },
-      { field: 'geoLocations', shown: 50, total: 60 },
-      { field: 'relatedIdentifiers', shown: 100, total: 130 },
-      { field: 'relatedItems', shown: 25, total: 30 },
+      { field: 'creators', shown: 100, total: 120, nextOffset: 100 },
+      { field: 'geoLocations', shown: 50, total: 60, nextOffset: 50 },
+      { field: 'relatedIdentifiers', shown: 100, total: 130, nextOffset: 100 },
+      { field: 'relatedItems', shown: 25, total: 30, nextOffset: 25 },
     ]);
     expect(out.creators).toHaveLength(100);
     expect(out.contributors).toHaveLength(100);
@@ -185,9 +382,11 @@ describe('found arm', () => {
     expect(out.relatedItems).toHaveLength(25);
     expect(out.geoLocations).toHaveLength(50);
     const text = contentText(result);
-    expect(text).toContain(
-      '**Truncated lists:** creators: 100 of 120; geoLocations: 50 of 60; relatedIdentifiers: 100 of 130; relatedItems: 25 of 30',
-    );
+    for (const list of out.truncatedLists ?? []) {
+      expect(text).toContain(
+        `${list.field}: ${list.shown} of ${list.total}; continue datacite_get_work with the same doi, list: "${list.field}", offset: ${list.nextOffset}`,
+      );
+    }
     expect(text).toContain('**IsPartOf** — 50 of 65');
     expect(text).toContain('**Cites** — 50 of 65');
   });
@@ -352,7 +551,7 @@ describe('found arm', () => {
     ]);
     const result = await run('10.5555/hostile');
     const out = output(result);
-    expect(out.titles?.[0]?.title).toBe(evil('title'));
+    expect(out.titles?.[0]?.title).toBe('title # INJECTED title - INJECTED title');
     expect(out.created).toBe(evil('created'));
     expect(out.descriptions?.[0]?.description).toBe(evil('description'));
     const text = contentText(result);
@@ -360,7 +559,7 @@ describe('found arm', () => {
     expect(text).toContain(
       '**Record:** registered registered # INJECTED registered - INJECTED registered · created created',
     );
-    expect(text).toContain('> description\n> # INJECTED description\n> - INJECTED description');
+    expect(text).toContain('> description # INJECTED description - INJECTED description');
     expect(text).not.toMatch(/^(#|-) INJECTED/m);
   });
 
@@ -380,19 +579,39 @@ describe('found arm', () => {
       ]);
       const result = await run('10.5555/hostile');
       const out = output(result);
-      expect(out.titles?.[0]?.title).toBe(evil('title'));
+      expect(out.titles?.[0]?.title).toBe('title # INJECTED title - INJECTED title');
       expect(out.subjects?.[0]?.subject).toBe(evil('subject'));
       expect(out.descriptions?.[0]?.description).toBe(evil('description'));
       const text = contentText(result);
       expect(text).toContain('# title # INJECTED title - INJECTED title\n');
       expect(text).toContain('- subject # INJECTED subject - INJECTED subject\n');
-      expect(text).toContain('> description\n> # INJECTED description\n> - INJECTED description');
+      expect(text).toContain('> description # INJECTED description - INJECTED description');
       expect(text).not.toContain(sep);
     },
   );
 });
 
 describe('miss arm', () => {
+  it('keeps missing-DOI classification intact when a list page was requested', async () => {
+    const doi = '10.1038/nature12373';
+    initServices([
+      { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+      { match: doiRa(doi), respond: fixtureResponse('doi-ra/crossref.json') },
+    ]);
+    const result = await runToolContract(getWorkTool, {
+      doi,
+      list: 'relatedIdentifiers',
+      offset: 100,
+    });
+    expect(output(result)).toMatchObject({
+      found: false,
+      missReason: 'other_agency',
+      registrationAgency: 'Crossref',
+    });
+    expect(output(result)).not.toHaveProperty('listPage');
+    expect(contentText(result)).toContain('**Miss reason:** other_agency');
+    expect(contentText(result)).not.toContain('List page');
+  });
   it.each([
     {
       name: 'another agency’s DOI',
@@ -637,6 +856,7 @@ describe('rate limiting', () => {
 
   it('logs invalid_doi at notice and a spent budget at error', () => {
     expect(declaredSeverities(getWorkTool.errors)).toEqual({
+      offset_without_list: 'notice',
       invalid_doi: 'notice',
       rate_limited: 'error',
     });

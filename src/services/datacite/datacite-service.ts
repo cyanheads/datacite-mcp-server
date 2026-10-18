@@ -31,6 +31,7 @@ import {
   upstreamErrorBody,
   userAgent,
 } from '@/services/http/upstream-client.js';
+import { initRorService, shutdownRorService } from '@/services/ror/ror-service.js';
 import { recordDoi } from './mappers.js';
 import { anyPhrase, doiQuery } from './query-builder.js';
 import type {
@@ -52,8 +53,8 @@ const SEARCH_FIELDS =
 export const NODE_FIELDS = 'doi,titles,types,publicationYear,citationCount,versionCount,client';
 /** Node fields plus the record's own relation assertions. */
 export const NODE_WITH_RELATIONS_FIELDS = `${NODE_FIELDS},relatedIdentifiers,relatedItems`;
-/** Node fields plus the related identifiers a reverse match is verified against. */
-export const REVERSE_FIELDS = `${NODE_FIELDS},relatedIdentifiers`;
+/** Node fields plus both assertion lists a reverse match is verified against. */
+export const REVERSE_FIELDS = NODE_WITH_RELATIONS_FIELDS;
 /** Node fields plus the root's own assertions and DataCite counts. */
 export const ROOT_FIELDS = `${NODE_WITH_RELATIONS_FIELDS},referenceCount,versionOfCount,partCount,partOfCount`;
 
@@ -124,6 +125,7 @@ export interface RepositorySearchRequest {
 /** A typed `/events` request. */
 export interface EventRequest {
   doi?: string;
+  page?: number;
   relationTypeIds: string[];
   subjId?: string;
 }
@@ -409,6 +411,7 @@ export class DataCiteService {
       ['subj-id', request.subjId],
       ['relation-type-id', request.relationTypeIds.join(',')],
       ['page[size]', 100],
+      ['page[number]', request.page],
     ]);
     return this.getJson<RawEventList>(url, 'getEvents', 15 * MINUTE, ctx);
   }
@@ -548,13 +551,14 @@ export interface DataCiteServicesInit {
   fetch?: typeof globalThis.fetch;
   pacer?: Pacer;
   raPacer?: Pacer;
+  rorPacer?: Pacer;
   version?: string;
 }
 
 let _service: DataCiteService | undefined;
 
 /**
- * Creates the DataCite and registration-agency services over one shared
+ * Creates the DataCite, registration-agency and ROR services over one shared
  * response cache. Defaults read the server config; tests pass a fake `fetch`.
  */
 export function initDataCiteServices(options: DataCiteServicesInit = {}): void {
@@ -574,6 +578,7 @@ export function initDataCiteServices(options: DataCiteServicesInit = {}): void {
     ...(options.pacer && { pacer: options.pacer }),
   });
   initRegistrationAgencyService({ ...shared, ...(options.raPacer && { pacer: options.raPacer }) });
+  initRorService({ ...shared, ...(options.rorPacer && { pacer: options.rorPacer }) });
 }
 
 /** The initialized DataCite service. */
@@ -584,9 +589,10 @@ export function getDataCiteService(): DataCiteService {
   return _service;
 }
 
-/** Disposes both services' pacers. Wired through `createApp({ teardown })`. */
+/** Disposes all upstream services' pacers. Wired through `createApp({ teardown })`. */
 export function shutdownDataCiteServices(): void {
   _service?.dispose();
   _service = undefined;
   shutdownRegistrationAgencyService();
+  shutdownRorService();
 }

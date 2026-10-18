@@ -1,6 +1,6 @@
 /**
  * @fileoverview Relation-graph builder for `datacite_trace_relations`. Collects
- * edges exactly as asserted — the root's own `relatedIdentifiers`, other DataCite
+ * edges exactly as asserted — the root's own `relatedIdentifiers` and `relatedItems`, other DataCite
  * records that point at it (verified pair by pair), and Event Data citation
  * links — merges identical edges across sources, fills the node budget and the
  * edge cap in a fixed order, hydrates DOI nodes in batches within a time budget,
@@ -62,10 +62,16 @@ export interface GraphEdge {
 export interface EventCoverage {
   detail?: string;
   fetched?: number;
+  hasNextPage?: boolean;
   kept?: number;
+  nextEventOffset?: number;
+  offset?: number;
+  page?: number;
+  progress?: 'more' | 'exhausted' | 'ceiling' | 'blocked';
   scope?: 'both_sides' | 'outgoing_to_datacite';
   status: 'ok' | 'skipped' | 'unavailable';
   total?: number;
+  totalPages?: number;
 }
 
 /** One reverse query's reach: records matching upstream, and records read. */
@@ -83,6 +89,7 @@ interface ReverseRecords {
 
 export interface TraceRequest {
   depth: number;
+  eventOffset?: number;
   includeEventData: boolean;
   maxNodes: number;
   relationTypes?: readonly RelationTypeId[];
@@ -92,11 +99,11 @@ export interface TraceRequest {
 export interface RelationGraph {
   coverage: {
     eventData: EventCoverage;
-    ownMetadata: { edgeCount: number; status: 'ok' | 'not_datacite' };
+    ownMetadata: { edgeCount: number; status: 'ok' | 'not_datacite' | 'skipped' };
     reverseMetadata: {
       fetched: number;
       secondHop?: ReverseRead;
-      status: 'ok';
+      status: 'ok' | 'skipped';
       total: number;
     };
   };
@@ -260,6 +267,7 @@ export async function traceRelations(
   ctx: Context,
 ): Promise<TraceResult> {
   const { root, maxNodes, relationTypes } = request;
+  const eventOnly = request.eventOffset !== undefined;
   /**
    * `relationTypes` names relations as the traced node sees them. An edge the traced
    * node asserts passes on its own type; an edge asserted on the traced node passes on
@@ -298,9 +306,9 @@ export async function traceRelations(
   };
 
   // Call 1: the root's own record and assertions.
-  const rootRecord = await service.getRecord(root, ROOT_FIELDS, ctx);
+  const rootRecord = await service.getRecord(root, eventOnly ? NODE_FIELDS : ROOT_FIELDS, ctx);
   let ownEdgeCount = 0;
-  for (const assertion of rootRecord ? assertions(rootRecord) : []) {
+  for (const assertion of rootRecord && !eventOnly ? assertions(rootRecord) : []) {
     if (!allowedOut(assertion.relationType)) continue;
     addEdge(root, assertion.id, assertion.relationType, 'metadata');
     addCandidate(assertion);
@@ -315,8 +323,18 @@ export async function traceRelations(
     (type) => allowedOut(type) || (rootRecord !== undefined && allowedIn(type)),
   );
   const [reverse, events] = await Promise.all([
-    readReverse(service, reverseRelationQuery([root], reverseTypes), ctx),
-    readEvents(service, root, rootRecord !== undefined, eventTypes, request.includeEventData, ctx),
+    eventOnly
+      ? Promise.resolve<ReverseRecords>({ read: { total: 0, fetched: 0 }, records: [] })
+      : readReverse(service, reverseRelationQuery([root], reverseTypes), ctx),
+    readEvents(
+      service,
+      root,
+      rootRecord !== undefined,
+      eventTypes,
+      request.includeEventData,
+      ctx,
+      request.eventOffset,
+    ),
   ]);
 
   for (const record of reverse.records) {
@@ -344,6 +362,7 @@ export async function traceRelations(
   // which needs the objects hydrated before the node budget is spent.
   let hydratedEarly = new Map<string, RawDoiResource>();
   let unconfirmedEvents = 0;
+  let unconfirmed = new Set<string>();
   const attempted = new Set<string>();
   let kept = events.links.filter((l) =>
     (l.from.id === root ? allowedOut : allowedIn)(l.relationType),
@@ -355,18 +374,60 @@ export async function traceRelations(
       objects,
       NODE_FIELDS,
       ctx,
-      request.depth >= 2 ? preSecondHopDeadline : finalDeadline,
+      request.depth >= 2 && !eventOnly ? preSecondHopDeadline : finalDeadline,
     );
     hydratedEarly = early.records;
     unconfirmedEvents = early.unanswered.size;
-    kept = kept.filter((l) => hydratedEarly.get(l.to.id)?.relationships?.client?.data != null);
+    unconfirmed = early.unanswered;
+    kept = kept.filter(
+      (l) =>
+        (eventOnly && unconfirmed.has(l.to.id)) ||
+        hydratedEarly.get(l.to.id)?.relationships?.client?.data != null,
+    );
   }
+  let eventCapBound = false;
+  let progress = request.eventOffset ?? 0;
+  let represented = 0;
+  let eventBlocked = false;
   for (const link of kept) {
+    if (eventOnly) {
+      if (unconfirmed.has(link.to.id)) {
+        eventBlocked = true;
+        progress = link.offset;
+        break;
+      }
+      const target = link.from.id === root ? link.to : link.from;
+      if (target.id !== root && !candidates.has(target.id) && candidates.size + 1 >= maxNodes) {
+        eventCapBound = true;
+        progress = link.offset;
+        break;
+      }
+    }
     addEdge(link.from.id, link.to.id, link.relationType, 'event_data', link.sourceId);
     addCandidate(link.from.id === root ? link.to : link.from);
+    represented++;
+    progress = link.offset + 1;
   }
   const eventCoverage: EventCoverage =
-    events.coverage.status === 'ok' ? { ...events.coverage, kept: kept.length } : events.coverage;
+    events.coverage.status === 'ok'
+      ? { ...events.coverage, kept: eventOnly ? represented : kept.length }
+      : events.coverage;
+  if (eventOnly && eventCoverage.status === 'ok') {
+    if (!eventCapBound && !eventBlocked) progress = events.end;
+    const total = eventCoverage.total;
+    const exhausted =
+      !eventCapBound &&
+      !eventBlocked &&
+      (total !== undefined ? progress >= total : progress < 10_000 && !events.more);
+    eventCoverage.progress = eventBlocked
+      ? 'blocked'
+      : exhausted
+        ? 'exhausted'
+        : progress >= 10_000
+          ? 'ceiling'
+          : 'more';
+    if (!exhausted && progress < 10_000) eventCoverage.nextEventOffset = progress;
+  }
 
   // Node budget: root first, then candidates in insertion order.
   const rootNode: GraphNode = { id: root, idType: 'DOI', depth: 0, hydrated: false };
@@ -386,7 +447,7 @@ export async function traceRelations(
     }
     return true;
   };
-  let capBound = !admit(1, candidates);
+  let capBound = !admit(1, candidates) || eventCapBound;
   let unexpanded = 0;
   let beyondFrontier = 0;
   let secondHop: ReverseRecords | undefined;
@@ -396,7 +457,7 @@ export async function traceRelations(
    * Which depth-1 nodes are DataCite DOIs is known only after hydration, so a first hop that
    * filled the cap is hydrated too, to tell whether it left the second hop no room.
    */
-  if (request.depth >= 2) {
+  if (request.depth >= 2 && !eventOnly) {
     // The second hop runs only while the first leaves a node free.
     const firstHopDeadline = nodes.size < maxNodes ? preSecondHopDeadline : finalDeadline;
     for (const id of await hydrateNodes(
@@ -480,20 +541,24 @@ export async function traceRelations(
     },
     nodes: [...nodes.values()],
     edges: keptEdges.slice(0, MAX_EDGES),
-    ...(a && {
-      rootCounts: {
-        citationCount: a.citationCount ?? 0,
-        referenceCount: a.referenceCount ?? 0,
-        versionCount: a.versionCount ?? 0,
-        versionOfCount: a.versionOfCount ?? 0,
-        partCount: a.partCount ?? 0,
-        partOfCount: a.partOfCount ?? 0,
-      },
-    }),
+    ...(a &&
+      !eventOnly && {
+        rootCounts: {
+          citationCount: a.citationCount ?? 0,
+          referenceCount: a.referenceCount ?? 0,
+          versionCount: a.versionCount ?? 0,
+          versionOfCount: a.versionOfCount ?? 0,
+          partCount: a.partCount ?? 0,
+          partOfCount: a.partOfCount ?? 0,
+        },
+      }),
     coverage: {
-      ownMetadata: { status: rootRecord ? 'ok' : 'not_datacite', edgeCount: ownEdgeCount },
+      ownMetadata: {
+        status: eventOnly ? 'skipped' : rootRecord ? 'ok' : 'not_datacite',
+        edgeCount: ownEdgeCount,
+      },
       reverseMetadata: {
-        status: 'ok',
+        status: eventOnly ? 'skipped' : 'ok',
         ...reverse.read,
         ...(secondHop && { secondHop: secondHop.read }),
       },
@@ -533,7 +598,10 @@ async function readReverse(
   const read = { total, fetched: first.data.length };
   if (total <= first.data.length) return { read, records: first.data };
   const listed = first.data.reduce(
-    (sum, record) => sum + (record.attributes.relatedIdentifiers?.length ?? 0),
+    (sum, record) =>
+      sum +
+      (record.attributes.relatedIdentifiers?.length ?? 0) +
+      (record.attributes.relatedItems?.length ?? 0),
     0,
   );
   if (listed > LARGE_PAGE_IDENTIFIERS) return { listed, read, records: first.data };
@@ -577,6 +645,7 @@ async function hydrateNodes(
 
 interface EventLink {
   from: Target;
+  offset: number;
   relationType: RelationTypeId;
   sourceId?: string;
   to: Target;
@@ -600,13 +669,27 @@ async function readEvents(
   types: readonly RelationTypeId[],
   enabled: boolean,
   ctx: Context,
-): Promise<{ coverage: EventCoverage; links: EventLink[] }> {
+  offset?: number,
+): Promise<{
+  coverage: EventCoverage;
+  links: EventLink[];
+  end: number;
+  more: boolean;
+}> {
+  const unread = { end: offset ?? 0, more: false };
+  const position = offset === undefined ? {} : { offset };
   if (!enabled) {
-    return { coverage: { status: 'skipped', detail: 'include_event_data is false.' }, links: [] };
+    return {
+      ...unread,
+      coverage: { ...position, status: 'skipped', detail: 'include_event_data is false.' },
+      links: [],
+    };
   }
   if (types.length === 0) {
     return {
+      ...unread,
       coverage: {
+        ...position,
         status: 'skipped',
         detail:
           'relation_types admits no citation relation type, the only kind Event Data carries.',
@@ -621,6 +704,7 @@ async function readEvents(
       {
         ...(rootIsDataCite ? { doi: root } : { subjId: `https://doi.org/${root}` }),
         relationTypeIds: types.map(relationTypeKebab),
+        ...(offset !== undefined && { page: Math.floor(offset / 100) + 1 }),
       },
       ctx,
     );
@@ -628,7 +712,9 @@ async function readEvents(
     if (ctx.signal.aborted || !isUnanswered(error)) throw error;
     ctx.log.warning('Event Data did not answer', { code: error.code });
     return {
+      ...unread,
       coverage: {
+        ...position,
         status: 'unavailable',
         scope,
         detail: `Event Data did not answer (${error.message}).`,
@@ -637,8 +723,45 @@ async function readEvents(
     };
   }
 
+  const page = Math.floor((offset ?? 0) / 100) + 1;
+  if (offset !== undefined && list.meta.page !== undefined && list.meta.page !== page) {
+    return {
+      ...unread,
+      links: [],
+      coverage: {
+        ...position,
+        status: 'unavailable',
+        scope,
+        page: list.meta.page,
+        detail: 'Event Data returned a different page; retry the same event_offset.',
+      },
+    };
+  }
+  if (
+    offset !== undefined &&
+    list.data.length < 100 &&
+    ((list.meta.total !== undefined && list.meta.total > (page - 1) * 100 + list.data.length) ||
+      (list.meta['total-pages'] !== undefined && list.meta['total-pages'] > page) ||
+      list.links?.next != null)
+  ) {
+    return {
+      ...unread,
+      links: [],
+      coverage: {
+        ...position,
+        status: 'unavailable',
+        scope,
+        page,
+        ...(list.meta.total !== undefined && { total: list.meta.total }),
+        detail: 'Event Data omitted rows before its advertised end; retry the same event_offset.',
+      },
+    };
+  }
+
   const links: EventLink[] = [];
-  for (const event of list.data) {
+  const start = (offset ?? 0) % 100;
+  for (const [index, event] of list.data.entries()) {
+    if (index < start) continue;
     const attrs = event.attributes;
     const subj = text(attrs['subj-id']);
     const obj = text(attrs['obj-id']);
@@ -650,13 +773,31 @@ async function readEvents(
     if (from.id !== root && to.id !== root) continue;
     if (!rootIsDataCite && from.id !== root) continue;
     const sourceId = text(attrs['source-id']);
-    links.push({ from, to, relationType: resolved, ...(sourceId && { sourceId }) });
+    links.push({
+      from,
+      to,
+      relationType: resolved,
+      offset: (page - 1) * 100 + index,
+      ...(sourceId && { sourceId }),
+    });
   }
   return {
+    end: Math.max(offset ?? 0, (page - 1) * 100 + list.data.length),
+    more:
+      list.links?.next != null ||
+      (list.meta['total-pages'] !== undefined
+        ? page < list.meta['total-pages']
+        : list.data.length === 100),
     coverage: {
+      ...position,
+      ...((offset !== undefined || list.meta.total === undefined) && {
+        page: list.meta.page ?? page,
+        ...(list.meta['total-pages'] !== undefined && { totalPages: list.meta['total-pages'] }),
+        ...(list.links !== undefined && { hasNextPage: list.links.next != null }),
+      }),
       status: 'ok',
       scope,
-      total: list.meta.total ?? list.data.length,
+      ...(list.meta.total !== undefined && { total: list.meta.total }),
       fetched: list.data.length,
     },
     links,

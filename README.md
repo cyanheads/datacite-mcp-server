@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.2-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-DOI metadata from DataCite for datasets, software, samples, workflows, and other research outputs that repositories deposit worldwide. Search it, open a record in full, trace a DOI's relations (versions, parts, supplements, citations), find the repositories that publish in a field, and format citations. Runs without an API key, as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+DOI metadata from DataCite for datasets, software, samples, workflows, and other research outputs that repositories deposit worldwide. Search it, open a record in full, trace a DOI's relations (versions, parts, supplements, citations), find the repositories that publish in a field, and format citations. No API key required.
 
 ### Tools
 
@@ -47,7 +47,9 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 ### `datacite_search_works` <sub>tool</sub>
 
 - `text` (plain words, every reserved character escaped) or `query` (OpenSearch query syntax), ANDed with filters: `resource_types`, `creator` (ORCID iD or name), `affiliation` (ROR ID or name), `affiliation_country`, `funder` (ROR ID, Crossref Funder ID, or name; `include_child_funders` with a ROR funder), `subject`, `fields_of_science`, `repository_ids`, `provider_ids`, `licenses`, `language`, `place`, `published_from` / `published_to`, and `min_citations`; list filters take up to 10 values, any of which match
-- `limit` 1–100 (default 20); ranked `page`s reach the first 10,000 matches under `sort` (`relevance`, `newest`, `oldest`, `recently_updated`, `most_cited`, `most_viewed`, `most_downloaded`; default `relevance` with `text` or `query`, else `newest`), while `cursor: "*"` walks the whole result set in registration order through `nextCursor` and takes neither `page` nor `sort`
+- `limit` 1–10,000 (default 20), applied at most 100 with a notice; ranked `page`s reach the first 10,000 matches under `sort` (`relevance`, `newest`, `oldest`, `recently_updated`, `most_cited`, `most_viewed`, `most_downloaded`; default `relevance` with `text` or `query`, else `newest`), while `cursor: "*"` walks the whole result set in registration order through `nextCursor` and takes neither `page` nor `sort`. A ranked ceiling stop is distinguished from the last page
+- Crossref Funder IDs resolve through one exact ROR FundRef mapping before searching `funded-by`; an unavailable, incomplete, or ambiguous mapping keeps literal identifier matching and discloses reduced coverage. The cached, paced lookup takes at most five seconds without retry. A cursor walk keeps its initial resolved or literal filter on every continuation without another ROR lookup, including across server restarts. `include_child_funders` still requires an explicitly supplied ROR
+- License ids are trimmed and lowercased, preserving internal spaces (`cc0 1.0` differs from `cc0-1.0`); reuse the licenses facet ids exactly. `query` also supports deposition timestamps, e.g. `created:[2026-10-16 TO *]`, `updated`, and `registered`
 - `include_facets` adds top counts for resource types, years, repositories, providers, affiliations, fields of science, and licenses (2–8 s slower); every response reports `totalCount`, `effectiveQuery`, `sortApplied`, and `appliedFilters`
 
 ---
@@ -56,6 +58,8 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 
 - One `doi`, in any case: bare, with a `doi:` or `info:doi/` prefix, as a doi.org URL, or `%2F`-encoded
 - Titles, creators and contributors with ORCID iDs and ROR affiliations, dates, subjects, descriptions, funding, geolocations, rights, related identifiers and items, repository and provider, and `counts` (citations, references, versions, parts, views, downloads); long lists are capped and their full sizes reported in `truncatedLists` and `relatedIdentifierCounts`
+- Page one capped `list` with a zero-based `offset` (default 0): `creators`, `contributors`, `relatedIdentifiers`, `subjects`, and `fundingReferences` return up to 100 entries, `relatedItems` 25, and `geoLocations` 50. Offsets index valid mapped entries in deposit order. `listPage` reports `list`, `offset`, `total`, and `nextOffset` while entries remain; other metadata keeps its normal caps. Default truncation notices give exact continuation inputs. An offset requires a list; past-end pages are empty
+- Titles and search snippets are plain text, with recognized formatting tags removed and entities decoded once before snippet truncation. Structured descriptions keep their deposited text; rendered descriptions use the same normalization
 - A DOI DataCite holds no public record for returns `found: false` with `missReason` (`other_agency`, `does_not_exist`, `not_public`, `unclassified`), the `registrationAgency` when known, and `guidance`
 
 ---
@@ -63,15 +67,17 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 ### `datacite_trace_relations` <sub>tool</sub>
 
 - Any agency's `doi`: a DataCite dataset or software DOI, or a journal article's DOI to find the DataCite data and software it cites or that cite, supplement, or derive from it
-- `depth` 1 (default) or 2 — the second hop expands at most 10 DataCite neighbours and runs only when the first hop leaves `max_nodes` room; `max_nodes` 1–100 (default 50, root included) fills with own-metadata targets, then records pointing at the root, then Event Data endpoints, then the second hop; `relation_types` keeps only the listed relation types, read from the traced DOI's side (omitted: all); `include_event_data` (default `true`) adds Event Data citation links
+- `depth` 1 (default) or 2 — the second hop expands at most 10 DataCite neighbours and runs only when the first hop leaves `max_nodes` room; `max_nodes` 1–10,000 (default 50, root included), applied at most 100 with a notice, fills with own-metadata targets, then records pointing at the root, then Event Data endpoints, then the second hop; `relation_types` keeps only the listed relation types, read from the traced DOI's side (omitted: all); `include_event_data` (default `true`) adds Event Data citation links
 - Edges keep `relationType` exactly as asserted and list their `sources` (`metadata`, `reverse_metadata`, `event_data`); `coverage` states how much of each source was read (up to 100 reverse records per hop, only the first 10 when those are large, and up to 100 events per call), and `rootCounts` carries DataCite's own counts for comparison. An absent edge is not evidence that no relationship exists
+- Reverse lookups inspect both `relatedIdentifiers` and identified `relatedItems`, verify each assertion's target and type, and merge identical edges
+- `event_offset` (0–9,999, absolute and zero-based) selects Event-Data-only tracing, including when set to 0: metadata edges and depth-2 expansion are skipped. Continue with `coverage.eventData.nextEventOffset` and the same DOI and filters. Each call reads one upstream page and stops before an eligible endpoint that cannot fit `max_nodes`; root-only calls explain how to raise the cap. Coverage distinguishes exhaustion, a blocked classification lookup, unavailable/skipped reads, and the upstream 10,000-result ceiling. Upstream ordering can change between calls; continuations are not snapshots
 
 ---
 
 ### `datacite_search_repositories` <sub>tool</sub>
 
-- `query` text over names and descriptions, plus `field_of_science`, `repository_types`, `certificates`, `software`, `client_type`, and `provider_id`; or `repository_ids` alone (up to 25) to look up known accounts
-- `limit` 1–100 (default 20) with `page`; name-ordered rows carry the `repositoryId` that `datacite_search_works` takes in `repository_ids`, plus `providerId`, types, certificates, software, subjects, homepage, and re3data link
+- `query` text over names and descriptions, plus `field_of_science`, `repository_types`, `certificates`, `software`, `client_type`, and `provider_id`; or `repository_ids` alone (up to 1,000 inputs) to look up the first 25 distinct normalized ids in input order. A notice names unqueried ids; missing-id notices cover queried ids only
+- `limit` 1–10,000 (default 20), applied at most 100 with a notice, with `page`; name-ordered rows carry the `repositoryId` that `datacite_search_works` takes in `repository_ids`, plus `providerId`, types, certificates, software, subjects, homepage, and re3data link
 
 ---
 
@@ -104,7 +110,7 @@ Agent-friendly output:
 - Provenance on every search: `effectiveQuery`, `appliedFilters` as sent upstream, the sort or order applied, and `totalCount`; trace edges name their `sources`, and `coverage` says how much of each source was read
 - Typed misses instead of errors: a DOI DataCite doesn't hold comes back `found: false` with a `missReason`, the agency that holds it when known, and the next step
 - Disclosed limits: capped lists report their full counts, and notices explain zero hits, the 10,000-match paging ceiling, an unexpanded second hop, and citations the returned edges don't account for
-- In the text output, depositor-supplied text (titles, descriptions, names) is blockquoted or flattened and machine payloads are fenced, so deposited content can't pose as structure; `structuredContent` keeps it verbatim
+- In the text output, depositor-supplied text (titles, descriptions, names) is blockquoted or flattened and machine payloads are fenced, so deposited content can't pose as structure. Titles and snippets are normalized on both surfaces; structured descriptions and other deposited fields retain their original text
 
 ## Getting started
 
@@ -265,6 +271,7 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 | `src/mcp-server/tools` | Tool definitions (`*.tool.ts`) and the input-schema, miss-guidance, and text-rendering helpers they share. |
 | `src/services/datacite` | DataCite REST client (`/dois`, `/repositories`, `/events`, content negotiation), query builder, identifier normalizers, record mappers, relation-graph builder, and citation style check. |
 | `src/services/doi-ra` | doi.org registration-agency lookup for DOIs DataCite holds no public record for. |
+| `src/services/ror` | Exact Crossref Funder ID to ROR lookup with literal-search fallback. |
 | `src/services/http` | Shared upstream pipeline — response cache, request pacer, retry, per-call deadline, rate-limit handling. |
 | `src/services/reference` | Static vocabularies behind `datacite_list_reference` and the input validators. |
 | `src/config` | Server-specific environment variable parsing and validation with Zod. |

@@ -8,7 +8,12 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { decodeCursor, encodeCursor, upstreamCursorToken } from '@/services/datacite/cursor.js';
+import {
+  decodeCursor,
+  encodeCursor,
+  upstreamCursorToken,
+  type WorkCursor,
+} from '@/services/datacite/cursor.js';
 import {
   getDataCiteService,
   type WorkSearchFilters,
@@ -50,6 +55,7 @@ import {
   SORT_ORDERS,
   type SortOrder,
 } from '@/services/reference/vocabularies.js';
+import { getRorService } from '@/services/ror/ror-service.js';
 import {
   blankAsUnset,
   enumish,
@@ -59,7 +65,7 @@ import {
   providerIdString,
   repositoryIdString,
 } from './_schemas.js';
-import { blockquote, flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
+import { blockquote, escapeAngles, flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
 
 /** Page numbers reach only this many matches upstream. */
 const PAGE_CEILING = 10_000;
@@ -111,7 +117,7 @@ const AppliedFiltersSchema = z
 type AppliedFilters = z.infer<typeof AppliedFiltersSchema>;
 
 const facetList = (list: RawFacet[] | undefined) =>
-  (list ?? []).map((f) => ({ id: f.id, title: f.title ?? f.id, count: f.count }));
+  (list ?? []).map((f) => ({ id: f.id, title: f.title?.trim() || f.id, count: f.count }));
 
 export const searchWorksTool = tool('datacite_search_works', {
   title: 'Search DataCite works',
@@ -226,12 +232,12 @@ export const searchWorksTool = tool('datacite_search_works', {
         .trim()
         .max(MAX_CHARS.id)
         .regex(
-          /^\s*[A-Za-z0-9.+_-]+\s*$/,
-          'Expected an SPDX-style license id without spaces, such as cc-by-4.0, cc0-1.0, or mit; common ids: datacite_list_reference topic licenses.',
+          /^\s*[A-Za-z0-9.+_-](?:[A-Za-z0-9.+_ -]*[A-Za-z0-9.+_-])?\s*$/,
+          'Expected a license id such as cc-by-4.0, cc0 1.0, or mit, without commas or control characters; common ids: datacite_list_reference topic licenses.',
         ),
       10,
     ).describe(
-      "The work's own license ids (any match), SPDX-style: cc-by-4.0, cc0-1.0, mit. Lowercased, then matched exactly; common ids: datacite_list_reference topic licenses.",
+      "The work's own license ids (any match), e.g. cc-by-4.0, cc0-1.0, cc0 1.0, mit. Trimmed and lowercased, then matched exactly, preserving internal spaces; reuse ids from the licenses facet or datacite_list_reference topic licenses.",
     ),
     language: optionalString(
       z
@@ -256,8 +262,8 @@ export const searchWorksTool = tool('datacite_search_works', {
     sort: blankAsUnset(enumish(SORT_ORDER_IDS, resolveSort).optional()).describe(
       'relevance, newest, oldest, recently_updated, most_cited, most_viewed, or most_downloaded. Omitted: relevance when text or query is set, else newest. Not with cursor.',
     ),
-    limit: blankAsUnset(z.number().int().min(1).max(100).default(20)).describe(
-      'Rows per page, 1–100.',
+    limit: blankAsUnset(z.number().int().min(1).max(10_000).default(20)).describe(
+      'Requested rows per page, 1–10,000; values above 100 apply 100 with a notice.',
     ),
     page: blankAsUnset(z.number().int().min(1).optional()).describe(
       'Ranked page number, 1 when omitted. page × limit may not exceed 10,000; not with cursor.',
@@ -282,6 +288,12 @@ export const searchWorksTool = tool('datacite_search_works', {
   }),
 
   output: z.object({
+    rankedCeilingReached: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when ranked paging stops before all matches have been delivered; restart with cursor "*".',
+      ),
     works: z
       .array(
         z
@@ -393,6 +405,12 @@ export const searchWorksTool = tool('datacite_search_works', {
   },
 
   async handler(input, ctx) {
+    const limit = Math.min(input.limit, 100);
+    const notices: string[] = [];
+    const cursor = input.cursor;
+    const continuing = cursor !== undefined && cursor !== '*';
+    const envelope = continuing ? decodeCursor(cursor) : undefined;
+    let funderIdentity: WorkCursor['f'];
     /** Error data naming the rejected field and the form it expects — never the rejected value. */
     const expected = (field: string, form: string) => ({
       field,
@@ -497,7 +515,32 @@ export const searchWorksTool = tool('datacite_search_works', {
             ),
           );
         }
-        addClause('funder', funderIdClause(funderId));
+        if (envelope?.f && envelope.f.id !== funderId) {
+          throw ctx.fail('invalid_cursor', 'cursor belongs to a different funder.', {
+            recovery: {
+              hint: 'Repeat the exact funder that produced this cursor, or start a new walk with cursor "*".',
+            },
+          });
+        }
+        // A continuation keeps its original match set; legacy envelopes used the literal ID.
+        const resolved = continuing
+          ? envelope?.f?.ror
+          : input.include_child_funders
+            ? undefined
+            : await getRorService().resolveFunder(funderId, ctx);
+        funderIdentity = { id: funderId, ...(resolved && { ror: resolved }) };
+        if (resolved) {
+          filters.fundedBy = resolved;
+          applied.funder = `funded-by=${resolved}`;
+        } else {
+          addClause('funder', funderIdClause(funderId));
+          if (!input.include_child_funders)
+            notices.push(
+              continuing
+                ? 'This cursor walk retains literal Crossref Funder ID matching; works deposited with a ROR may be omitted.'
+                : 'The Crossref Funder ID could not be resolved to one exact ROR identity; matching its literal deposited identifier only, so works deposited with a ROR may be omitted.',
+            );
+        }
       } else {
         if (!/[\p{L}\p{N}]/u.test(input.funder)) {
           throw ctx.fail(
@@ -599,10 +642,10 @@ export const searchWorksTool = tool('datacite_search_works', {
       );
     }
     const page = input.page ?? 1;
-    if (!cursorMode && page * input.limit > PAGE_CEILING) {
+    if (!cursorMode && page * limit > PAGE_CEILING) {
       throw ctx.fail(
         'page_ceiling',
-        `page ${page} × limit ${input.limit} = ${page * input.limit} exceeds the ${num(PAGE_CEILING)}-match ceiling of ranked paging.`,
+        `page ${page} × limit ${limit} = ${page * limit} exceeds the ${num(PAGE_CEILING)}-match ceiling of ranked paging.`,
       );
     }
 
@@ -611,8 +654,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     let cursorToken: string | undefined;
     let cursorFloor: number | undefined;
     let deliveredBefore = 0;
-    if (input.cursor !== undefined && input.cursor !== '*') {
-      const envelope = decodeCursor(input.cursor);
+    if (continuing) {
       if (!envelope) {
         throw ctx.fail(
           'invalid_cursor',
@@ -624,7 +666,7 @@ export const searchWorksTool = tool('datacite_search_works', {
           },
         );
       }
-      if (envelope.q !== fingerprint) {
+      if (envelope.q !== fingerprint || (envelope.f && !funderIdentity)) {
         throw ctx.fail('invalid_cursor', 'cursor belongs to a different query or filter set.', {
           recovery: {
             hint: 'Repeat the exact query and filters that produced this cursor, or start a new walk with cursor "*".',
@@ -648,7 +690,7 @@ export const searchWorksTool = tool('datacite_search_works', {
         callerQuery: query !== undefined,
         filters,
         page: cursorMode ? { cursor: cursorToken ?? '1' } : { number: page },
-        size: input.limit,
+        size: limit,
         sort: SORT_ORDERS[sortApplied],
         facets: input.include_facets,
       },
@@ -692,13 +734,16 @@ export const searchWorksTool = tool('datacite_search_works', {
           q: fingerprint,
           c: Number.isNaN(lastCreated) ? 0 : lastCreated,
           n: delivered,
+          ...(funderIdentity && { f: funderIdentity }),
         });
       }
-    } else if (page * input.limit < total && (page + 1) * input.limit <= PAGE_CEILING) {
+    } else if (page * limit < total && (page + 1) * limit <= PAGE_CEILING) {
       nextPage = page + 1;
     }
 
-    const notices: string[] = [];
+    if (input.limit > limit)
+      notices.push(`Requested limit=${input.limit}; applied limit=${limit}.`);
+    const rankedCeilingReached = !cursorMode && nextPage === undefined && page * limit < total;
     if (total === 0) {
       notices.push('No DataCite works matched.');
       const unknownField = query ? unknownFieldPrefix(query) : undefined;
@@ -709,7 +754,7 @@ export const searchWorksTool = tool('datacite_search_works', {
       }
       if (filters.licenses) {
         notices.push(
-          "License ids must match DataCite's lowercase SPDX ids exactly; check them against datacite_list_reference topic licenses.",
+          "License ids must match DataCite's lowercase ids exactly, including internal spaces; check the licenses facet or datacite_list_reference topic licenses.",
         );
       }
       if (filters.clientIds || filters.providerIds) {
@@ -725,13 +770,13 @@ export const searchWorksTool = tool('datacite_search_works', {
           'Several filters are ANDed together; drop one at a time to find the one excluding everything.',
         );
       }
-    } else if (!cursorMode && nextPage === undefined && page * input.limit < total) {
+    } else if (rankedCeilingReached) {
       notices.push(
         `Ranked pages stop at the first ${num(PAGE_CEILING)} of ${num(total)} matches; restart with cursor "*" to walk them all in registration order, or narrow the filters.`,
       );
-    } else if (!cursorMode && (page - 1) * input.limit >= total) {
+    } else if (!cursorMode && (page - 1) * limit >= total) {
       notices.push(
-        `Page ${page} is past the end of the results; at limit ${input.limit} the last page is ${num(Math.ceil(total / input.limit))}, so request that page or an earlier one.`,
+        `Page ${page} is past the end of the results; at limit ${limit} the last page is ${num(Math.ceil(total / limit))}, so request that page or an earlier one.`,
       );
     }
     if (notices.length > 0) ctx.enrich.notice(notices.join(' '));
@@ -739,6 +784,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     ctx.log.info('Work search completed', { total, returned: works.length, cursorMode });
     return {
       works,
+      ...(rankedCeilingReached && { rankedCeilingReached: true }),
       ...(nextPage !== undefined && { nextPage }),
       ...(nextCursor !== undefined && { nextCursor }),
       ...(input.include_facets && {
@@ -758,7 +804,7 @@ export const searchWorksTool = tool('datacite_search_works', {
   format: (result) => {
     const lines = [`**${result.works.length} works on this page**`, ''];
     for (const w of result.works) {
-      lines.push(`### ${flattenInline(w.title ?? w.doi)}`);
+      lines.push(`### ${escapeAngles(flattenInline(w.title ?? w.doi))}`);
       const repository = w.repositoryId
         ? `${w.repositoryName ? `${flattenInline(w.repositoryName)} ` : ''}(${flattenInline(w.repositoryId)})${w.providerId ? `, provider ${flattenInline(w.providerId)}` : ''}`
         : 'Not available';
@@ -773,7 +819,7 @@ export const searchWorksTool = tool('datacite_search_works', {
         `- **Creators (${num(w.creatorCount)}):** ${creators}`,
         `- **Landing page:** ${orNA(w.landingUrl)}`,
       );
-      if (w.descriptionSnippet) lines.push('', blockquote(w.descriptionSnippet));
+      if (w.descriptionSnippet) lines.push('', blockquote(escapeAngles(w.descriptionSnippet)));
       lines.push('');
     }
     if (result.facets) {
@@ -796,7 +842,12 @@ export const searchWorksTool = tool('datacite_search_works', {
     }
     if (result.nextPage !== undefined) lines.push(`**Next page:** page ${result.nextPage}`);
     if (result.nextCursor !== undefined) lines.push(`**Next cursor:** ${result.nextCursor}`);
-    if (result.nextPage === undefined && result.nextCursor === undefined)
+    if (result.rankedCeilingReached) lines.push('**Ranked ceiling reached.**');
+    if (
+      !result.rankedCeilingReached &&
+      result.nextPage === undefined &&
+      result.nextCursor === undefined
+    )
       lines.push('**Last page.**');
     return [{ type: 'text', text: lines.join('\n') }];
   },

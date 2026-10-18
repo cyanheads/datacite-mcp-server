@@ -2,10 +2,10 @@
 
 **Server:** @cyanheads/datacite-mcp-server
 **Version:** 0.1.2
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.14`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` ^2.2.0
-**Zod:** ^4.6.5
+**MCP SDK:** `@modelcontextprotocol/server` ^2.3.1
+**Zod:** ^4.6.7
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -179,7 +179,7 @@ await createApp({
 
 `sessionMode` declares the HTTP session posture in `src/` instead of leaving it to a deployment's `MCP_SESSION_MODE`, which still wins whenever it carries a meaningful value (an empty string and an unsubstituted `${…}` placeholder read as unset and fall through to the option). This server declares `'stateless'` — no tool calls `ctx.requestInput` — and `.env.example`, the `Dockerfile`, and the README env table say the same; keep all four in agreement. Add `require: 'stateful'` if a tool ever asks the caller for input mid-handler: startup then fails with a `ConfigurationError` rather than serving a mode in which a 2025-era client can never answer the prompt. Stdio is never refused.
 
-`teardown(core)` is the `setup()` counterpart — release a watcher, socket, or non-`unref()`'d timer there. It runs after the transport stops and before the logger closes, on every shutdown path, and a signal-triggered shutdown then exits the process explicitly (0, or 1 if a step never settles within the framework's 10 s ceiling). Here `setup()` builds the DataCite and doi.org services over one shared response cache, and `teardown()` disposes both request pacers.
+`teardown(core)` is the `setup()` counterpart — release a watcher, socket, or non-`unref()`'d timer there. It runs after the transport stops and before the logger closes, on every shutdown path, and a signal-triggered shutdown then exits the process explicitly (0, or 1 if a step never settles within the framework's 10 s ceiling). Here `setup()` builds the DataCite, doi.org and ROR services over one shared response cache, and `teardown()` disposes all three request pacers.
 
 ---
 
@@ -267,6 +267,8 @@ src/
       types.ts                          # Raw DataCite response types
     doi-ra/
       doi-ra-service.ts                 # doi.org registration-agency lookup (DOIs DataCite doesn't hold)
+    ror/
+      ror-service.ts                    # Exact FundRef-to-ROR mapping; bounded literal-search fallback
     http/
       upstream-client.ts                # Cache → pacer → fetch pipeline, retry, deadline, 429 / pacer-shed handling
       ttl-cache.ts                      # Shared in-process LRU with per-entry TTLs

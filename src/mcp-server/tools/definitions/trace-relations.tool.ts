@@ -9,7 +9,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
-import { phrase } from '@/services/datacite/query-builder.js';
+import { reverseRelationQuery } from '@/services/datacite/query-builder.js';
 import {
   type GraphEdge,
   MAX_EDGES,
@@ -21,7 +21,7 @@ import {
 } from '@/services/datacite/relation-graph.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
 import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
-import { flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
+import { escapeAngles, flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
 
 /** Relation types that record a citation of the asserting side's target… */
 const CITED_BY_TYPES = new Set(['IsCitedBy', 'IsReferencedBy', 'IsSupplementTo']);
@@ -108,6 +108,10 @@ function citationNotice(
     causes.push(
       `This call read ${num(fetched)} of the ${num(total)} Event Data events on this DOI, the most one call reads${perType}.`,
     );
+  } else if (eventData.status === 'ok' && eventData.total === undefined) {
+    causes.push(
+      'Event Data did not report a total, so this call cannot establish its completeness.',
+    );
   }
   if (versionCount > 0 || versionOfCount > 0) {
     causes.push(
@@ -165,14 +169,17 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
     ).describe(
       "Only these relation types (IsVersionOf, HasPart, IsSupplementTo, IsDerivedFrom, Cites, IsCitedBy, …), any case, read from the traced DOI's side: HasPart keeps the DOI's own HasPart assertions and the records asserting IsPartOf it, each edge shown as asserted. IsPublishedIn and Other have no inverse and match on either side. A second hop reads them from each expanded neighbour's side. Omitted: all. Groups: datacite_list_reference topic relation_types.",
     ),
+    event_offset: blankAsUnset(z.number().int().min(0).max(9_999).optional()).describe(
+      'Absolute zero-based Event Data position, 0–9,999. Presence, including 0, selects Event-Data-only mode: no metadata edges or depth-2 expansion. Reads one 100-event upstream page, starting within it. Continue with coverage.eventData.nextEventOffset and the same doi and filters; ordering can change between calls, so this is not a snapshot.',
+    ),
     include_event_data: z
       .boolean()
       .default(true)
       .describe(
         'Add Event Data citation links (mostly harvested from Crossref). Citation relation types only.',
       ),
-    max_nodes: blankAsUnset(z.number().int().min(1).max(MAX_NODES).default(50)).describe(
-      'Node cap including the root, 1–100 (default 50). Filled in order: own-metadata targets, records pointing at the root, Event Data endpoints, then the second hop.',
+    max_nodes: blankAsUnset(z.number().int().min(1).max(10_000).default(50)).describe(
+      'Requested node cap including the root, 1–10,000 (default 50); values above 100 apply 100 with a notice. Filled in order: own-metadata targets, records pointing at the root, Event Data endpoints, then the second hop.',
     ),
   }),
 
@@ -238,7 +245,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
             sources: z
               .array(z.enum(EDGE_SOURCES))
               .describe(
-                "How the edge was reached. metadata and reverse_metadata both read from's own relatedIdentifiers — metadata by reading that record, reverse_metadata by querying for records that point at to — so an edge listing both is one assertion reached twice, not two confirmations; event_data is a link harvested by Event Data, independent of either.",
+                "How the edge was reached. metadata and reverse_metadata both read from's own relatedIdentifiers and relatedItems — metadata by reading that record, reverse_metadata by querying for records that point at to — so an edge listing both is one assertion reached twice, not two confirmations; event_data is a link harvested by Event Data, independent of either.",
               ),
             eventSources: z
               .array(z.string())
@@ -268,8 +275,10 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         ownMetadata: z
           .object({
             status: z
-              .enum(['ok', 'not_datacite'])
-              .describe('not_datacite when DataCite holds no record for the root.'),
+              .enum(['ok', 'not_datacite', 'skipped'])
+              .describe(
+                'not_datacite when DataCite holds no record for the root; skipped in event_offset mode.',
+              ),
             edgeCount: z
               .number()
               .describe("Relations the root's own record asserts (after relation_types)."),
@@ -278,8 +287,10 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         reverseMetadata: z
           .object({
             status: z
-              .literal('ok')
-              .describe('Always ok: a reverse query that does not answer fails the whole call.'),
+              .enum(['ok', 'skipped'])
+              .describe(
+                'skipped in event_offset mode; otherwise a reverse query that does not answer fails the whole call.',
+              ),
             total: z.number().describe('Records matching the reverse query upstream.'),
             fetched: z
               .number()
@@ -320,9 +331,36 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
               .number()
               .optional()
               .describe(
-                'Events kept as edges before max_nodes applies; for a non-DataCite root, only events whose object is a DataCite DOI are kept.',
+                'Default mode: qualifying events before max_nodes applies. Event-Data-only mode: raw events represented in returned edges, duplicates included. For a non-DataCite root, only confirmed DataCite objects are kept.',
               ),
             detail: z.string().optional().describe('Why Event Data was skipped or unavailable.'),
+            offset: z
+              .number()
+              .optional()
+              .describe('Requested absolute raw-event offset, present in Event-Data-only mode.'),
+            nextEventOffset: z
+              .number()
+              .optional()
+              .describe(
+                'Next raw event to examine with the same DOI and filters. A blocked position retries here; max_nodes=1 requires raising max_nodes first. Absent on exhaustion, a skipped/unavailable page, or the 10,000-result ceiling.',
+              ),
+            page: z
+              .number()
+              .optional()
+              .describe('Upstream page returned, or requested when upstream omits it.'),
+            totalPages: z.number().optional().describe('Upstream total-pages when provided.'),
+            hasNextPage: z
+              .boolean()
+              .optional()
+              .describe(
+                'Whether the returned upstream links contain next; does not override totals or the ranked ceiling.',
+              ),
+            progress: z
+              .enum(['more', 'exhausted', 'ceiling', 'blocked'])
+              .optional()
+              .describe(
+                'Continuation state: more raw events, exhausted matching results, the 10,000-ranked-result ceiling, or an uncertain endpoint lookup that must be retried.',
+              ),
           })
           .describe('Event Data citation links.'),
       })
@@ -348,6 +386,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
   },
 
   async handler(input, ctx) {
+    const maxNodes = Math.min(input.max_nodes, MAX_NODES);
     const root = normalizeDoi(input.doi);
     if (!root) {
       throw ctx.fail(
@@ -373,16 +412,62 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         root,
         depth: input.depth,
         includeEventData: input.include_event_data,
-        maxNodes: input.max_nodes,
+        maxNodes,
         ...(relationTypes && { relationTypes }),
+        ...(input.event_offset !== undefined && { eventOffset: input.event_offset }),
       },
       ctx,
     );
 
     const notices: string[] = [];
+    const eventOnly = input.event_offset !== undefined;
+    const eventCoverage = graph.coverage.eventData;
+    const recipe = (offset: number) =>
+      JSON.stringify({
+        doi: root,
+        ...(relationTypes && { relation_types: relationTypes }),
+        event_offset: offset,
+        max_nodes: Math.max(2, maxNodes),
+      });
+    if (eventOnly) {
+      notices.push(
+        'event_offset selects Event-Data-only mode; metadata edges and depth-2 expansion are skipped. Upstream ordering can change between calls; this is not a snapshot.',
+      );
+      if (eventCoverage.nextEventOffset !== undefined) {
+        notices.push(
+          `${maxNodes === 1 ? 'Raise max_nodes to at least 2 before continuing. ' : ''}Continue datacite_trace_relations with ${recipe(eventCoverage.nextEventOffset)} and the same filters.`,
+        );
+      }
+      if (eventCoverage.progress === 'ceiling')
+        notices.push(
+          'The upstream 10,000-ranked-result ceiling was reached; this is not exhaustion. Narrow relation_types to read a smaller result set.',
+        );
+      if (eventCoverage.progress === 'blocked')
+        notices.push(
+          'A required DataCite classification lookup did not answer; retry nextEventOffset before advancing.',
+        );
+    } else if (
+      eventCoverage.status === 'ok' &&
+      ((eventCoverage.total ?? 0) > (eventCoverage.fetched ?? 0) ||
+        eventCoverage.hasNextPage === true ||
+        (eventCoverage.total === undefined && eventCoverage.fetched === 100) ||
+        (eventCoverage.totalPages !== undefined &&
+          eventCoverage.totalPages > (eventCoverage.page ?? 1)) ||
+        foundEdges.some(
+          (edge) => edge.sources.includes('event_data') && !graph.edges.includes(edge),
+        ))
+    ) {
+      notices.push(
+        `To read Event Data without metadata consuming the node cap, call datacite_trace_relations with ${recipe(0)} and the same filters. Upstream ordering can change between calls; only the first 10,000 ranked events are accessible.`,
+      );
+    }
+    if (input.max_nodes > maxNodes)
+      notices.push(`Requested max_nodes=${input.max_nodes}; applied max_nodes=${maxNodes}.`);
     const eventDataRead = graph.coverage.eventData.status === 'ok';
     if (!graph.root.isDataCiteDoi) {
-      const sources = `edges shown are DataCite records that point at it${eventDataRead ? ' and, from Event Data, the DataCite works its own reference list cites' : ''}`;
+      const sources = eventOnly
+        ? 'edges shown come only from Event Data references to confirmed DataCite works'
+        : `edges shown are DataCite records that point at it${eventDataRead ? ' and, from Event Data, the DataCite works its own reference list cites' : ''}`;
       // `ids=` returns another agency's DOI as a linking copy; nothing back leaves the agency unknown.
       notices.push(
         graph.nodes[0]?.isDataCiteDoi === false
@@ -390,15 +475,27 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
           : `DataCite holds no public record for ${root}, so it has no DataCite metadata of its own; ${sources}. datacite_get_work says whether another agency registered it, no agency did, or it is a DataCite DOI without public metadata.`,
       );
     }
-    if (graph.edges.length === 0 && available === 0 && unconfirmedEvents === 0) {
-      const searched = eventDataRead ? 'DataCite metadata or Event Data' : 'DataCite metadata';
+    if (
+      graph.edges.length === 0 &&
+      available === 0 &&
+      unconfirmedEvents === 0 &&
+      !capBound &&
+      (!eventOnly || eventDataRead)
+    ) {
+      const searched = eventOnly
+        ? 'this Event Data slice'
+        : eventDataRead
+          ? 'DataCite metadata or Event Data'
+          : 'DataCite metadata';
       notices.push(
         `No relations${input.relation_types ? ' of the requested relation_types' : ''} were found in ${searched}. Relations exist only where depositors asserted them or a citation link was harvested; this is not evidence that none exist.`,
       );
     }
     if (graph.coverage.eventData.status === 'unavailable') {
       notices.push(
-        'Event Data did not answer, so harvested citation links (mostly from journal articles) are missing; own and reverse metadata edges are complete up to the cap. Retry to include them.',
+        eventOnly
+          ? 'Event Data did not return the requested page; retry the same event_offset. No continuation progress is claimed.'
+          : 'Event Data did not answer, so harvested citation links (mostly from journal articles) are missing; own and reverse metadata edges are complete up to the cap. Retry to include them.',
       );
     }
     const { reverseMetadata } = graph.coverage;
@@ -407,7 +504,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       `The DataCite records that point at ${pointedAt} are large (the first ${num(read.fetched)} list ${num(listed)} related identifiers between them), so ${reader} read ${num(read.fetched)} of the ${num(read.total)} rather than up to ${REVERSE_PAGE_SIZE}`;
     if (largeReverse.root !== undefined) {
       notices.push(
-        `${largeRecords('this DOI', 'this call', largeReverse.root, reverseMetadata)}; pass query relatedIdentifiers.relatedIdentifier:${phrase(root)} to datacite_search_works to list them all.`,
+        `${largeRecords('this DOI', 'this call', largeReverse.root, reverseMetadata)}; pass query ${reverseRelationQuery([root])} to datacite_search_works to list them all.`,
       );
     }
     if (largeReverse.secondHop !== undefined && reverseMetadata.secondHop) {
@@ -432,7 +529,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
     const narrow = relationTypes?.length === 1 ? [] : ['narrow relation_types'];
     const shown = graph.nodes.length - 1;
     if (shown < available) {
-      const atMax = input.max_nodes === MAX_NODES;
+      const atMax = maxNodes === MAX_NODES;
       // A second hop runs only when the first fits whole, so what it left out sits past a neighbour.
       const steps = [
         ...(atMax ? [] : [`raise max_nodes (≤ ${MAX_NODES})`]),
@@ -444,11 +541,11 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       // With no step left, a search still lists the records pointing at the root, when there are any.
       if (steps.length === 0 && graph.coverage.reverseMetadata.total > 0) {
         steps.push(
-          `pass query relatedIdentifiers.relatedIdentifier:${phrase(root)} to datacite_search_works to list the DataCite records that point at this DOI`,
+          `pass query ${reverseRelationQuery([root])} to datacite_search_works to list the DataCite records that point at this DOI`,
         );
       }
       notices.push(
-        `${num(shown)} of ${num(available)} related identifiers fit max_nodes=${input.max_nodes}${atMax ? ' (the maximum)' : ''}${steps.length > 0 ? `; ${orList(steps)}` : ''}.`,
+        `${num(shown)} of ${num(available)} related identifiers fit max_nodes=${maxNodes}${atMax ? ' (the maximum)' : ''}${steps.length > 0 ? `; ${orList(steps)}` : ''}.`,
       );
     }
     if (unexpanded > 0) {
@@ -462,7 +559,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
             ? `raise max_nodes to ${MAX_NODES} to trace ${them}`
             : `no max_nodes value leaves the second hop room, so ${orList([...narrow, 'trace a neighbour directly to follow its relations'])}`;
       notices.push(
-        `The first hop filled max_nodes=${input.max_nodes}, so the second hop was not expanded and the relations of ${num(unexpanded)} DataCite neighbour${unexpanded === 1 ? '' : 's'} went untraced; ${next}.`,
+        `The first hop filled max_nodes=${maxNodes}, so the second hop was not expanded and the relations of ${num(unexpanded)} DataCite neighbour${unexpanded === 1 ? '' : 's'} went untraced; ${next}.`,
       );
     }
     if (beyondFrontier > 0) {
@@ -476,19 +573,21 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         `${num(graph.edges.length)} of ${num(edgesFound)} edges between the returned nodes are shown (at most ${num(MAX_EDGES)} per call), in the order found: own metadata, records pointing at the root, Event Data, then the second hop; ${orList([...narrow, 'trace a returned node directly to see the rest of its edges'])}.`,
       );
     }
-    const citations = citationNotice(
-      root,
-      graph,
-      foundEdges,
-      relationTypes,
-      input.max_nodes,
-      largeReverse.root !== undefined,
-    );
+    const citations =
+      !eventOnly &&
+      citationNotice(
+        root,
+        graph,
+        foundEdges,
+        relationTypes,
+        maxNodes,
+        largeReverse.root !== undefined,
+      );
     if (citations) notices.push(citations);
     const notice = notices.join(' ');
     if (edgeCapBound) ctx.enrich({ truncated: true, edgesFound });
     if (capBound) {
-      ctx.enrich.truncated({ shown: graph.nodes.length, cap: input.max_nodes, guidance: notice });
+      ctx.enrich.truncated({ shown: graph.nodes.length, cap: maxNodes, guidance: notice });
     } else if (notice) {
       ctx.enrich.notice(notice);
     }
@@ -508,7 +607,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
     const lines = [
       `# Relations of ${r.doi}`,
       '',
-      `**Title:** ${orNA(r.title)} · **Type:** ${orNA(r.resourceTypeGeneral)} · **Year:** ${orNA(r.publicationYear)} · **Repository:** ${orNA(r.repositoryId)} · **DataCite DOI:** ${r.isDataCiteDoi}`,
+      `**Title:** ${escapeAngles(orNA(r.title))} · **Type:** ${orNA(r.resourceTypeGeneral)} · **Year:** ${orNA(r.publicationYear)} · **Repository:** ${orNA(r.repositoryId)} · **DataCite DOI:** ${r.isDataCiteDoi}`,
     ];
     if (result.rootCounts) {
       const c = result.rootCounts;
@@ -548,7 +647,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         orNA(n.repositoryId),
         numOrNA(n.citationCount),
         numOrNA(n.versionCount),
-        orNA(n.title),
+        escapeAngles(orNA(n.title)),
       ];
       lines.push(`| ${cells.map(tableCell).join(' | ')} |`);
     }
@@ -559,7 +658,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       '## Coverage',
       `- **Own metadata:** ${ownMetadata.status} · ${num(ownMetadata.edgeCount)} asserted relations`,
       `- **Reverse metadata:** ${reverseMetadata.status} · fetched ${num(reverseMetadata.fetched)} of ${num(reverseMetadata.total)} records${reverseMetadata.secondHop ? ` · second hop fetched ${num(reverseMetadata.secondHop.fetched)} of ${num(reverseMetadata.secondHop.total)} records` : ''}`,
-      `- **Event Data:** ${eventData.status}${eventData.scope ? ` · scope ${eventData.scope}` : ''}${eventData.total !== undefined ? ` · total ${num(eventData.total)}` : ''}${eventData.fetched !== undefined ? ` · fetched ${num(eventData.fetched)}` : ''}${eventData.kept !== undefined ? ` · kept ${num(eventData.kept)}` : ''}${eventData.detail ? ` · ${flattenInline(eventData.detail)}` : ''}`,
+      `- **Event Data:** ${eventData.status}${eventData.scope ? ` · scope ${eventData.scope}` : ''}${eventData.total !== undefined ? ` · total ${num(eventData.total)}` : ''}${eventData.fetched !== undefined ? ` · fetched ${num(eventData.fetched)}` : ''}${eventData.kept !== undefined ? ` · kept ${num(eventData.kept)}` : ''}${eventData.offset !== undefined ? ` · offset ${num(eventData.offset)}` : ''}${eventData.nextEventOffset !== undefined ? ` · nextEventOffset ${num(eventData.nextEventOffset)}` : ''}${eventData.page !== undefined ? ` · page ${num(eventData.page)}` : ''}${eventData.totalPages !== undefined ? ` · totalPages ${num(eventData.totalPages)}` : ''}${eventData.hasNextPage !== undefined ? ` · hasNextPage ${eventData.hasNextPage}` : ''}${eventData.progress ? ` · progress ${eventData.progress}` : ''}${eventData.detail ? ` · ${flattenInline(eventData.detail)}` : ''}`,
     );
     return [{ type: 'text', text: lines.join('\n') }];
   },

@@ -222,5 +222,6 @@ export interface RawEvent {
 
 export interface RawEventList {
   data: RawEvent[];
-  meta: { total?: number };
+  links?: { next?: string | null; self?: string };
+  meta: { total?: number; page?: number; 'total-pages'?: number };
 }

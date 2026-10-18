@@ -131,6 +131,12 @@ describe('phrases and clauses', () => {
 });
 
 describe('reverse relation lookups', () => {
+  it('pairs both assertion paths with their own type restrictions', () => {
+    const query = reverseRelationQuery(['10.1/a'], ['IsPartOf']);
+    expect(query).toContain('relatedItems.relatedItemIdentifier.relatedItemIdentifier:');
+    expect(query).toContain('AND relatedItems.relationType:(IsPartOf)');
+    expect(query).toContain(') OR (');
+  });
   it('lists a DOI in its bare and four doi.org URL forms', () => {
     expect(doiForms('10.5061/dryad.8515')).toEqual([
       '10.5061/dryad.8515',
@@ -143,15 +149,15 @@ describe('reverse relation lookups', () => {
 
   it('ORs every form of every DOI, then narrows by relation type when asked', () => {
     const base = reverseRelationQuery(['10.1/a', '10.1/b']);
-    expect(base).toBe(
+    expect(base).toContain(
       `relatedIdentifiers.relatedIdentifier:(${[...doiForms('10.1/a'), ...doiForms('10.1/b')]
         .map((form) => `"${form}"`)
         .join(' OR ')})`,
     );
     expect(reverseRelationQuery(['10.1/a'], [])).toBe(reverseRelationQuery(['10.1/a']));
-    expect(reverseRelationQuery(['10.1/a'], ['IsCitedBy', 'Cites'])).toBe(
-      `${reverseRelationQuery(['10.1/a'])} AND relatedIdentifiers.relationType:(IsCitedBy OR Cites)`,
-    );
+    const filtered = reverseRelationQuery(['10.1/a'], ['IsCitedBy', 'Cites']);
+    expect(filtered).toContain('AND relatedIdentifiers.relationType:(IsCitedBy OR Cites)');
+    expect(filtered).toContain('AND relatedItems.relationType:(IsCitedBy OR Cites)');
   });
 });
 

@@ -9,6 +9,15 @@ import { htmlToText } from '@/services/datacite/html-text.js';
 import { fixtureText } from '../../helpers/fixtures.js';
 
 describe('htmlToText', () => {
+  it('characterizes nested escape decoding as exactly one pass', () => {
+    expect(htmlToText('&amp;lt;i&amp;gt;')).toBe('&lt;i&gt;');
+    expect(htmlToText('<i>&lt;b&gt;x&lt;/b&gt;</i>')).toBe('<b>x</b>');
+  });
+  it('preserves scientific comparisons and separates recognized blocks', () => {
+    expect(htmlToText('T < 5 and p > 0')).toBe('T < 5 and p > 0');
+    expect(htmlToText('<p>A <em>B</em></p><div>C<br>D</div>')).toBe('A B C D');
+    expect(htmlToText('&lt;i&gt;<b>x</b>&lt;/i&gt;')).toBe('<i>x</i>');
+  });
   it('strips the markup of a recorded APA rendering and decodes its entities', () => {
     const html = fixtureText('datacite/citations/dryad-8515-default.html');
     const plain = htmlToText(html);
@@ -56,4 +65,49 @@ describe('htmlToText', () => {
   it('keeps a stray < as text rather than dropping everything up to the next tag', () => {
     expect(htmlToText('T < 5 K, <i>in situ</i>')).toBe('T < 5 K, in situ');
   });
+
+  it('bounds HTML conversion thread CPU across 64-fold text growth', () => {
+    const shapes = [
+      (n: number) => {
+        const value = '<em'.repeat(Math.floor(n / 3));
+        return { value, expected: value };
+      },
+      (n: number) => {
+        const value = '&amp'.repeat(Math.floor(n / 4));
+        return { value, expected: value };
+      },
+      (n: number) => ({
+        value: `${'<i>'.repeat(Math.floor(n / 7))}x${'</i>'.repeat(Math.floor(n / 7))}`,
+        expected: 'x',
+      }),
+      (n: number) => ({
+        value: `T < ${'a'.repeat(n)} > 0\n`,
+        expected: `T < ${'a'.repeat(n)} > 0`,
+      }),
+      (n: number) => ({
+        value: `T < ${'a\n'.repeat(Math.floor(n / 2))} > 0`,
+        expected: `T < ${'a '.repeat(Math.floor(n / 2))}> 0`,
+      }),
+      (n: number) => {
+        const value = `<${'a'.repeat(n)}>`;
+        return { value, expected: value };
+      },
+    ];
+    for (const shape of shapes) {
+      const samples: number[] = [];
+      for (const size of [625, 1250, 2500, 5000, 10_000, 20_000, 40_000, 80_000]) {
+        const { value, expected } = shape(size);
+        const converted: string[] = [];
+        const start = process.threadCpuUsage();
+        for (let repeat = 0; repeat < 30; repeat++) converted.push(htmlToText(value));
+        const cpu = process.threadCpuUsage(start);
+        const micros = cpu.user + cpu.system;
+        expect(micros).toBeLessThan(500_000);
+        expect(converted).toEqual(Array<string>(30).fill(expected));
+        samples.push(Math.max(1, micros));
+      }
+      // 625 → 40,000 spans 64× without crossing Bun's large-regex mode switch.
+      expect(samples[6]! / samples[0]!).toBeLessThan(256);
+    }
+  }, 10_000);
 });

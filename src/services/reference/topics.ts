@@ -179,8 +179,8 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
         title: 'License ids',
         entries: LICENSES.map(({ value, label }) => ({ value, label })),
         notes: [
-          "DataCite stores a work's license as a lowercase SPDX-style rightsIdentifier; the licenses filter of datacite_search_works matches it exactly.",
-          'This list holds the most common ids in the index and is not exhaustive; any SPDX id in lowercase is accepted, and a zero-hit search names the filter.',
+          "DataCite stores a work's license as a lowercase rightsIdentifier; the licenses filter of datacite_search_works matches it exactly, including internal spaces (cc0 1.0 and cc0-1.0 are distinct).",
+          'This list holds common ids and is not exhaustive; reuse returned licenses facet ids verbatim. Inputs are trimmed and lowercased, and commas and control characters are not allowed within one id.',
           'notspecified and pdm are DataCite values, not SPDX ids.',
         ],
       };
@@ -374,7 +374,7 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
           {
             value: 'event_data',
             description:
-              'Event Data (2026 scope) carries citation and reference links — mostly harvested from Crossref — plus parts, versions, and usage; relation tracing reads only its citation links.',
+              'Event Data (2026 scope) carries citation and reference links — mostly harvested from Crossref — plus parts, versions, and usage; relation tracing reads only its citation links. Set event_offset: 0 for Event-Data-only tracing, then use coverage.eventData.nextEventOffset with the same DOI and filters. One upstream page is read per call; the 10,000-result ceiling is not exhaustion. Ordering may change between calls; this is not a snapshot.',
           },
           {
             value: 'relation_absence',

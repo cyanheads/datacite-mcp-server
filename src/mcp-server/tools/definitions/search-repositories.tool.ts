@@ -110,11 +110,11 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     provider_id: optionalString(providerIdString()).describe(
       'Parent provider id, e.g. dryad — the providerId a repository carries. Any case.',
     ),
-    repository_ids: optionalArray(repositoryIdString(), 25).describe(
-      'Known repository ids to look up in one batch, shaped provider.repository (e.g. dryad.dryad); any case. Use alone — an id lookup ignores query and filters.',
+    repository_ids: optionalArray(repositoryIdString(), 1000).describe(
+      'Known repository ids, shaped provider.repository (e.g. dryad.dryad); any case. Up to 1,000 inputs; queries the first 25 distinct normalized ids and names omitted ids. Use alone — an id lookup ignores query and filters.',
     ),
-    limit: blankAsUnset(z.number().int().min(1).max(100).default(20)).describe(
-      'Repositories per page, 1–100.',
+    limit: blankAsUnset(z.number().int().min(1).max(10_000).default(20)).describe(
+      'Requested repositories per page, 1–10,000; values above 100 apply 100 with a notice.',
     ),
     page: blankAsUnset(z.number().int().min(1).default(1)).describe(
       'Page number. Past the last page the list is empty.',
@@ -185,6 +185,10 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
   },
 
   async handler(input, ctx) {
+    const limit = Math.min(input.limit, 100);
+    const notices: string[] = [];
+    if (input.limit > limit)
+      notices.push(`Requested limit=${input.limit}; applied limit=${limit}.`);
     const applied: AppliedFilters = {};
     const query = input.query ? singleLine(input.query) : undefined;
     const software = input.software?.toLowerCase();
@@ -206,7 +210,12 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
           'repository_ids cannot be combined with query or filters: DataCite answers an id lookup without applying them.',
         );
       }
-      ids = [...new Set(input.repository_ids.map((id) => id.toLowerCase()))];
+      const distinct = [...new Set(input.repository_ids.map((id) => id.toLowerCase()))];
+      ids = distinct.slice(0, 25);
+      if (distinct.length > ids.length)
+        notices.push(
+          `Queried the first 25 distinct repository ids. Not queried: ${distinct.slice(25).join(', ')}; request those ids separately.`,
+        );
       applied.repository_ids = `ids=${ids.join(',')}`;
     }
 
@@ -230,7 +239,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     ctx.enrich({ orderApplied: 'name', appliedFilters: applied });
 
     // An id batch returns every requested id on one page, whatever limit says.
-    const size = ids ? Math.max(input.limit, ids.length) : input.limit;
+    const size = ids ? Math.max(limit, ids.length) : limit;
     const list = await getDataCiteService().searchRepositories(
       {
         callerQuery: query !== undefined,
@@ -252,7 +261,6 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     const repositories = list.data.map(mapRepository);
     const nextPage = input.page * size < total ? input.page + 1 : undefined;
 
-    const notices: string[] = [];
     if (total === 0) {
       notices.push('No DataCite repositories matched.');
       if (software) {

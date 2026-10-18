@@ -23,6 +23,18 @@ export const VERIFIED_QUERY_FIELDS: ReadonlyArray<{ description: string; value: 
   { value: 'geoLocations.geoLocationPlace', description: 'Free-text place name.' },
   { value: 'language', description: 'ISO 639-1 language code.' },
   { value: 'publicationYear', description: 'Year; ranges as publicationYear:[2020 TO 2022].' },
+  {
+    value: 'created',
+    description: 'Record creation timestamp; ranges as created:[2026-10-16 TO *].',
+  },
+  {
+    value: 'updated',
+    description: 'Metadata update timestamp; ranges as updated:[2026-10-16 TO *].',
+  },
+  {
+    value: 'registered',
+    description: 'DOI registration timestamp; ranges as registered:[2026-10-16 TO *].',
+  },
   { value: 'types.resourceTypeGeneral', description: 'resourceTypeGeneral, e.g. Dataset.' },
   {
     value: 'relatedIdentifiers.relatedIdentifier',

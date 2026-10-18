@@ -40,6 +40,14 @@ const COUNTS: Partial<Record<ReferenceTopic, number>> = {
 };
 
 describe('datacite_list_reference', () => {
+  it('lists deposition timestamps and a creation range on both surfaces', async () => {
+    const result = await run('query_syntax');
+    for (const field of ['created', 'updated', 'registered']) {
+      expect(output(result).entries.some((entry) => entry.value === field)).toBe(true);
+      expect(contentText(result)).toContain(field);
+    }
+    expect(contentText(result)).toContain('created:[2026-10-16 TO *]');
+  });
   it('offers the 18 topics', () => {
     expect(REFERENCE_TOPICS).toHaveLength(18);
   });
