@@ -8,13 +8,12 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
-import { htmlToText } from '@/services/datacite/html-text.js';
 import { mapWork } from '@/services/datacite/mappers.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
 import { missFields, missGuidance } from './_miss.js';
 import { blankAsUnset, doiString } from './_schemas.js';
-import { blockquote, escapeAngles, flattenInline, num, orNA } from './_text.js';
+import { descriptionQuote, flattenInline, num, orNA, urlLink } from './_text.js';
 
 const PersonSchema = z
   .object({
@@ -292,6 +291,30 @@ export const getWorkTool = tool('datacite_get_work', {
               })
               .optional()
               .describe('Bounding box.'),
+            polygon: z
+              .object({
+                points: z
+                  .array(
+                    z
+                      .object({
+                        latitude: z.number().describe('Latitude, decimal degrees.'),
+                        longitude: z.number().describe('Longitude, decimal degrees.'),
+                      })
+                      .describe('One deposited polygon vertex.'),
+                  )
+                  .describe(
+                    'Polygon vertices in deposit order, including a repeated closing vertex when deposited.',
+                  ),
+                inPolygonPoint: z
+                  .object({
+                    latitude: z.number().describe('Latitude, decimal degrees.'),
+                    longitude: z.number().describe('Longitude, decimal degrees.'),
+                  })
+                  .optional()
+                  .describe('Deposited interior point.'),
+              })
+              .optional()
+              .describe('Deposited polygon boundary and optional interior point.'),
           })
           .describe('One geolocation.'),
       )
@@ -418,6 +441,12 @@ export const getWorkTool = tool('datacite_get_work', {
   }),
 
   enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Discloses omitted malformed polygon geometry; other valid geographic fields remain available.',
+      ),
     truncatedLists: z
       .array(
         z
@@ -456,37 +485,41 @@ export const getWorkTool = tool('datacite_get_work', {
       ctx.log.info('DOI not held by DataCite', { missReason: miss.missReason });
       return { found: false, doi, ...miss, guidance: missGuidance(doi, miss, 'record') };
     }
-    const { work, truncatedLists, listPage } = mapWork(
+    const { work, truncatedLists, listPage, omittedGeoLocationPolygons } = mapWork(
       hit.record,
       hit.client,
       input.list ? { list: input.list, offset: input.offset ?? 0 } : undefined,
     );
     if (truncatedLists.length > 0) ctx.enrich({ truncatedLists });
+    if (omittedGeoLocationPolygons > 0)
+      ctx.enrich.notice(
+        `${omittedGeoLocationPolygons} malformed geographic polygon(s) omitted because they contain incomplete or invalid coordinates; other valid geographic fields are retained.`,
+      );
     return { found: true, doi, ...work, ...(listPage && { listPage }) };
   },
 
   format: (result) => {
     const lines: string[] = [
       result.found
-        ? `# ${escapeAngles(flattenInline(result.titles?.[0]?.title ?? result.doi))}`
-        : `**Not found in DataCite** — ${result.doi}`,
+        ? `# ${flattenInline(result.titles?.[0]?.title ?? result.doi)}`
+        : `**Not found in DataCite** — ${flattenInline(result.doi)}`,
       '',
-      `**DOI:** ${result.doi} · **Found:** ${result.found}`,
+      `**DOI:** ${flattenInline(result.doi)} · **Found:** ${result.found}`,
     ];
     if (result.missReason) lines.push(`**Miss reason:** ${result.missReason}`);
     if (result.listPage) {
       const p = result.listPage;
       lines.push(
-        `**List page:** ${p.list} · offset ${p.offset} · total ${p.total}${p.nextOffset === undefined ? ' · end of list' : ` · next offset ${p.nextOffset}; continue datacite_get_work with doi: "${result.doi}", list: "${p.list}", offset: ${p.nextOffset}`}`,
+        `**List page:** ${p.list} · offset ${p.offset} · total ${p.total}${p.nextOffset === undefined ? ' · end of list' : ` · next offset ${p.nextOffset}; continue datacite_get_work with doi: "${flattenInline(result.doi)}", list: "${p.list}", offset: ${p.nextOffset}`}`,
       );
     }
     if (result.registrationAgency)
       lines.push(`**Registration agency:** ${flattenInline(result.registrationAgency)}`);
     if (result.guidance) lines.push('', flattenInline(result.guidance));
-    if (result.doiUrl) lines.push(`**Resolver:** ${result.doiUrl}`);
-    if (result.landingUrl) lines.push(`**Landing page:** ${flattenInline(result.landingUrl)}`);
+    if (result.doiUrl) lines.push(`**Resolver:** ${urlLink(result.doiUrl)}`);
+    if (result.landingUrl) lines.push(`**Landing page:** ${urlLink(result.landingUrl)}`);
     if (result.contentUrls?.length)
-      lines.push(`**Content URLs:** ${result.contentUrls.map(flattenInline).join(', ')}`);
+      lines.push(`**Content URLs:** ${result.contentUrls.map(urlLink).join(', ')}`);
     if (result.found) {
       lines.push(
         `**Type:** ${orNA(result.resourceTypeGeneral)}${result.resourceType ? ` (${flattenInline(result.resourceType)})` : ''} · **Year:** ${orNA(result.publicationYear)} · **Version:** ${orNA(result.version)} · **Language:** ${orNA(result.language)}`,
@@ -521,9 +554,7 @@ export const getWorkTool = tool('datacite_get_work', {
       lines.push('', '## Titles');
       for (const t of result.titles) {
         const tags = [t.titleType, t.lang].filter(Boolean).join(', ');
-        lines.push(
-          `- ${escapeAngles(flattenInline(t.title))}${tags ? ` (${flattenInline(tags)})` : ''}`,
-        );
+        lines.push(`- ${flattenInline(t.title)}${tags ? ` (${flattenInline(tags)})` : ''}`);
       }
     }
     const people = (heading: string, list: typeof result.creators) => {
@@ -567,7 +598,7 @@ export const getWorkTool = tool('datacite_get_work', {
       for (const d of result.descriptions) {
         const tags = [d.descriptionType, d.lang].filter(Boolean).join(', ');
         if (tags) lines.push(`**${flattenInline(tags)}**`);
-        lines.push(blockquote(escapeAngles(htmlToText(d.description))), '');
+        lines.push(descriptionQuote(d.description), '');
       }
     }
     if (result.fundingReferences?.length) {
@@ -591,6 +622,8 @@ export const getWorkTool = tool('datacite_get_work', {
           g.place && flattenInline(g.place),
           g.point && `point ${g.point.latitude}, ${g.point.longitude}`,
           g.box && `box W ${g.box.west} E ${g.box.east} S ${g.box.south} N ${g.box.north}`,
+          g.polygon &&
+            `polygon ${g.polygon.points.map((p) => `${p.latitude}, ${p.longitude}`).join(' → ')}${g.polygon.inPolygonPoint ? `; interior point ${g.polygon.inPolygonPoint.latitude}, ${g.polygon.inPolygonPoint.longitude}` : ''}`,
         ].filter(Boolean);
         lines.push(`- ${parts.join(' · ')}`);
       }
@@ -609,7 +642,7 @@ export const getWorkTool = tool('datacite_get_work', {
       } else if (result.rights) {
         lines.push('- Work rights: none declared');
       }
-      if (result.metadataLicense) lines.push(`- Metadata: ${result.metadataLicense}`);
+      if (result.metadataLicense) lines.push(`- Metadata: ${urlLink(result.metadataLicense)}`);
     }
     const counts = new Map(Object.entries(result.relatedIdentifierCounts ?? {}));
     const related = Map.groupBy(result.relatedIdentifiers ?? [], (r) => r.relationType);
@@ -634,7 +667,7 @@ export const getWorkTool = tool('datacite_get_work', {
         const parts = [
           item.relatedItemType,
           item.identifier && `${item.identifierType ?? 'id'} ${item.identifier}`,
-          item.title && `"${escapeAngles(item.title)}"`,
+          item.title && `"${item.title}"`,
         ].filter(Boolean);
         lines.push(
           `- ${flattenInline(item.relationType)}: ${flattenInline(parts.join('; ') || 'no identifier')}`,

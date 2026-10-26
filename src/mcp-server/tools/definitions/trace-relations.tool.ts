@@ -21,7 +21,7 @@ import {
 } from '@/services/datacite/relation-graph.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
 import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
-import { escapeAngles, flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
+import { flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
 
 /** Relation types that record a citation of the asserting side's target… */
 const CITED_BY_TYPES = new Set(['IsCitedBy', 'IsReferencedBy', 'IsSupplementTo']);
@@ -605,9 +605,9 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
   format: (result) => {
     const r = result.root;
     const lines = [
-      `# Relations of ${r.doi}`,
+      `# Relations of ${flattenInline(r.doi)}`,
       '',
-      `**Title:** ${escapeAngles(orNA(r.title))} · **Type:** ${orNA(r.resourceTypeGeneral)} · **Year:** ${orNA(r.publicationYear)} · **Repository:** ${orNA(r.repositoryId)} · **DataCite DOI:** ${r.isDataCiteDoi}`,
+      `**Title:** ${orNA(r.title)} · **Type:** ${orNA(r.resourceTypeGeneral)} · **Year:** ${orNA(r.publicationYear)} · **Repository:** ${orNA(r.repositoryId)} · **DataCite DOI:** ${r.isDataCiteDoi}`,
     ];
     if (result.rootCounts) {
       const c = result.rootCounts;
@@ -642,12 +642,12 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         n.isDataCiteDoi === undefined ? '—' : String(n.isDataCiteDoi),
         String(n.depth),
         String(n.hydrated),
-        orNA(n.publicationYear),
-        orNA(n.resourceTypeGeneral),
-        orNA(n.repositoryId),
+        n.publicationYear === undefined ? 'Not available' : String(n.publicationYear),
+        n.resourceTypeGeneral ?? 'Not available',
+        n.repositoryId ?? 'Not available',
         numOrNA(n.citationCount),
         numOrNA(n.versionCount),
-        escapeAngles(orNA(n.title)),
+        n.title ?? 'Not available',
       ];
       lines.push(`| ${cells.map(tableCell).join(' | ')} |`);
     }

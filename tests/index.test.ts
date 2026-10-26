@@ -53,6 +53,7 @@ describe('createApp options', () => {
       'resources',
       'sessionMode',
       'setup',
+      'skills',
       'teardown',
       'title',
       'tools',
@@ -63,6 +64,7 @@ describe('createApp options', () => {
     expect(options.tools?.map((tool) => tool.name)).toEqual(TOOL_NAMES);
     expect(options.resources).toEqual([]);
     expect(options.prompts).toEqual([]);
+    expect(options.skills).toBe('skills');
   });
 
   it('runs stateless', () => {

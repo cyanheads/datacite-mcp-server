@@ -187,7 +187,7 @@ function mapPerson(raw: RawCreator, withRole: boolean): Person | undefined {
   };
 }
 
-function mapGeoLocation(raw: RawGeoLocation) {
+function mapGeoLocation(raw: RawGeoLocation, omitPolygon: () => void) {
   const num = (value: unknown): number | undefined => {
     if (value === null || value === undefined || value === '') return;
     const n = Number(value);
@@ -207,8 +207,43 @@ function mapGeoLocation(raw: RawGeoLocation) {
     west !== undefined && east !== undefined && south !== undefined && north !== undefined
       ? { west, east, south, north }
       : undefined;
-  if (!place && !point && !boxOut) return;
-  return { ...opt('place', place), ...opt('point', point), ...opt('box', boxOut) };
+  const coordinate = (rawPoint: { pointLatitude?: unknown; pointLongitude?: unknown }) => {
+    const latitude = num(rawPoint.pointLatitude);
+    const longitude = num(rawPoint.pointLongitude);
+    return latitude !== undefined && longitude !== undefined ? { latitude, longitude } : undefined;
+  };
+  let polygon:
+    | {
+        points: Array<{ latitude: number; longitude: number }>;
+        inPolygonPoint?: { latitude: number; longitude: number };
+      }
+    | undefined;
+  if (raw.geoLocationPolygon != null) {
+    const points: Array<{ latitude: number; longitude: number }> = [];
+    let inPolygonPoint: { latitude: number; longitude: number } | undefined;
+    let malformed = false;
+    for (const member of raw.geoLocationPolygon) {
+      if (member.polygonPoint) {
+        const vertex = coordinate(member.polygonPoint);
+        if (vertex) points.push(vertex);
+        else malformed = true;
+      } else if (!member.inPolygonPoint) malformed = true;
+      if (member.inPolygonPoint) {
+        const interior = coordinate(member.inPolygonPoint);
+        if (interior && !inPolygonPoint) inPolygonPoint = interior;
+        else malformed = true;
+      }
+    }
+    if (malformed || points.length === 0) omitPolygon();
+    else polygon = { points, ...opt('inPolygonPoint', inPolygonPoint) };
+  }
+  if (!place && !point && !boxOut && !polygon) return;
+  return {
+    ...opt('place', place),
+    ...opt('point', point),
+    ...opt('box', boxOut),
+    ...opt('polygon', polygon),
+  };
 }
 
 /** Caps on the long lists of a full record; the full count is always reported. */
@@ -249,6 +284,7 @@ export function mapWork(
   const a = record.attributes;
   const doi = recordDoi(record);
   const truncatedLists: TruncatedList[] = [];
+  let omittedGeoLocationPolygons = 0;
   let listPage: RecordListPage | undefined;
   const cap = <T>(field: keyof typeof RECORD_LIST_CAPS, items: T[]): T[] => {
     const limit = RECORD_LIST_CAPS[field];
@@ -376,7 +412,12 @@ export function mapWork(
     ),
     geoLocations: cap(
       'geoLocations',
-      (a.geoLocations ?? []).flatMap((g) => mapGeoLocation(g) ?? []),
+      (a.geoLocations ?? []).flatMap(
+        (g) =>
+          mapGeoLocation(g, () => {
+            omittedGeoLocationPolygons++;
+          }) ?? [],
+      ),
     ),
     rights: (a.rightsList ?? []).flatMap((r) => {
       const entry = {
@@ -434,7 +475,7 @@ export function mapWork(
     ...opt('updated', text(a.updated)),
     ...opt('schemaVersion', text(a.schemaVersion)),
   };
-  return { doi, work, truncatedLists, listPage };
+  return { doi, work, truncatedLists, listPage, omittedGeoLocationPolygons };
 }
 
 // ─── Repositories ───────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
   type ToolResultLike,
   toolError,
 } from '../../../helpers/harness.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 type Output = z.infer<typeof listReferenceTool.output>;
 
@@ -46,7 +47,7 @@ describe('datacite_list_reference', () => {
       expect(output(result).entries.some((entry) => entry.value === field)).toBe(true);
       expect(contentText(result)).toContain(field);
     }
-    expect(contentText(result)).toContain('created:[2026-10-16 TO *]');
+    expect(markdownText(contentText(result))).toContain('created:[2026-10-16 TO *]');
   });
   it('offers the 18 topics', () => {
     expect(REFERENCE_TOPICS).toHaveLength(18);

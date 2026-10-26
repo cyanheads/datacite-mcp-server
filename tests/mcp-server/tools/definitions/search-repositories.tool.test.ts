@@ -30,6 +30,7 @@ import {
 type Input = z.input<typeof searchRepositoriesTool.input>;
 type Output = z.infer<typeof searchRepositoriesTool.output> & {
   appliedFilters: Record<string, string>;
+  effectiveQuery?: string;
   notice?: string;
   orderApplied: 'name';
   totalCount: number;
@@ -58,6 +59,67 @@ const expectToolError = (result: ToolResultLike, reason: string, code: number) =
 };
 
 describe('page shapes and required enrichment', () => {
+  it.each([
+    { input: { query: 'hydrology' }, effective: '(hydrology)' },
+    {
+      input: { field_of_science: 'earth_and_related_environmental_sciences' },
+      effective: 'subjects.subject:("Earth and related environmental sciences")',
+    },
+    {
+      input: { query: 'hydrology', field_of_science: 'earth_and_related_environmental_sciences' },
+      effective: '(hydrology) AND subjects.subject:("Earth and related environmental sciences")',
+    },
+    { input: { software: 'dataverse' }, effective: '*' },
+    { input: {}, effective: '*' },
+    { input: { query: ' \t\n ' }, effective: '*' },
+  ] satisfies { input: Input; effective: string }[])(
+    'preserves composed query transport for %j',
+    async ({ input, effective }) => {
+      const { http } = zeroHits();
+      const result = await run(input);
+      expect(result.isError).toBeFalsy();
+      expect(http.calls).toHaveLength(1);
+      expect(requestUrl(http).searchParams.get('query')).toBe(effective === '*' ? null : effective);
+      expect(output(result).effectiveQuery).toBe(effective);
+      expect(contentText(result)).toContain(`Query: \`${effective}\``);
+      if (effective !== '*') {
+        const replay = await run({ query: output(result).effectiveQuery });
+        expect(replay.isError).toBeFalsy();
+        expect(http.calls).toHaveLength(2);
+        expect(requestUrl(http, 1).searchParams.get('query')).toBe(`(${effective})`);
+        expect(output(replay).effectiveQuery).toBe(`(${effective})`);
+        expect(contentText(replay)).toContain(`Query: \`(${effective})\``);
+      }
+    },
+  );
+
+  it.each([
+    { total: 0, pageNumber: 1, notice: 'No DataCite repositories matched.' },
+    { total: 1, pageNumber: 2, notice: 'Page 2 is past the end of the results' },
+  ])(
+    'echoes the search query when page $pageNumber has no rows',
+    async ({ total, pageNumber, notice }) => {
+      const { http } = initServices([{ match: repositories, respond: json(page([], total)) }]);
+      const result = await run({ query: 'hydrology', page: pageNumber, limit: 1 });
+      expect(result.isError).toBeFalsy();
+      expect(output(result).effectiveQuery).toBe('(hydrology)');
+      expect(contentText(result)).toContain('Query: `(hydrology)`');
+      expect(output(result).notice).toContain(notice);
+      expect(requestUrl(http).searchParams.get('query')).toBe('(hydrology)');
+    },
+  );
+
+  it('omits a search query from an ID lookup on both surfaces', async () => {
+    const { http } = zeroHits();
+    const result = await run({ repository_ids: ['dryad.dryad'] });
+    expect(result.isError).toBeFalsy();
+    expect(output(result)).not.toHaveProperty('effectiveQuery');
+    expect(output(result).appliedFilters.repository_ids).toBe('ids=dryad.dryad');
+    expect(contentText(result)).not.toContain('Query:');
+    expect(contentText(result)).toContain('ids=dryad.dryad');
+    expect(requestUrl(http).searchParams.has('query')).toBe(false);
+  });
+
   it('uses the applied cap for past-end arithmetic at the hard ceiling', async () => {
     const { http } = initServices([{ match: repositories, respond: json(page([], 101)) }]);
     const result = await run({ limit: 10_000, page: 3 });
@@ -95,11 +157,12 @@ describe('page shapes and required enrichment', () => {
       orderApplied: 'name',
       appliedFilters: {},
       notice: 'No DataCite repositories matched.',
+      effectiveQuery: '*',
     });
     const text = contentText(result);
     expect(text).toContain('**0 repositories on this page** (ordered by name)');
     expect(text).toContain('**Last page.**');
-    expect(text).toContain('**order:** name');
+    expect(text).toContain('**order:** `name`');
     expect(text).toContain('**Applied filters:** none');
     expect(text).toContain('**0 total**');
     expect(text).toContain('> No DataCite repositories matched.');
@@ -135,6 +198,7 @@ describe('page shapes and required enrichment', () => {
       totalCount: 1,
       orderApplied: 'name',
       appliedFilters: {},
+      effectiveQuery: '(glacier)',
     });
     const text = contentText(result);
     expect(text).toContain('**1 repositories on this page** (ordered by name)');
@@ -144,7 +208,7 @@ describe('page shapes and required enrichment', () => {
         '- **Provider:** kadq · **Client type:** repository · **Types:** disciplinary · **Certificates:** WDS, CoreTrustSeal',
         '- **Software:** Not available · **Languages:** en · **Since:** 2012 · **Active:** true',
         '- **Also known as:** WGMS',
-        '- **Homepage:** https://wgms.ch/ · **re3data:** https://doi.org/10.17616/R3WP5N · **OpenDOAR:** Not available',
+        '- **Homepage:** [https://wgms.ch/](<https://wgms.ch/>) · **re3data:** https://doi.org/10.17616/R3WP5N · **OpenDOAR:** Not available',
         '- **Subjects:** Earth and related environmental sciences',
         '',
         '> The World Glacier Monitoring Service (WGMS) collects standardized observations',
@@ -177,6 +241,7 @@ describe('page shapes and required enrichment', () => {
       totalCount: 28,
       nextPage: 2,
       appliedFilters: { field_of_science: clause },
+      effectiveQuery: clause,
     });
     expect(out.repositories.map((r) => r.repositoryId)).toEqual([
       'delft.data4tu',
@@ -186,6 +251,7 @@ describe('page shapes and required enrichment', () => {
     const text = contentText(result);
     expect(text).toContain('**Next page:** page 2');
     expect(text).toContain('**28 total**');
+    expect(text).toContain(`Query: \`${clause}\``);
     expect(text).toContain(`**Applied filters:**\n- field_of_science → ${clause}`);
     expect(params(requestUrl(http))).toEqual({
       query: clause,
@@ -206,6 +272,7 @@ describe('page shapes and required enrichment', () => {
       orderApplied: 'name',
       appliedFilters: {},
       notice,
+      effectiveQuery: '*',
     });
     const text = contentText(result);
     expect(text).toContain('**0 repositories on this page** (ordered by name)');

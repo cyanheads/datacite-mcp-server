@@ -376,7 +376,11 @@ describe('response handling', () => {
     ]);
     await expect(
       svc.negotiate('10.5555/x', 'text/x-bibliography', {}, createMockContext()),
-    ).resolves.toEqual({ status: 404, body: HTML });
+    ).resolves.toEqual({
+      status: 404,
+      body: HTML,
+      downloadUrl: 'https://api.datacite.org/dois/text/x-bibliography/10.5555%2Fx',
+    });
   });
 
   it('fails unparseable JSON as InternalError after one request', async () => {

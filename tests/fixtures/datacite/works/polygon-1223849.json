@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "10.15121/1223849",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.15121/1223849",
+        "geoLocations": [
+          {
+            "geoLocationPolygon": [
+              { "polygonPoint": { "pointLatitude": "37.0", "pointLongitude": "-103.0" } },
+              { "polygonPoint": { "pointLatitude": "31.4", "pointLongitude": "-103.0" } },
+              { "polygonPoint": { "pointLatitude": "31.4", "pointLongitude": "-109.1" } },
+              { "polygonPoint": { "pointLatitude": "37.0", "pointLongitude": "-109.1" } },
+              { "polygonPoint": { "pointLatitude": "37.0", "pointLongitude": "-103.0" } }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "meta": { "total": 1, "totalPages": 1, "page": 1 }
+}

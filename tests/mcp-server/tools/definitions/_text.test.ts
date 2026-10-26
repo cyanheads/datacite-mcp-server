@@ -7,19 +7,121 @@
 import { describe, expect, it } from 'vitest';
 import {
   blockquote,
-  escapeAngles,
+  descriptionQuote,
   fenced,
   flattenInline,
   num,
   orNA,
   tableCell,
+  urlLink,
 } from '@/mcp-server/tools/definitions/_text.js';
 import { OTHER_LINE_BREAKS } from '../../../helpers/harness.js';
+import { commonmark, markdownText } from '../../../helpers/markdown.js';
 
-describe('escapeAngles', () => {
+describe('literal Markdown roundtrips', () => {
+  it.each([['LF', '\n'], ['CR', '\r'], ['CRLF', '\r\n'], ...OTHER_LINE_BREAKS] as const)(
+    'keeps malformed URL text in one inline slot across %s',
+    (_name, sep) => {
+      const rendered = urlLink(`https://x.test/${sep}# heading`);
+      expect(rendered).not.toContain(sep);
+      expect(markdownText(rendered)).toBe('https://x.test/ # heading');
+    },
+  );
+  it('keeps a URL destination byte-identical and its label literal', () => {
+    const value = 'https://x.test/a(b)?q=&lt;i&gt;';
+    const inline = commonmark.parse(urlLink(value), {}).find((token) => token.type === 'inline');
+    expect(inline?.children?.find((token) => token.type === 'link_open')?.attrGet('href')).toBe(
+      value,
+    );
+    expect(markdownText(urlLink(value))).toBe(value);
+  });
+  it('frames preformatted text and table rows without losing whitespace', () => {
+    const tokens = commonmark.parse(
+      descriptionQuote(
+        '<pre>  x\n\ty  \n</pre><table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>',
+      ),
+      {},
+    );
+    expect(tokens.filter((token) => token.type === 'fence').map((token) => token.content)).toEqual([
+      '  x\n\ty  \n',
+      'A\tB\t\n1\t2\t\n',
+    ]);
+  });
+
+  it('bounds literal rendering thread CPU across 64-fold text growth', () => {
+    for (const [unit, escapedUnit] of [
+      ['[[[', '\\[\\[\\['],
+      ['[a[', '\\[a\\['],
+      ['<[<', '<\\[<'],
+      ['[a\n', '\\[a\n'],
+      ['<a\n', '\\<a\n'],
+    ] as const) {
+      const inlineSamples: number[] = [];
+      const quoteSamples: number[] = [];
+      for (const size of [5000, 20_000, 80_000, 320_000]) {
+        const repeats = Math.floor(size / unit.length);
+        const value = `${unit.repeat(repeats)}\n`;
+        const escaped = escapedUnit.repeat(repeats).trim();
+        let inline = '';
+        let quoted = '';
+        let inlineMicros = 0;
+        let quoteMicros = 0;
+        for (let repeat = 0; repeat < 5; repeat++) {
+          const inlineStart = process.threadCpuUsage();
+          inline = flattenInline(value);
+          const inlineCpu = process.threadCpuUsage(inlineStart);
+          const inlineSample = inlineCpu.user + inlineCpu.system;
+          expect(inlineSample).toBeLessThan(500_000);
+          inlineMicros += inlineSample;
+          const quoteStart = process.threadCpuUsage();
+          quoted = blockquote(value);
+          const quoteCpu = process.threadCpuUsage(quoteStart);
+          const quoteSample = quoteCpu.user + quoteCpu.system;
+          expect(quoteSample).toBeLessThan(500_000);
+          quoteMicros += quoteSample;
+        }
+        inlineSamples.push(Math.max(1, inlineMicros));
+        quoteSamples.push(Math.max(1, quoteMicros));
+        expect(inline).toBe(escaped.replace(/\n/g, ' '));
+        expect(quoted).toBe(`> ${escaped.replace(/\n/g, '\\\n> ')}`);
+      }
+      expect(inlineSamples[3]! / inlineSamples[0]!).toBeLessThan(256);
+      expect(quoteSamples[3]! / quoteSamples[0]!).toBeLessThan(256);
+      console.info(
+        'render CPU totals over five calls',
+        process.versions.bun ? 'Bun' : 'Node',
+        unit,
+        { inlineSamples, quoteSamples },
+      );
+    }
+  });
+  it.each([
+    'Obs_*StationName*',
+    '`code` [x](https://x.test)',
+    '&lt;i&gt;',
+    '> quote',
+    '[id]: https://x.test',
+    '# heading',
+    'closing ##',
+  ])('keeps %s literal in inline and quote slots', (value) => {
+    expect(markdownText(`# ${flattenInline(value)}`)).toBe(value);
+    expect(markdownText(blockquote(value))).toBe(value);
+    const tokens = commonmark.parse(blockquote(value), {});
+    expect(tokens.filter((token) => token.type === 'blockquote_open')).toHaveLength(1);
+    expect(
+      tokens
+        .flatMap((token) => token.children ?? [])
+        .filter((token) =>
+          ['em_open', 'code_inline', 'link_open', 'html_inline'].includes(token.type),
+        ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('literal text', () => {
   it('escapes scientific comparisons and literal tags without decoding nested entities', () => {
-    expect(escapeAngles('T < 5 and p > 0; <i>x</i>; &lt;i&gt; &amp;lt;')).toBe(
-      'T &lt; 5 and p &gt; 0; &lt;i&gt;x&lt;/i&gt;; &lt;i&gt; &amp;lt;',
+    expect(markdownText(flattenInline('T < 5 and p > 0; <i>x</i>; &lt;i&gt; &amp;lt;'))).toBe(
+      'T < 5 and p > 0; <i>x</i>; &lt;i&gt; &amp;lt;',
     );
   });
 });
@@ -51,23 +153,28 @@ describe('tableCell', () => {
 });
 
 describe('blockquote', () => {
+  it('characterizes hard breaks, whitespace-only blank lines, and literal trailing slashes', () => {
+    expect(blockquote('a\\\nb\n \t\n\n c\n\\')).toBe('> a\\\\\\\n> b\n>\n>\n> &#32;c\\\n> \\\\');
+  });
   it('prefixes every line, normalizing CRLF and marking blank lines', () => {
-    expect(blockquote('\nFirst line\r\n\r\n# not a heading\rlast\n')).toBe(
-      '> First line\n>\n> # not a heading\n> last',
+    expect(markdownText(blockquote('\nFirst line\r\n\r\n# not a heading\rlast\n'))).toBe(
+      'First line\n# not a heading\nlast',
     );
   });
 
   it.each(OTHER_LINE_BREAKS)(
     'starts a quoted line at %s, marking a doubled one blank',
     (_name, sep) => {
-      expect(blockquote(`${sep}a${sep}## x${sep}${sep}- y${sep}`)).toBe('> a\n> ## x\n>\n> - y');
+      expect(markdownText(blockquote(`${sep}a${sep}## x${sep}${sep}- y${sep}`))).toBe(
+        'a\n## x\n- y',
+      );
     },
   );
 });
 
 describe('fenced', () => {
   it('uses a three-backtick fence for a payload without backticks', () => {
-    expect(fenced('{"a":1}\n\n', 'json')).toBe('```json\n{"a":1}\n```');
+    expect(fenced('{"a":1}\n\n', 'json')).toBe('```json\n{"a":1}\n\n```');
   });
 
   it('outruns the longest backtick run in the payload', () => {
@@ -80,7 +187,7 @@ describe('fenced', () => {
   it('trims trailing whitespace in linear time when a long whitespace run sits mid-payload', () => {
     const payload = `${' '.repeat(100_000)}x`;
     const start = performance.now();
-    expect(fenced(`${payload} \n\t`)).toBe(`\`\`\`\n${payload}\n\`\`\``);
+    expect(fenced(`${payload} \n\t`)).toBe(`\`\`\`\n${payload} \n\t\n\`\`\``);
     expect(performance.now() - start).toBeLessThan(250);
   });
 

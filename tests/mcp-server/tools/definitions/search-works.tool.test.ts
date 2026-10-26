@@ -40,6 +40,7 @@ import {
   teardownServices,
   toolError,
 } from '../../../helpers/harness.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 type Input = z.input<typeof searchWorksTool.input>;
 type Output = z.infer<typeof searchWorksTool.output> & {
@@ -100,8 +101,8 @@ describe('page shapes and required enrichment', () => {
       title: 'A &lt;i&gt; <b>',
       descriptionSnippet: 'A T < 5 and p > 0 &lt;i&gt;',
     });
-    expect(contentText(result)).toContain('### A &lt;i&gt; &lt;b&gt;');
-    expect(contentText(result)).toContain('> A T &lt; 5 and p &gt; 0 &lt;i&gt;');
+    expect(markdownText(contentText(result))).toContain('A &lt;i&gt; <b>');
+    expect(markdownText(contentText(result))).toContain('A T < 5 and p > 0 &lt;i&gt;');
   });
   it('propagates cancellation during ROR lookup on both surfaces without searching DataCite', async () => {
     const controller = new AbortController();
@@ -250,8 +251,8 @@ describe('page shapes and required enrichment', () => {
     const text = contentText(result);
     expect(text).toContain('**0 works on this page**');
     expect(text).toContain('**Last page.**');
-    expect(text).toContain('Query: *');
-    expect(text).toContain('**sort:** newest');
+    expect(text).toContain('Query: `*`');
+    expect(text).toContain('**sort:** `newest`');
     expect(text).toContain('**Applied filters:** none');
     expect(text).toContain('**0 total**');
     expect(text).toContain('> No DataCite works matched.');
@@ -311,12 +312,12 @@ describe('page shapes and required enrichment', () => {
         '- **Repository:** The Catalogue of Life (gbif.col), provider gbif · **Publisher:** Plazi\n' +
         '- **Licenses:** none declared · **Citations:** 0 · **Views:** 0 · **Downloads:** 0 · **Versions:** 1\n' +
         '- **Creators (10):** Mandolini, Edoardo; Szedlacsek, Sophie; Abramczyk, Beniamin; Szucs, Attila; Staykova, Anastasiya +5 more\n' +
-        '- **Landing page:** https://www.checklistbank.org/dataset/314394',
+        '- **Landing page:** [https://www.checklistbank.org/dataset/314394](<https://www.checklistbank.org/dataset/314394>)',
     );
     expect(text).toContain('- **Creators (2):** Li, Wei-Chun; Liu, Dong\n');
     expect(text).toContain('**Next page:** page 2');
-    expect(text).toContain('Query: (glacier)');
-    expect(text).toContain('**sort:** relevance');
+    expect(text).toContain('Query: `(glacier)`');
+    expect(text).toContain('**sort:** `relevance`');
     expect(text).toContain('**61386 total**');
     const url = requestUrl(http);
     expect(url.searchParams.get('page[size]')).toBe('3');
@@ -354,7 +355,7 @@ describe('page shapes and required enrichment', () => {
     expect(out).not.toHaveProperty('nextPage');
     expect(contentText(result)).not.toContain('**Last page.**');
     expect(contentText(result)).toContain('**Ranked ceiling reached.**');
-    expect(contentText(result)).toContain(`> ${notice}`);
+    expect(markdownText(contentText(result))).toContain(notice);
     const url = requestUrl(http);
     expect(url.searchParams.get('page[number]')).toBe('100');
     expect(url.searchParams.get('page[size]')).toBe('100');
@@ -519,7 +520,7 @@ describe('request parameters', () => {
       '(10.5061/dryad.234) AND creators.name:(Smith/Jones) AND fundingReferences.funderName:(NASA/JPL)';
     expect(requestUrl(http).searchParams.get('query')).toBe(composed);
     expect(output(result).effectiveQuery).toBe(composed);
-    expect(contentText(result)).toContain(`Query: ${composed}`);
+    expect(contentText(result)).toContain(`Query: \`${composed}\``);
   });
 
   it('reads an orcid.org URL with a trailing slash as the ORCID iD it names', async () => {
@@ -558,7 +559,7 @@ describe('request parameters', () => {
     const composed = '(titles.title:glacier) AND (Climate change\\: impacts \\(and more\\))';
     expect(requestUrl(http).searchParams.get('query')).toBe(composed);
     expect(output(result).effectiveQuery).toBe(composed);
-    expect(contentText(result)).toContain(`Query: ${composed}`);
+    expect(contentText(result)).toContain(`Query: \`${composed}\``);
   });
 
   it.each([
@@ -604,7 +605,7 @@ describe('request parameters', () => {
     const result = await run(input);
     expect(requestUrl(http).searchParams.get('sort')).toBe(sent);
     expect(output(result).sortApplied).toBe(applied);
-    expect(contentText(result)).toContain(`**sort:** ${applied}`);
+    expect(contentText(result)).toContain(`**sort:** \`${applied}\``);
   });
 
   it('treats blank strings, blank array entries, and blank numbers as unset', async () => {
@@ -971,7 +972,7 @@ describe('cursor walks', () => {
     const text = contentText(result);
     expect(text).toContain('**0 works on this page**');
     expect(text).toContain('**Last page.**');
-    expect(text).toContain('**sort:** oldest');
+    expect(text).toContain('**sort:** `oldest`');
     expect(text).toContain('**Applied filters:** none');
     expect(text).toContain('**0 total**');
     expect(text).not.toContain('**Next cursor:**');
@@ -1062,7 +1063,7 @@ describe('cursor walks', () => {
       appliedFilters: { resource_types: 'resource-type-id=dataset' },
     });
     const text = contentText(result);
-    expect(text).toContain('Query: (glacier mass balance)');
+    expect(text).toContain('Query: `(glacier mass balance)`');
     expect(text).toContain('- resource_types → resource-type-id=dataset');
   });
 
@@ -1088,7 +1089,7 @@ describe('cursor walks', () => {
       const result = await run({ text: 'glacier', cursor: forged.toString('base64url') });
       const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
       expect(error.message).toBe('cursor is neither "*" nor a nextCursor this tool returned.');
-      expect(contentText(result)).toContain('Error: cursor is neither "*" nor a nextCursor');
+      expect(contentText(result)).toContain('Error: cursor is neither "\\*" nor a nextCursor');
       expect(http.calls).toHaveLength(0);
     },
   );
@@ -1122,7 +1123,7 @@ describe('cursor walks', () => {
     expect(error.message).toBe(
       'DataCite restarted the walk from the beginning instead of continuing it.',
     );
-    expect(contentText(result)).toContain('Start the walk again with cursor "*"');
+    expect(contentText(result)).toContain('Start the walk again with cursor "\\*"');
     expect(http.calls).toHaveLength(2);
   });
 
@@ -1141,11 +1142,47 @@ describe('cursor walks', () => {
 });
 
 describe('declared errors', () => {
+  it.each([
+    { text: '<>' },
+    { text: ' >\n< > ', repository_ids: ['dryad.dryad'] },
+    { text: '<<>>', funder: '10.13039/501100001659' },
+    { text: '< >', query: 'titles.title:glacier' },
+  ])('rejects normalized-empty text before any upstream call: %j', async (input) => {
+    const { http } = zeroHits();
+    const result = await run(input);
+    const error = expectToolError(result, 'invalid_text', JsonRpcErrorCode.ValidationError);
+    expect(error.data?.recovery).toEqual({
+      hint: 'Set text to searchable literal input, or omit text for an intentional unfiltered search.',
+    });
+    expect(contentText(result)).toContain(
+      'Recovery: Set text to searchable literal input, or omit text',
+    );
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it.each([
+    { text: undefined, effective: '*' },
+    { text: ' \t\n ', effective: '*' },
+    { text: '<glacier>', effective: '(glacier)' },
+    { text: '!!!', effective: '(\\!\\!\\!)' },
+    { text: 'input/output', effective: '(input/output)' },
+    { text: '10.5061/dryad.234', effective: '(10.5061/dryad.234)' },
+  ])('retains accepted literal text $text', async ({ text, effective }) => {
+    const { http } = zeroHits();
+    const result = await run({ text });
+    expect(result.isError).toBeFalsy();
+    expect(http.calls).toHaveLength(1);
+    expect(requestUrl(http).searchParams.get('query')).toBe(effective);
+    expect(output(result).effectiveQuery).toBe(effective);
+    expect(contentText(result)).toContain(`Query: \`${effective}\``);
+  });
+
   const parse400 = () =>
     fixtureResponse('datacite/errors/parse-exception-query.json', { status: 400 });
 
   it('logs the input-caused reasons at notice and a spent budget at error', () => {
     expect(declaredSeverities(searchWorksTool.errors)).toEqual({
+      invalid_text: 'notice',
       invalid_query: 'notice',
       invalid_filter: 'notice',
       page_ceiling: 'notice',
@@ -1298,7 +1335,7 @@ describe('declared errors', () => {
     expect(error.message).toBe(
       'page 101 × limit 100 = 10100 exceeds the 10,000-match ceiling of ranked paging.',
     );
-    expect(contentText(result)).toContain('restart with cursor "*"');
+    expect(contentText(result)).toContain('restart with cursor "\\*"');
     expect(http.calls).toHaveLength(0);
   });
 

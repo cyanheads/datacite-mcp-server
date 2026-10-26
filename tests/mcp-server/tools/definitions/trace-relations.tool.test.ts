@@ -45,6 +45,7 @@ import {
   teardownServices,
   toolError,
 } from '../../../helpers/harness.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 type Input = z.input<typeof traceRelationsTool.input>;
 type Output = z.infer<typeof traceRelationsTool.output> & {
@@ -1221,9 +1222,9 @@ describe('depth 2', () => {
       title: 'Second T < 5 and p > 0',
       depth: 2,
     });
-    expect(contentText(result)).toContain('**Title:** Root &lt;i&gt;');
-    expect(contentText(result)).toContain('First &lt;i&gt;');
-    expect(contentText(result)).toContain('Second T &lt; 5 and p &gt; 0');
+    expect(markdownText(contentText(result))).toContain('Title: Root <i>');
+    expect(markdownText(contentText(result))).toContain('First &lt;i&gt;');
+    expect(markdownText(contentText(result))).toContain('Second T < 5 and p > 0');
   });
   const PART1_WITH_RELATIONS = dryad8515Part(1);
   PART1_WITH_RELATIONS.attributes.relatedIdentifiers?.push(

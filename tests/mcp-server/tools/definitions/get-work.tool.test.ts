@@ -35,6 +35,7 @@ import {
   teardownServices,
   toolError,
 } from '../../../helpers/harness.js';
+import { commonmark, markdownText } from '../../../helpers/markdown.js';
 
 type Output = z.infer<typeof getWorkTool.output> & {
   truncatedLists?: Array<{ field: string; shown: number; total: number; nextOffset: number }>;
@@ -79,6 +80,66 @@ const listEntry = (list: RecordList, i: number) => {
 };
 
 describe('selected record lists', () => {
+  it('renders a continuation DOI with literal Markdown punctuation', async () => {
+    const doi = '10.5555/list*literal*';
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage(doi, {
+          creators: Array.from({ length: 201 }, (_, i) => ({ name: `Creator ${i}` })),
+        }),
+      },
+    ]);
+    const result = await runToolContract(getWorkTool, { doi, list: 'creators', offset: 0 });
+    expect(output(result).listPage).toMatchObject({ nextOffset: 100 });
+    expect(markdownText(contentText(result))).toContain(
+      'with doi: "10.5555/list*literal*", list: "creators", offset: 100',
+    );
+  });
+  it('keeps the recorded Zenodo streamflow description sections and filename patterns', async () => {
+    const description =
+      'README — Streamflow Data Files\n\nThere are two types of files in this repository, identified by their naming patterns. All streamflow values are expressed as anomalies relative to the 1961–1990 baseline period.\n\nObserved streamflow filesFilename format: Obs_*StationName*Data format: Year, Streamflow anomaly\n\nObservation-constrained streamflow files for full CMIP6 ensembleFilename format: *StationName*Data format: Year, prior_mean, prior_sd, prior_ci_lower, prior_ci_upper, posterior_mean, posterior_sd, ci_lower, ci_upper';
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5281/zenodo.17865775', {
+          descriptions: [{ descriptionType: 'Abstract', description }],
+        }),
+      },
+    ]);
+    const result = await run('10.5281/zenodo.17865775');
+    expect(output(result).descriptions).toEqual([{ descriptionType: 'Abstract', description }]);
+    const text = contentText(result);
+    expect(text.match(/^>$/gm)).toHaveLength(3);
+    expect(markdownText(text)).toContain(
+      'Observed streamflow filesFilename format: Obs_*StationName*Data format: Year, Streamflow anomaly',
+    );
+    expect(
+      commonmark
+        .parse(text, {})
+        .flatMap((token) => token.children ?? [])
+        .filter((token) => token.type === 'em_open'),
+    ).toHaveLength(0);
+  });
+  it('preserves description paragraphs and literal Markdown on both surfaces', async () => {
+    const description = 'Obs_*StationName*\n\n# heading\n[id]: https://x.test\n> quote\nclosing ##';
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/blocks', { descriptions: [{ description }] }),
+      },
+    ]);
+    const result = await run('10.5555/blocks');
+    expect(output(result).descriptions).toEqual([{ description }]);
+    const text = contentText(result);
+    expect(text).toContain('> Obs\\_\\*StationName\\*\n>\n>');
+    expect(markdownText(text)).toContain(
+      'Obs_*StationName*\n# heading\n[id]: https://x.test\n> quote\nclosing ##',
+    );
+    expect(
+      commonmark.parse(text, {}).filter((token) => token.type === 'blockquote_open'),
+    ).toHaveLength(1);
+  });
   it.each(Object.entries(RECORD_LIST_CAPS) as Array<[RecordList, number]>)(
     'walks %s after filtering invalid entries without changing other fields',
     async (list, cap) => {
@@ -204,6 +265,187 @@ describe('selected record lists', () => {
 });
 
 describe('found arm', () => {
+  it('pages polygon-only entries before caps and retains mixed geometry and interior points', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/polygons', {
+          geoLocations: [
+            {},
+            ...Array.from({ length: 103 }, (_, i) => ({
+              ...(i % 2 === 1 && {
+                geoLocationPlace: `Place ${i}`,
+                geoLocationPoint: { pointLatitude: 1, pointLongitude: 2 },
+                geoLocationBox: {
+                  westBoundLongitude: 0,
+                  eastBoundLongitude: 3,
+                  southBoundLatitude: 0,
+                  northBoundLatitude: 3,
+                },
+              }),
+              geoLocationPolygon: [
+                { polygonPoint: { pointLatitude: `${i}`, pointLongitude: '2' } },
+                { polygonPoint: { pointLatitude: 3, pointLongitude: 4 } },
+                { inPolygonPoint: { pointLatitude: '1.5', pointLongitude: '2.5' } },
+              ],
+            })),
+          ],
+        }),
+      },
+    ]);
+    const baseline = await run('10.5555/polygons');
+    expect(output(baseline).truncatedLists).toEqual([
+      { field: 'geoLocations', shown: 50, total: 103, nextOffset: 50 },
+    ]);
+    expect(output(baseline).geoLocations?.[1]).toEqual({
+      place: 'Place 1',
+      point: { latitude: 1, longitude: 2 },
+      box: { west: 0, east: 3, south: 0, north: 3 },
+      polygon: {
+        points: [
+          { latitude: 1, longitude: 2 },
+          { latitude: 3, longitude: 4 },
+        ],
+        inPolygonPoint: { latitude: 1.5, longitude: 2.5 },
+      },
+    });
+    for (const [offset, shown, nextOffset] of [
+      [0, 50, 50],
+      [50, 50, 100],
+      [100, 3, undefined],
+      [103, 0, undefined],
+    ] as const) {
+      const result = await runToolContract(getWorkTool, {
+        doi: '10.5555/polygons',
+        list: 'geoLocations',
+        offset,
+      });
+      expect(output(result).listPage).toEqual({
+        list: 'geoLocations',
+        offset,
+        total: 103,
+        ...(nextOffset !== undefined && { nextOffset }),
+      });
+      expect(output(result).geoLocations).toHaveLength(shown);
+      if (shown) {
+        expect(output(result).geoLocations?.[0]).toEqual({
+          polygon: {
+            points: [
+              { latitude: offset, longitude: 2 },
+              { latitude: 3, longitude: 4 },
+            ],
+            inPolygonPoint: { latitude: 1.5, longitude: 2.5 },
+          },
+        });
+        expect(contentText(result)).toContain(
+          `polygon ${offset}, 2 → 3, 4; interior point 1.5, 2.5`,
+        );
+      }
+    }
+  });
+  it('omits malformed whole polygons with disclosure and preserves valid sibling geometry', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/malformed', {
+          geoLocations: [
+            {
+              geoLocationPoint: { pointLatitude: 1, pointLongitude: 2 },
+              geoLocationPolygon: [
+                { polygonPoint: { pointLatitude: 1, pointLongitude: 2 } },
+                { polygonPoint: { pointLatitude: 'bad', pointLongitude: 3 } },
+              ],
+            },
+            {
+              geoLocationPolygon: [
+                { polygonPoint: { pointLatitude: 1, pointLongitude: 2 } },
+                { inPolygonPoint: { pointLatitude: 1 } },
+              ],
+            },
+            { geoLocationPolygon: [] },
+          ],
+        }),
+      },
+    ]);
+    const result = await runToolContract(getWorkTool, {
+      doi: '10.5555/malformed',
+      list: 'geoLocations',
+    });
+    expect(output(result)).toMatchObject({
+      geoLocations: [{ point: { latitude: 1, longitude: 2 } }],
+      listPage: { list: 'geoLocations', offset: 0, total: 1 },
+      notice:
+        '3 malformed geographic polygon(s) omitted because they contain incomplete or invalid coordinates; other valid geographic fields are retained.',
+    });
+    expect(contentText(result)).toContain('3 malformed geographic polygon(s) omitted');
+    expect(contentText(result)).toContain('point 1, 2');
+  });
+  it('preserves captured polygon order and closure through output parsing and selected-list paging', async () => {
+    initServices([
+      { match: dataCite('/dois'), respond: fixtureResponse('datacite/works/polygon-1223849.json') },
+    ]);
+    const result = await runToolContract(getWorkTool, {
+      doi: '10.15121/1223849',
+      list: 'geoLocations',
+    });
+    expect(output(result)).toMatchObject({
+      geoLocations: [
+        {
+          polygon: {
+            points: [
+              { latitude: 37, longitude: -103 },
+              { latitude: 31.4, longitude: -103 },
+              { latitude: 31.4, longitude: -109.1 },
+              { latitude: 37, longitude: -109.1 },
+              { latitude: 37, longitude: -103 },
+            ],
+          },
+        },
+      ],
+      listPage: { list: 'geoLocations', offset: 0, total: 1 },
+    });
+    expect(contentText(result)).toContain(
+      'polygon 37, -103 → 31.4, -103 → 31.4, -109.1 → 37, -109.1 → 37, -103',
+    );
+    const past = await runToolContract(getWorkTool, {
+      doi: '10.15121/1223849',
+      list: 'geoLocations',
+      offset: 1,
+    });
+    expect(output(past)).toMatchObject({
+      geoLocations: [],
+      listPage: { list: 'geoLocations', offset: 1, total: 1 },
+    });
+    expect(contentText(past)).toContain('offset 1 · total 1 · end of list');
+  });
+  it('characterizes point and box geometry on both surfaces', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/geometry', {
+          geoLocations: [
+            { geoLocationPoint: { pointLatitude: '46.5', pointLongitude: 8 } },
+            {
+              geoLocationPlace: 'Alps',
+              geoLocationBox: {
+                westBoundLongitude: -10,
+                eastBoundLongitude: '10',
+                southBoundLatitude: 40,
+                northBoundLatitude: 50,
+              },
+            },
+          ],
+        }),
+      },
+    ]);
+    const result = await run('10.5555/geometry');
+    expect(output(result).geoLocations).toEqual([
+      { point: { latitude: 46.5, longitude: 8 } },
+      { place: 'Alps', box: { west: -10, east: 10, south: 40, north: 50 } },
+    ]);
+    expect(contentText(result)).toContain('point 46.5, 8');
+    expect(contentText(result)).toContain('Alps · box W -10 E 10 S 40 N 50');
+  });
   it('characterizes unchanged unselected record fields across calls', async () => {
     initServices([DRYAD_234]);
     const first = output(await run('10.5061/dryad.234'));
@@ -227,8 +469,8 @@ describe('found arm', () => {
       relatedItems: [{ title: 'B &lt;' }],
       descriptions: [{ description }],
     });
-    expect(contentText(result)).toContain('# A &lt;i&gt; &lt;b&gt;');
-    expect(contentText(result)).toContain('> T &lt; 5 and p &gt; 0 &lt;i&gt;');
+    expect(markdownText(contentText(result))).toContain('A &lt;i&gt; <b>');
+    expect(markdownText(contentText(result))).toContain('T < 5 and p > 0\n&lt;i&gt;');
   });
   it('pages valid mapped creators while preserving other lists and counts', async () => {
     initServices([
@@ -456,7 +698,7 @@ describe('found arm', () => {
     );
     const text = contentText(result);
     types.forEach((type, i) => {
-      expect(text).toContain(`**${type}** — 1 of 1\n- 10.5555/r${i} (DOI)`);
+      expect(markdownText(text)).toContain(`${type} — 1 of 1\n10.5555/r${i} (DOI)`);
     });
   });
 
@@ -559,7 +801,9 @@ describe('found arm', () => {
     expect(text).toContain(
       '**Record:** registered registered # INJECTED registered - INJECTED registered · created created',
     );
-    expect(text).toContain('> description # INJECTED description - INJECTED description');
+    expect(markdownText(text)).toContain(
+      'description\n# INJECTED description\n- INJECTED description',
+    );
     expect(text).not.toMatch(/^(#|-) INJECTED/m);
   });
 
@@ -585,7 +829,9 @@ describe('found arm', () => {
       const text = contentText(result);
       expect(text).toContain('# title # INJECTED title - INJECTED title\n');
       expect(text).toContain('- subject # INJECTED subject - INJECTED subject\n');
-      expect(text).toContain('> description # INJECTED description - INJECTED description');
+      expect(markdownText(text)).toContain(
+        'description\n# INJECTED description\n- INJECTED description',
+      );
       expect(text).not.toContain(sep);
     },
   );
@@ -793,7 +1039,7 @@ describe('DOI input', () => {
     const result = await run(doi);
     expect(result.isError).toBeFalsy();
     expect(output(result)).toMatchObject({ found: true, doi, doiUrl: url });
-    expect(contentText(result)).toContain(`**Resolver:** ${url}\n`);
+    expect(markdownText(contentText(result))).toContain(`Resolver: ${url}`);
     expect(requestUrl(http).searchParams.get('query')).toBe(`doi:"${doi}"`);
 
     expect(output(await run(url))).toMatchObject({ found: true, doi, doiUrl: url });
@@ -806,7 +1052,7 @@ describe('DOI input', () => {
     const { http } = initServices([{ match: dataCite('/dois'), respond: recordPage(doi, {}) }]);
     const result = await run(doi);
     expect(output(result)).toMatchObject({ found: true, doi, doiUrl: url });
-    expect(contentText(result)).toContain(`**Resolver:** ${url}\n`);
+    expect(markdownText(contentText(result))).toContain(`Resolver: ${url}`);
     expect(requestUrl(http).searchParams.get('query')).toBe(`doi:"${doi}"`);
 
     expect(output(await run(url))).toMatchObject({ found: true, doi, doiUrl: url });

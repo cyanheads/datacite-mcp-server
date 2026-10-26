@@ -7,6 +7,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { markdownLink } from '@cyanheads/mcp-ts-core/utils';
 import { renderCitation } from '@/services/datacite/citation.js';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { htmlToText } from '@/services/datacite/html-text.js';
@@ -177,8 +178,18 @@ export const getCitationTool = tool('datacite_get_citation', {
       .string()
       .optional()
       .describe(
-        'text: the citation as plain text (tags stripped, entities decoded); machine formats: the payload verbatim. A payload over 100,000 characters is cut to its first 100,000 (truncated: true).',
+        'text: the citation as plain text (tags stripped, entities decoded), cut at 100,000 upstream UTF-16 units. Machine formats: the complete payload verbatim when at most 100,000 units; otherwise omitted in favor of downloadUrl.',
       ),
+    downloadUrl: z
+      .string()
+      .optional()
+      .describe(
+        'Exact negotiated URL for the complete machine document when it exceeds the inline cap; fetch this URL to retrieve the document.',
+      ),
+    totalCharacters: z
+      .number()
+      .optional()
+      .describe('Complete oversized machine document length in UTF-16 code units.'),
     citationHtml: z
       .string()
       .optional()
@@ -192,19 +203,21 @@ export const getCitationTool = tool('datacite_get_citation', {
     truncated: z
       .boolean()
       .optional()
-      .describe('True when the payload ran past 100,000 characters and was cut.'),
+      .describe(
+        'True when the payload exceeded 100,000 UTF-16 code units: text was cut or a machine document was omitted for download.',
+      ),
     shown: z
       .number()
       .optional()
       .describe(
-        "Characters of DataCite's payload kept; for text, citation and citationHtml derive from them.",
+        "UTF-16 code units of DataCite's payload kept inline; zero for an oversized machine document, or the units text and citationHtml derive from.",
       ),
     cap: z.number().optional().describe('The character cap applied: 100,000.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Set when the style could not be confirmed as distinct from APA, or when the payload was cut (its full length and the cut).',
+        'Set when the style could not be confirmed as distinct from APA, or when the payload exceeded the inline cap (length and retrieval guidance).',
       ),
   },
 
@@ -259,6 +272,22 @@ export const getCitationTool = tool('datacite_get_citation', {
       };
     }
 
+    const isText = input.format === 'text';
+    if (!isText && outcome.body.length > MAX_PAYLOAD_CHARS) {
+      ctx.enrich.truncated({
+        shown: 0,
+        cap: MAX_PAYLOAD_CHARS,
+        guidance: `The complete ${input.format} document contains ${num(outcome.body.length)} UTF-16 code units, exceeding the ${num(MAX_PAYLOAD_CHARS)} inline cap. No partial document is returned; fetch downloadUrl to retrieve the complete document.`,
+      });
+      return {
+        found: true,
+        doi,
+        format: input.format,
+        mediaType: CITATION_FORMATS[input.format],
+        downloadUrl: outcome.downloadUrl,
+        totalCharacters: outcome.body.length,
+      };
+    }
     const payload = cutAt(outcome.body, MAX_PAYLOAD_CHARS);
     if (payload.length < outcome.body.length) {
       ctx.enrich.truncated({
@@ -271,7 +300,6 @@ export const getCitationTool = tool('datacite_get_citation', {
     } else if (outcome.notice) {
       ctx.enrich.notice(outcome.notice);
     }
-    const isText = input.format === 'text';
     return {
       found: true,
       doi,
@@ -286,13 +314,19 @@ export const getCitationTool = tool('datacite_get_citation', {
 
   format: (result) => {
     const lines = [
-      result.found ? `**Citation** — ${result.doi}` : `**Not found in DataCite** — ${result.doi}`,
+      result.found
+        ? `**Citation** — ${flattenInline(result.doi)}`
+        : `**Not found in DataCite** — ${flattenInline(result.doi)}`,
       `**Found:** ${result.found} · **Format:** ${result.format}${result.mediaType ? ` (${result.mediaType})` : ''}${result.style ? ` · **Style:** ${flattenInline(result.style)}` : ''}${result.locale ? ` · **Locale:** ${result.locale}` : ''}`,
     ];
     if (result.missReason) lines.push(`**Miss reason:** ${result.missReason}`);
     if (result.registrationAgency)
       lines.push(`**Registration agency:** ${flattenInline(result.registrationAgency)}`);
     if (result.guidance) lines.push('', flattenInline(result.guidance));
+    if (result.downloadUrl)
+      lines.push('', markdownLink('Download complete document', result.downloadUrl));
+    if (result.totalCharacters !== undefined)
+      lines.push(`**Total characters:** ${num(result.totalCharacters)} (UTF-16 code units)`);
     if (result.citation !== undefined) {
       lines.push(
         '',

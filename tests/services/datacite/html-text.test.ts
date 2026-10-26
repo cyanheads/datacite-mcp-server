@@ -5,10 +5,52 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { htmlToText } from '@/services/datacite/html-text.js';
+import { htmlToDescriptionBlocks, htmlToText } from '@/services/datacite/html-text.js';
 import { fixtureText } from '../../helpers/fixtures.js';
 
 describe('htmlToText', () => {
+  it('keeps description paragraph, nested list, pre and table boundaries', () => {
+    expect(
+      htmlToDescriptionBlocks(
+        '<p>First *literal*</p><p>Second &amp;lt;i&amp;gt; T < 5 and p > 0</p>',
+      ),
+    ).toEqual([{ kind: 'text', text: 'First *literal*\n\nSecond &lt;i&gt; T < 5 and p > 0' }]);
+    expect(htmlToDescriptionBlocks('One\n\nTwo\nThree')).toEqual([
+      { kind: 'text', text: 'One\n\nTwo\nThree' },
+    ]);
+    expect(
+      htmlToDescriptionBlocks('<ul><li>One<ul><li>Nested</li></ul></li><li>Two</li></ul>')[0]?.text,
+    ).toContain('  • Nested');
+    expect(
+      htmlToDescriptionBlocks(
+        '<pre>  x\n\ty  \n</pre><table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>',
+      ),
+    ).toEqual([
+      { kind: 'pre', text: '  x\n\ty  \n' },
+      { kind: 'pre', text: 'A\tB\t\n1\t2\t\n' },
+    ]);
+    expect(htmlToDescriptionBlocks('&lt;i&gt;x&lt;/i&gt;')).toEqual([
+      { kind: 'text', text: '<i>x</i>' },
+    ]);
+  });
+
+  it('bounds description conversion thread CPU across 64-fold text growth', () => {
+    for (const unit of ['<em', '[[[', '<[<[', '<em\n', '[a\n']) {
+      const samples: number[] = [];
+      for (const size of [5000, 20_000, 80_000, 320_000]) {
+        const value = `${unit.repeat(Math.floor(size / unit.length))}\n`;
+        const start = process.threadCpuUsage();
+        for (let repeat = 0; repeat < 10; repeat++)
+          expect(htmlToDescriptionBlocks(value)).toEqual([{ kind: 'text', text: value.trim() }]);
+        const cpu = process.threadCpuUsage(start);
+        const micros = cpu.user + cpu.system;
+        expect(micros).toBeLessThan(500_000);
+        samples.push(Math.max(1, micros));
+      }
+      expect(samples[3]! / samples[0]!).toBeLessThan(256);
+      console.info('description CPU', process.versions.bun ? 'Bun' : 'Node', unit, samples);
+    }
+  });
   it('characterizes nested escape decoding as exactly one pass', () => {
     expect(htmlToText('&amp;lt;i&amp;gt;')).toBe('&lt;i&gt;');
     expect(htmlToText('<i>&lt;b&gt;x&lt;/b&gt;</i>')).toBe('<b>x</b>');

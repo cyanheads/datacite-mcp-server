@@ -286,6 +286,29 @@ describe('hydrate batching', () => {
 });
 
 describe('service wiring', () => {
+  it('retains the exact negotiated URL including the MIME path, whole encoded DOI, and parameters', async () => {
+    const { svc, http } = build([
+      {
+        match: dataCite('/dois/text/x-bibliography/10.5555%2Fa%2Fb'),
+        respond: new Response('citation'),
+      },
+    ]);
+    const result = await svc.negotiate(
+      '10.5555/a/b',
+      'text/x-bibliography',
+      { style: 'ieee', locale: 'de-DE' },
+      createMockContext(),
+    );
+    expect(result).toEqual({
+      status: 200,
+      body: 'citation',
+      downloadUrl:
+        'https://api.datacite.org/dois/text/x-bibliography/10.5555%2Fa%2Fb?style=ieee&locale=de-DE',
+    });
+    expect(requestUrls(http).map((url) => url.href)).toEqual([
+      'https://api.datacite.org/dois/text/x-bibliography/10.5555%2Fa%2Fb?style=ieee&locale=de-DE',
+    ]);
+  });
   it('throws from both accessors before init and after shutdown', async () => {
     vi.resetModules();
     const fresh = await import('@/services/datacite/datacite-service.js');

@@ -31,6 +31,7 @@ import {
   text,
   toolError,
 } from '../../../helpers/harness.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 type Input = z.input<typeof getCitationTool.input>;
 type Output = z.infer<typeof getCitationTool.output> & {
@@ -131,7 +132,7 @@ describe('formatted citations', () => {
       '**Found:** true · **Format:** text (text/x-bibliography) · **Style:** apa',
     );
     expect(content).not.toContain('**Locale:**');
-    expect(content).toContain(`> ${DEFAULT_TEXT}`);
+    expect(markdownText(content)).toContain(DEFAULT_TEXT);
     expect(content).toContain(`\`\`\`html\n${DEFAULT_HTML.trim()}\n\`\`\``);
     expect(http.calls).toHaveLength(1);
     expect(requestUrl(http).href).toBe(
@@ -169,7 +170,7 @@ describe('formatted citations', () => {
     initServices([{ match: negotiation(TERSE), respond: html(body) }]);
     const result = await run({ doi: TERSE });
     expect(output(result)).toMatchObject({ citation: plain, citationHtml: body });
-    expect(contentText(result)).toContain(`> ${plain}`);
+    expect(markdownText(contentText(result))).toContain(plain);
   });
 });
 
@@ -583,22 +584,97 @@ describe('payload size', () => {
   const sizeNotice = (format: string, total: number, shown = CAP) =>
     `The ${format} payload runs to ${count(total)} characters, past the ${count(CAP)} this tool returns, so it is cut to its first ${count(shown)}. datacite_get_work returns the record with each long list capped and its full count reported.`;
 
-  it('returns the first 100,000 characters of a longer payload and discloses the cut on both surfaces', async () => {
+  it.each([
+    ['csl_json', '{"title":"', '"}'],
+    ['bibtex', '@misc{x,title={', '}}'],
+    ['ris', 'TY  - DATA\nTI  - ', '\nER  -\n'],
+    ['datacite_json', '{"title":"', '"}'],
+    ['datacite_xml', '<resource><title>', '</title></resource>'],
+    ['schema_org', '{"name":"', '"}'],
+    ['codemeta', '{"name":"', '"}'],
+    ['jats', '<article><title>', '</title></article>'],
+  ] as const)(
+    'keeps %s complete below and at the cap, and offers download above it',
+    async (format, prefix, suffix) => {
+      for (const length of [20, CAP - 1, CAP, CAP + 1]) {
+        const size = Math.max(length, prefix.length + suffix.length);
+        const payload = `${prefix}${'a'.repeat(size - prefix.length - suffix.length)}${suffix}`;
+        expect(payload).toHaveLength(size);
+        const { http } = initServices([
+          { match: negotiation(DOI, {}, CITATION_FORMATS[format]), respond: text(payload) },
+        ]);
+        const result = await run({ doi: DOI, format });
+        const out = output(result);
+        expect(result.isError).not.toBe(true);
+        if (size <= CAP) {
+          expect(out.citation).toBe(payload);
+          expect(out).not.toHaveProperty('downloadUrl');
+          expect(out).not.toHaveProperty('truncated');
+          expect(contentText(result)).toContain(payload.trimEnd());
+          if (prefix.startsWith('{'))
+            expect(JSON.parse(out.citation!)).toEqual({
+              [format === 'schema_org' || format === 'codemeta' ? 'name' : 'title']: 'a'.repeat(
+                size - prefix.length - suffix.length,
+              ),
+            });
+        } else {
+          expect(out).not.toHaveProperty('citation');
+          expect(out).toMatchObject({
+            downloadUrl: `https://api.datacite.org/dois/${CITATION_FORMATS[format]}/10.5061%2Fdryad.8515`,
+            totalCharacters: CAP + 1,
+            truncated: true,
+            shown: 0,
+            cap: CAP,
+          });
+          expect(contentText(result)).toContain(
+            `[Download complete document](<https://api.datacite.org/dois/${CITATION_FORMATS[format]}/10.5061%2Fdryad.8515>)`,
+          );
+          expect(contentText(result)).toContain('100,001');
+          expect(contentText(result)).toContain('fetch downloadUrl');
+        }
+        expect(http.calls).toHaveLength(1);
+        teardownServices();
+      }
+    },
+  );
+
+  it('keeps the formatted-text cut surrogate-safe on both surfaces', async () => {
+    const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
+    initServices([{ match: negotiation(DOI), respond: html(payload) }]);
+    const result = await run({ doi: DOI });
+    expect(output(result)).toMatchObject({
+      citation: 'a'.repeat(CAP - 1),
+      citationHtml: 'a'.repeat(CAP - 1),
+      truncated: true,
+      shown: CAP - 1,
+      cap: CAP,
+    });
+    expect(contentText(result)).toContain('a'.repeat(CAP - 1));
+    expect(output(result)).not.toHaveProperty('downloadUrl');
+  });
+
+  it('returns a complete download instead of a partial machine document on both surfaces', async () => {
     const payload = `{"id":"x","filler":"${'a'.repeat(2_000_000)}"}`;
     initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
     const result = await run({ doi: DOI, format: 'datacite_json' });
     const out = output(result);
-    expect(out.citation).toBe(payload.slice(0, CAP));
+    expect(out).not.toHaveProperty('citation');
     expect(out).toMatchObject({
       truncated: true,
-      shown: CAP,
+      shown: 0,
       cap: CAP,
-      notice: sizeNotice('datacite_json', payload.length),
+      downloadUrl:
+        'https://api.datacite.org/dois/application/vnd.datacite.datacite+json/10.5061%2Fdryad.8515',
+      totalCharacters: payload.length,
     });
     const content = contentText(result);
-    expect(content).toContain(`\`\`\`json\n${payload.slice(0, CAP)}\n\`\`\``);
-    expect(content).toContain(`> ${sizeNotice('datacite_json', payload.length)}`);
-    expect(content.length).toBeLessThan(CAP + 2_000);
+    expect(content).toContain(
+      '[Download complete document](<https://api.datacite.org/dois/application/vnd.datacite.datacite+json/10.5061%2Fdryad.8515>)',
+    );
+    expect(content).toContain(`**Total characters:** ${count(payload.length)}`);
+    expect(out.notice).toContain('downloadUrl');
+    expect(content).toContain('downloadUrl');
+    expect(content).not.toContain('```json');
   });
 
   it('returns a payload of exactly 100,000 characters whole, with no disclosure', async () => {
@@ -615,12 +691,12 @@ describe('payload size', () => {
     expect(contentText(result)).not.toContain('payload runs to');
   });
 
-  it('never splits a surrogate pair at the cut', async () => {
+  it('counts surrogate pairs in oversized machine exports without returning a split document', async () => {
     const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
     initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
     const out = output(await run({ doi: DOI, format: 'datacite_json' }));
-    expect(out.citation).toBe('a'.repeat(CAP - 1));
-    expect(out).toMatchObject({ truncated: true, shown: CAP - 1, cap: CAP });
+    expect(out).not.toHaveProperty('citation');
+    expect(out).toMatchObject({ truncated: true, shown: 0, cap: CAP, totalCharacters: CAP + 6 });
   });
 
   it('cuts a formatted citation before deriving its text, keeping a style notice beside the disclosure', async () => {

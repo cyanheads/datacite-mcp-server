@@ -190,6 +190,25 @@ describe('publicationYear', () => {
 });
 
 describe('mapWork', () => {
+  it('maps the captured polygon-only geometry before selected-list counting', () => {
+    const captured = fixtureJson<RawDoiList>('datacite/works/polygon-1223849.json');
+    const mapped = mapWork(captured.data[0]!, undefined, { list: 'geoLocations', offset: 0 });
+    expect(mapped.work.geoLocations).toEqual([
+      {
+        polygon: {
+          points: [
+            { latitude: 37, longitude: -103 },
+            { latitude: 31.4, longitude: -103 },
+            { latitude: 31.4, longitude: -109.1 },
+            { latitude: 37, longitude: -109.1 },
+            { latitude: 37, longitude: -103 },
+          ],
+        },
+      },
+    ]);
+    expect(mapped.listPage).toEqual({ list: 'geoLocations', offset: 0, total: 1 });
+    expect(mapped.omittedGeoLocationPolygons).toBe(0);
+  });
   const list = fixtureJson<RawDoiList>('datacite/works/record-dryad-234.json');
   const raw = list.data[0] as RawDoiResource;
   const client = list.included?.[0] as RawClientResource;

@@ -27,7 +27,7 @@ export interface CitationRequest {
 }
 
 export type CitationOutcome =
-  | { body: string; kind: 'rendered'; notice?: string }
+  | { body: string; downloadUrl: string; kind: 'rendered'; notice?: string }
   | { kind: 'not_found' }
   /** DataCite cannot render the DOI in that format; `status` is how it said so (200 = empty body). */
   | { kind: 'no_content'; status: 200 | 204 | 400 }
@@ -42,7 +42,12 @@ const isRendering = (result: NegotiationResult): boolean =>
 function outcomeOf(result: NegotiationResult, notice?: string): CitationOutcome {
   if (result.status === 404) return { kind: 'not_found' };
   if (!isRendering(result)) return { kind: 'no_content', status: result.status };
-  return { kind: 'rendered', body: result.body, ...(notice && { notice }) };
+  return {
+    kind: 'rendered',
+    body: result.body,
+    downloadUrl: result.downloadUrl,
+    ...(notice && { notice }),
+  };
 }
 
 const APA_LAYOUT_CAUSE = 'APA variants that differ only in layout cannot be told apart from APA';

@@ -137,6 +137,7 @@ export interface EventRequest {
  */
 export interface NegotiationResult {
   body: string;
+  downloadUrl: string;
   status: 200 | 204 | 400 | 404;
 }
 
@@ -469,6 +470,7 @@ export class DataCiteService {
         (response) => ({
           status: response.status as NegotiationResult['status'],
           body: response.body,
+          downloadUrl: url,
         }),
       );
     } catch (error) {

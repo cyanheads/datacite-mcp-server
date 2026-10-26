@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.3-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.3-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/datacite-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/datacite-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/datacite-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -46,7 +46,7 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 
 ### `datacite_search_works` <sub>tool</sub>
 
-- `text` (plain words, every reserved character escaped) or `query` (OpenSearch query syntax), ANDed with filters: `resource_types`, `creator` (ORCID iD or name), `affiliation` (ROR ID or name), `affiliation_country`, `funder` (ROR ID, Crossref Funder ID, or name; `include_child_funders` with a ROR funder), `subject`, `fields_of_science`, `repository_ids`, `provider_ids`, `licenses`, `language`, `place`, `published_from` / `published_to`, and `min_citations`; list filters take up to 10 values, any of which match
+- `text` (literal words, with angle brackets removed; nonblank text that leaves no searchable clause fails as `invalid_text`) or `query` (OpenSearch query syntax), ANDed with filters: `resource_types`, `creator` (ORCID iD or name), `affiliation` (ROR ID or name), `affiliation_country`, `funder` (ROR ID, Crossref Funder ID, or name; `include_child_funders` with a ROR funder), `subject`, `fields_of_science`, `repository_ids`, `provider_ids`, `licenses`, `language`, `place`, `published_from` / `published_to`, and `min_citations`; list filters take up to 10 values, any of which match
 - `limit` 1–10,000 (default 20), applied at most 100 with a notice; ranked `page`s reach the first 10,000 matches under `sort` (`relevance`, `newest`, `oldest`, `recently_updated`, `most_cited`, `most_viewed`, `most_downloaded`; default `relevance` with `text` or `query`, else `newest`), while `cursor: "*"` walks the whole result set in registration order through `nextCursor` and takes neither `page` nor `sort`. A ranked ceiling stop is distinguished from the last page
 - Crossref Funder IDs resolve through one exact ROR FundRef mapping before searching `funded-by`; an unavailable, incomplete, or ambiguous mapping keeps literal identifier matching and discloses reduced coverage. The cached, paced lookup takes at most five seconds without retry. A cursor walk keeps its initial resolved or literal filter on every continuation without another ROR lookup, including across server restarts. `include_child_funders` still requires an explicitly supplied ROR
 - License ids are trimmed and lowercased, preserving internal spaces (`cc0 1.0` differs from `cc0-1.0`); reuse the licenses facet ids exactly. `query` also supports deposition timestamps, e.g. `created:[2026-10-16 TO *]`, `updated`, and `registered`
@@ -59,7 +59,8 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 - One `doi`, in any case: bare, with a `doi:` or `info:doi/` prefix, as a doi.org URL, or `%2F`-encoded
 - Titles, creators and contributors with ORCID iDs and ROR affiliations, dates, subjects, descriptions, funding, geolocations, rights, related identifiers and items, repository and provider, and `counts` (citations, references, versions, parts, views, downloads); long lists are capped and their full sizes reported in `truncatedLists` and `relatedIdentifierCounts`
 - Page one capped `list` with a zero-based `offset` (default 0): `creators`, `contributors`, `relatedIdentifiers`, `subjects`, and `fundingReferences` return up to 100 entries, `relatedItems` 25, and `geoLocations` 50. Offsets index valid mapped entries in deposit order. `listPage` reports `list`, `offset`, `total`, and `nextOffset` while entries remain; other metadata keeps its normal caps. Default truncation notices give exact continuation inputs. An offset requires a list; past-end pages are empty
-- Titles and search snippets are plain text, with recognized formatting tags removed and entities decoded once before snippet truncation. Structured descriptions keep their deposited text; rendered descriptions use the same normalization
+- Titles and search snippets are plain text, with recognized formatting tags removed and entities decoded once before snippet truncation. Structured descriptions keep their deposited text; rendered descriptions preserve paragraph and line boundaries
+- Geolocations preserve points, boxes, ordered polygon vertices, and optional polygon interior points. Incomplete polygons are omitted with a notice; valid sibling geometry remains
 - A DOI DataCite holds no public record for returns `found: false` with `missReason` (`other_agency`, `does_not_exist`, `not_public`, `unclassified`), the `registrationAgency` when known, and `guidance`
 
 ---
@@ -78,6 +79,7 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 
 - `query` text over names and descriptions, plus `field_of_science`, `repository_types`, `certificates`, `software`, `client_type`, and `provider_id`; or `repository_ids` alone (up to 1,000 inputs) to look up the first 25 distinct normalized ids in input order. A notice names unqueried ids; missing-id notices cover queried ids only
 - `limit` 1–10,000 (default 20), applied at most 100 with a notice, with `page`; name-ordered rows carry the `repositoryId` that `datacite_search_works` takes in `repository_ids`, plus `providerId`, types, certificates, software, subjects, homepage, and re3data link
+- Search responses echo the composed `effectiveQuery` (`*` without query clauses), including empty pages; ID lookups report `appliedFilters.repository_ids` without a query echo
 
 ---
 
@@ -85,7 +87,7 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 
 - `format`: `text` (default), `csl_json`, `bibtex`, `ris`, `datacite_json`, `datacite_xml`, `schema_org`, `codemeta`, or `jats`
 - For `text` only: `style` takes a CSL style id (default `apa`; verified ids under `datacite_list_reference` topic `citation_styles`), and one DataCite would silently render as APA fails as `unsupported_style`; `locale` takes one of the 61 CSL locales DataCite renders (`en-GB`, `de-DE`, `fr-FR`, …) or a bare language code that expands to its primary dialect (`de` → `de-DE`), default `en-US` (list: topic `citation_locales`)
-- `text` returns the citation as plain text in `citation` and the upstream markup in `citationHtml`; machine formats return the payload verbatim up to 100,000 characters, with its `mediaType`; a longer payload is cut to its first 100,000 and the cut is disclosed (`truncated: true`). A DOI DataCite doesn't hold returns `found: false` as in `datacite_get_work`; a format DataCite can't render for that DOI fails as `format_unavailable`
+- `text` returns the citation as plain text in `citation` and the upstream markup in `citationHtml`; text payloads over 100,000 UTF-16 code units are cut without splitting a surrogate pair. Machine formats return complete payloads inline up to that cap; larger documents omit `citation` and return `downloadUrl` for the full document and `totalCharacters`, with `truncated: true`, `shown: 0`, and `cap: 100000`. A DOI DataCite doesn't hold returns `found: false` as in `datacite_get_work`; a format DataCite can't render for that DOI fails as `format_unavailable`
 
 ---
 
@@ -97,6 +99,8 @@ DOI metadata from DataCite for datasets, software, samples, workflows, and other
 ## Features
 
 Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): stdio and Streamable HTTP transports, pluggable auth (`none` / `jwt` / `oauth`), swappable storage (`in-memory`, `filesystem`, `Supabase`, `Cloudflare KV/R2/D1`), structured logging with optional OpenTelemetry tracing.
+
+The published [`datacite-guide`](./skills/datacite-guide/SKILL.md) skill covers attribution, identifier resolution, relation evidence, and complete inventories. It ships with the package and plugins and is available through the MCP Skills extension.
 
 DataCite-specific:
 
@@ -114,115 +118,34 @@ Agent-friendly output:
 
 ## Getting started
 
-### Public Hosted Instance
+Connect to the hosted instance, no install:
 
-A public instance is available at `https://datacite.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
-
-```json
-{
-  "mcpServers": {
-    "datacite-mcp-server": {
-      "type": "streamable-http",
-      "url": "https://datacite.caseyjhand.com/mcp"
-    }
-  }
-}
+```sh
+claude mcp add --transport http datacite-mcp-server https://datacite.caseyjhand.com/mcp
 ```
 
 Every caller of the hosted instance shares one DataCite request budget of 800 requests per 5 minutes. For sustained use, run your own instance.
 
-### Self-Hosted / Local
+Or run it locally:
 
-Add the following to your MCP client configuration file. No API key is needed; the contact email is optional.
-
-```json
-{
-  "mcpServers": {
-    "datacite-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/datacite-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info",
-        "DATACITE_CONTACT_EMAIL": "you@example.org"
-      }
-    }
-  }
-}
+```sh
+claude mcp add datacite-mcp-server -- npx -y @cyanheads/datacite-mcp-server
 ```
 
-Or with npx (no Bun required):
+For other clients, add this to the MCP config file:
 
 ```json
 {
   "mcpServers": {
     "datacite-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/datacite-mcp-server@latest"],
-      "env": {
-        "MCP_TRANSPORT_TYPE": "stdio",
-        "MCP_LOG_LEVEL": "info",
-        "DATACITE_CONTACT_EMAIL": "you@example.org"
-      }
+      "args": ["-y", "@cyanheads/datacite-mcp-server"]
     }
   }
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "datacite-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/datacite-mcp-server:latest"]
-    }
-  }
-}
-```
-
-For Streamable HTTP, set the transport and start the server:
-
-```sh
-MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
-# Server listens at http://localhost:3010/mcp
-```
-
-### Prerequisites
-
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- No API key or account. Optional: a contact email in `DATACITE_CONTACT_EMAIL` doubles DataCite's per-IP request allowance.
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/datacite-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd datacite-mcp-server
-```
-
-3. **Install dependencies:**
-
-```sh
-bun install
-```
-
-4. **Configure environment:**
-
-```sh
-cp .env.example .env
-# edit .env and set DATACITE_CONTACT_EMAIL if you want the identified tier
-```
+No API key is needed. Set the optional `DATACITE_CONTACT_EMAIL` to double DataCite's per-IP request allowance. For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
@@ -242,6 +165,17 @@ cp .env.example .env
 See [`.env.example`](./.env.example) for the full list of optional overrides.
 
 ## Running the server
+
+Requires [Bun v1.4.0](https://bun.sh/) or higher, or Node.js v24+. To build from source:
+
+```sh
+git clone https://github.com/cyanheads/datacite-mcp-server.git
+cd datacite-mcp-server
+bun install
+cp .env.example .env
+```
+
+Set `DATACITE_CONTACT_EMAIL` in `.env` to use DataCite's identified tier.
 
 ### Local development
 
@@ -263,11 +197,26 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
   bun run test      # Runs the test suite
   ```
 
+### Docker
+
+Run over stdio:
+
+```sh
+docker run -i --rm -e MCP_TRANSPORT_TYPE=stdio ghcr.io/cyanheads/datacite-mcp-server:latest
+```
+
+Or expose Streamable HTTP at `http://localhost:3010/mcp`:
+
+```sh
+docker run --rm -p 127.0.0.1:3010:3010 ghcr.io/cyanheads/datacite-mcp-server:latest
+```
+
 ## Project structure
 
 | Directory | Purpose |
 |:---|:---|
 | `src/index.ts` | `createApp()` entry point — registers the six tools and sets the server instructions. |
+| `skills/` | Published guidance for agents using the DataCite tools. |
 | `src/mcp-server/tools` | Tool definitions (`*.tool.ts`) and the input-schema, miss-guidance, and text-rendering helpers they share. |
 | `src/services/datacite` | DataCite REST client (`/dois`, `/repositories`, `/events`, content negotiation), query builder, identifier normalizers, record mappers, relation-graph builder, and citation style check. |
 | `src/services/doi-ra` | doi.org registration-agency lookup for DOIs DataCite holds no public record for. |

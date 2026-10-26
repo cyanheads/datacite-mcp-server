@@ -65,7 +65,7 @@ import {
   providerIdString,
   repositoryIdString,
 } from './_schemas.js';
-import { blockquote, escapeAngles, flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
+import { blockquote, flattenInline, num, numOrNA, orNA, tableCell, urlLink } from './_text.js';
 
 /** Page numbers reach only this many matches upstream. */
 const PAGE_CEILING = 10_000;
@@ -127,6 +127,14 @@ export const searchWorksTool = tool('datacite_search_works', {
 
   errors: [
     {
+      reason: 'invalid_text',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Supplied nonblank text has no searchable literal clause after escaping.',
+      severity: 'notice',
+      recovery:
+        'Set text to searchable literal input, or omit text for an intentional unfiltered search.',
+    },
+    {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
       when: 'DataCite rejects the syntax of the query input (unbalanced parentheses or quotes, dangling operator).',
@@ -180,7 +188,7 @@ export const searchWorksTool = tool('datacite_search_works', {
 
   input: z.object({
     text: optionalString(z.string().max(MAX_CHARS.query)).describe(
-      'Plain words and phrases, searched literally: every query-syntax character is escaped, so "Climate change: impacts" works and text can never cause a syntax error. Terms are ANDed.',
+      'Plain words and phrases, searched literally: query-syntax characters are escaped, so "Climate change: impacts" works. Angle brackets are removed; nonblank text with no remaining searchable clause is rejected. Blank text is unset. Terms are ANDed.',
     ),
     query: optionalString(z.string().max(MAX_CHARS.query)).describe(
       'OpenSearch query-string syntax — field paths (titles.title:"…", creators.name:…, relatedIdentifiers.relationType:…), AND/OR/NOT, ranges, wildcards. Field paths: datacite_list_reference topic query_syntax. ANDed with text and the filters.',
@@ -393,6 +401,7 @@ export const searchWorksTool = tool('datacite_search_works', {
       ),
   },
   enrichmentTrailer: {
+    notice: { render: (notice) => (notice === undefined ? '' : blockquote(notice)) },
     sortApplied: { label: 'sort' },
     appliedFilters: {
       render: (filters: AppliedFilters) => {
@@ -429,6 +438,9 @@ export const searchWorksTool = tool('datacite_search_works', {
     };
     const query = input.query ? singleLine(input.query) : undefined;
     const text = input.text ? escapeQueryText(input.text) : undefined;
+    if (input.text !== undefined && text === '') {
+      throw ctx.fail('invalid_text', 'text has no searchable literal clause after escaping.');
+    }
     if (query) clauses.push(`(${query})`);
     if (text) clauses.push(`(${text})`);
 
@@ -749,7 +761,7 @@ export const searchWorksTool = tool('datacite_search_works', {
       const unknownField = query ? unknownFieldPrefix(query) : undefined;
       if (unknownField) {
         notices.push(
-          `"${flattenInline(unknownField)}:" is not a DataCite field, so the query searched a field that does not exist; put plain words in text instead, or see datacite_list_reference topic query_syntax.`,
+          `"${singleLine(unknownField)}:" is not a DataCite field, so the query searched a field that does not exist; put plain words in text instead, or see datacite_list_reference topic query_syntax.`,
         );
       }
       if (filters.licenses) {
@@ -804,7 +816,7 @@ export const searchWorksTool = tool('datacite_search_works', {
   format: (result) => {
     const lines = [`**${result.works.length} works on this page**`, ''];
     for (const w of result.works) {
-      lines.push(`### ${escapeAngles(flattenInline(w.title ?? w.doi))}`);
+      lines.push(`### ${flattenInline(w.title ?? w.doi)}`);
       const repository = w.repositoryId
         ? `${w.repositoryName ? `${flattenInline(w.repositoryName)} ` : ''}(${flattenInline(w.repositoryId)})${w.providerId ? `, provider ${flattenInline(w.providerId)}` : ''}`
         : 'Not available';
@@ -813,13 +825,13 @@ export const searchWorksTool = tool('datacite_search_works', {
           ? `${w.creators.map(flattenInline).join('; ')}${w.creatorCount > w.creators.length ? ` +${num(w.creatorCount - w.creators.length)} more` : ''}`
           : 'Not available';
       lines.push(
-        `- **DOI:** ${w.doi} · **Year:** ${orNA(w.publicationYear)} · **Type:** ${orNA(w.resourceTypeGeneral)}${w.resourceType ? ` (${flattenInline(w.resourceType)})` : ''} · **Version:** ${orNA(w.version)} · **Created:** ${orNA(w.created)}`,
+        `- **DOI:** ${flattenInline(w.doi)} · **Year:** ${orNA(w.publicationYear)} · **Type:** ${orNA(w.resourceTypeGeneral)}${w.resourceType ? ` (${flattenInline(w.resourceType)})` : ''} · **Version:** ${orNA(w.version)} · **Created:** ${orNA(w.created)}`,
         `- **Repository:** ${repository} · **Publisher:** ${orNA(w.publisher)}`,
         `- **Licenses:** ${w.licenses.length > 0 ? w.licenses.map(flattenInline).join(', ') : 'none declared'} · **Citations:** ${numOrNA(w.citationCount)} · **Views:** ${numOrNA(w.viewCount)} · **Downloads:** ${numOrNA(w.downloadCount)} · **Versions:** ${numOrNA(w.versionCount)}`,
         `- **Creators (${num(w.creatorCount)}):** ${creators}`,
-        `- **Landing page:** ${orNA(w.landingUrl)}`,
+        `- **Landing page:** ${w.landingUrl === undefined ? 'Not available' : urlLink(w.landingUrl)}`,
       );
-      if (w.descriptionSnippet) lines.push('', blockquote(escapeAngles(w.descriptionSnippet)));
+      if (w.descriptionSnippet) lines.push('', blockquote(w.descriptionSnippet));
       lines.push('');
     }
     if (result.facets) {
@@ -841,7 +853,8 @@ export const searchWorksTool = tool('datacite_search_works', {
       lines.push('');
     }
     if (result.nextPage !== undefined) lines.push(`**Next page:** page ${result.nextPage}`);
-    if (result.nextCursor !== undefined) lines.push(`**Next cursor:** ${result.nextCursor}`);
+    if (result.nextCursor !== undefined)
+      lines.push(`**Next cursor:** ${flattenInline(result.nextCursor)}`);
     if (result.rankedCeilingReached) lines.push('**Ranked ceiling reached.**');
     if (
       !result.rankedCeilingReached &&

@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-10-09 07:43:16
+Generated on: 2026-10-26 17:50:36
 
 ```text
 datacite-mcp-server/
@@ -36,6 +36,8 @@ datacite-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -133,6 +135,9 @@ datacite-mcp-server/
 │   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   └── tree.ts
+├── skills/
+│   └── datacite-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -219,6 +224,7 @@ datacite-mcp-server/
 │   │   │       ├── facets.json
 │   │   │       ├── page-ceiling-clamped.json
 │   │   │       ├── page-last-reachable.json
+│   │   │       ├── polygon-1223849.json
 │   │   │       ├── record-dryad-234.json
 │   │   │       └── search-glacier.json
 │   │   └── doi-ra/
@@ -228,6 +234,7 @@ datacite-mcp-server/
 │   ├── helpers/
 │   │   ├── fixtures.ts
 │   │   ├── harness.ts
+│   │   ├── markdown.ts
 │   │   ├── network-tripwire.test.ts
 │   │   └── network-tripwire.ts
 │   ├── mcp-server/
@@ -245,6 +252,8 @@ datacite-mcp-server/
 │   │           ├── search-works.tool.test.ts
 │   │           ├── trace-relations.tool.test.ts
 │   │           └── upstream-errors.test.ts
+│   ├── scripts/
+│   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   ├── datacite/
 │   │   │   ├── citation.test.ts
@@ -279,7 +288,9 @@ datacite-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json

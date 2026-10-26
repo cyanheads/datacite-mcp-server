@@ -50,6 +50,22 @@ function build() {
 }
 
 describe('style verdicts', () => {
+  it('carries the requested negotiated URL through a successful cached style verdict', async () => {
+    const { service } = build();
+    service.styleVerdicts.set('ieee', 'supported', DAY_MS);
+    await expect(
+      renderCitation(
+        service,
+        { doi: '10.5061/dryad.8515', format: 'text', style: 'ieee', locale: 'de-DE' },
+        createMockContext(),
+      ),
+    ).resolves.toEqual({
+      kind: 'rendered',
+      body: DEFAULT_HTML,
+      downloadUrl:
+        'https://api.datacite.org/dois/text/x-bibliography/10.5061%2Fdryad.8515?style=ieee&locale=de-DE',
+    });
+  });
   it('settles a fallback style once, applies the verdict to any DOI, and recomputes it after 24 h', async () => {
     const { clock, http, service, styleVerdicts } = build();
     const request = { format: 'text', style: 'mla' } as const;
@@ -82,7 +98,12 @@ describe('style verdicts', () => {
     const ctx = createMockContext();
     await expect(
       renderCitation(service, { doi: '10.5061/dryad.8515', format: 'text', style: 'apa' }, ctx),
-    ).resolves.toEqual({ kind: 'rendered', body: DEFAULT_HTML });
+    ).resolves.toEqual({
+      kind: 'rendered',
+      body: DEFAULT_HTML,
+      downloadUrl:
+        'https://api.datacite.org/dois/text/x-bibliography/10.5061%2Fdryad.8515?style=apa',
+    });
     expect(http.calls).toHaveLength(1);
   });
 });

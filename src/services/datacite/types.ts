@@ -100,6 +100,10 @@ export interface RawGeoLocation {
   } | null;
   geoLocationPlace?: string | null;
   geoLocationPoint?: { pointLatitude?: Coordinate; pointLongitude?: Coordinate } | null;
+  geoLocationPolygon?: Array<{
+    polygonPoint?: { pointLatitude?: Coordinate; pointLongitude?: Coordinate } | null;
+    inPolygonPoint?: { pointLatitude?: Coordinate; pointLongitude?: Coordinate } | null;
+  }> | null;
 }
 
 export interface RawTypes {

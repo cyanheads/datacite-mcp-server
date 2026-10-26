@@ -59,7 +59,7 @@ export const listReferenceTool = tool('datacite_list_reference', {
 
   format: (result) => {
     const lines = [
-      `## ${result.title}`,
+      `## ${flattenInline(result.title)}`,
       '',
       `**Topic:** ${result.topic} · ${result.entries.length} entries`,
       '',

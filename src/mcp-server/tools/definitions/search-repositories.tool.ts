@@ -32,7 +32,7 @@ import {
   providerIdString,
   repositoryIdString,
 } from './_schemas.js';
-import { blockquote, flattenInline, num, orNA } from './_text.js';
+import { blockquote, flattenInline, num, orNA, urlLink } from './_text.js';
 
 const AppliedFiltersSchema = z
   .object({
@@ -161,6 +161,12 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
 
   enrichment: {
     totalCount: z.number().describe('Total repositories matching.'),
+    effectiveQuery: z
+      .string()
+      .optional()
+      .describe(
+        'The composed search query, or * for an unfiltered search; absent for repository_ids lookup.',
+      ),
     orderApplied: z
       .literal('name')
       .describe('Result order — always by name, as the registry returns it.'),
@@ -173,6 +179,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
       ),
   },
   enrichmentTrailer: {
+    notice: { render: (notice) => (notice === undefined ? '' : blockquote(notice)) },
     orderApplied: { label: 'order' },
     appliedFilters: {
       render: (filters: AppliedFilters) => {
@@ -236,6 +243,8 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     if (software) applied.software = `software=${software}`;
     if (input.client_type) applied.client_type = `client-type=${input.client_type}`;
 
+    const effectiveQuery = composeQuery(clauses);
+    if (!ids) ctx.enrich.echo(effectiveQuery);
     ctx.enrich({ orderApplied: 'name', appliedFilters: applied });
 
     // An id batch returns every requested id on one page, whatever limit says.
@@ -246,7 +255,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
         page: input.page,
         size,
         ...(ids && { ids }),
-        ...(clauses.length > 0 && { query: composeQuery(clauses) }),
+        ...(clauses.length > 0 && { query: effectiveQuery }),
         ...(repositoryTypes && { repositoryTypes }),
         ...(certificates && { certificates }),
         ...(software && { software }),
@@ -309,7 +318,7 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
       );
       if (r.alternateName) lines.push(`- **Also known as:** ${flattenInline(r.alternateName)}`);
       lines.push(
-        `- **Homepage:** ${orNA(r.url)} · **re3data:** ${orNA(r.re3data)} · **OpenDOAR:** ${orNA(r.opendoar)}`,
+        `- **Homepage:** ${r.url === undefined ? 'Not available' : urlLink(r.url)} · **re3data:** ${orNA(r.re3data)} · **OpenDOAR:** ${orNA(r.opendoar)}`,
       );
       lines.push(
         `- **Subjects:** ${r.subjects.length ? r.subjects.map(flattenInline).join('; ') : 'none listed'}`,
