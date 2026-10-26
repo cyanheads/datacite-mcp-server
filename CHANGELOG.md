@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-10-26 · ⚠️ Breaking
+
+Complete geographic metadata and citation exports with literal description rendering and research-output guidance.
+
 ## [0.1.3](changelog/0.1.x/0.1.3.md) — 2026-10-18
 
 Normalize deposited metadata and continue capped DataCite reads.

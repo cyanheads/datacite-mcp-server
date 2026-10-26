@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-10-26 17:50:36
+Generated on: 2026-10-26 18:00:26
 
 ```text
 datacite-mcp-server/
@@ -25,6 +25,7 @@ datacite-mcp-server/
 │   └── settings.json
 ├── changelog/
 │   ├── 0.1.x/
+│   ├── 0.2.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
