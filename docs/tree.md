@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-10-26 18:00:26
+Generated on: 2026-11-01 04:51:32
 
 ```text
 datacite-mcp-server/
@@ -145,6 +145,7 @@ datacite-mcp-server/
 │   ├── mcp-server/
 │   │   └── tools/
 │   │       └── definitions/
+│   │           ├── _counts.ts
 │   │           ├── _miss.ts
 │   │           ├── _schemas.ts
 │   │           ├── _text.ts
@@ -160,6 +161,7 @@ datacite-mcp-server/
 │   │   │   ├── cursor.ts
 │   │   │   ├── datacite-service.ts
 │   │   │   ├── html-text.ts
+│   │   │   ├── jats-notice.ts
 │   │   │   ├── mappers.ts
 │   │   │   ├── normalize.ts
 │   │   │   ├── query-builder.ts
@@ -189,11 +191,13 @@ datacite-mcp-server/
 │   │   │   │   ├── canary-dryad-234-default.html
 │   │   │   │   ├── canary-dryad-234-ieee-de-DE.html
 │   │   │   │   ├── canary-dryad-234-mla.html
+│   │   │   │   ├── dryad-234-jats.xml
 │   │   │   │   ├── dryad-8515-csl.json
 │   │   │   │   ├── dryad-8515-default.html
 │   │   │   │   ├── dryad-8515-ieee-de-DE.html
 │   │   │   │   ├── dryad-8515-ieee.html
 │   │   │   │   ├── dryad-8515-modern-language-association.html
+│   │   │   │   ├── usgs-p963ik77-jats.xml
 │   │   │   │   └── zenodo-3509134-bibtex.bib
 │   │   │   ├── errors/
 │   │   │   │   ├── failed-to-parse-date.json
@@ -245,6 +249,7 @@ datacite-mcp-server/
 │   │           ├── _schemas.test.ts
 │   │           ├── _text.test.ts
 │   │           ├── advertised-patterns.test.ts
+│   │           ├── count-limits.test.ts
 │   │           ├── get-citation.tool.test.ts
 │   │           ├── get-work.tool.test.ts
 │   │           ├── input-bounds.test.ts
@@ -261,6 +266,7 @@ datacite-mcp-server/
 │   │   │   ├── cursor.test.ts
 │   │   │   ├── datacite-service.test.ts
 │   │   │   ├── html-text.test.ts
+│   │   │   ├── jats-notice.test.ts
 │   │   │   ├── mappers.test.ts
 │   │   │   ├── normalize.test.ts
 │   │   │   └── query-builder.test.ts
