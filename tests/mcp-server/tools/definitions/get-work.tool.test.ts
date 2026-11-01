@@ -80,6 +80,22 @@ const listEntry = (list: RecordList, i: number) => {
 };
 
 describe('selected record lists', () => {
+  it('decodes named references in titles and rendered descriptions, preserving deposited descriptions', async () => {
+    const description = '<p>&beta;&alpha;&deg;&plusmn;&eacute; &amp;beta; &constructor; &beta</p>';
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/entities', {
+          titles: [{ title: description }],
+          descriptions: [{ description }],
+        }),
+      },
+    ]);
+    const result = await run('10.5555/entities');
+    expect(output(result).titles).toEqual([{ title: 'βα°±é &beta; &constructor; &beta' }]);
+    expect(output(result).descriptions).toEqual([{ description }]);
+    expect(markdownText(contentText(result))).toContain('βα°±é &beta; &constructor; &beta');
+  });
   it('renders a continuation DOI with literal Markdown punctuation', async () => {
     const doi = '10.5555/list*literal*';
     initServices([

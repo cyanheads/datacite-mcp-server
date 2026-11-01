@@ -217,8 +217,12 @@ export const getCitationTool = tool('datacite_get_citation', {
       .string()
       .optional()
       .describe(
-        'Set when the style could not be confirmed as distinct from APA, or when the payload exceeded the inline cap (length and retrieval guidance).',
+        'Set when the style could not be confirmed as distinct from APA, JATS contains empty names or inconsistent years, or the payload exceeded the inline cap (length and retrieval guidance).',
       ),
+  },
+
+  enrichmentTrailer: {
+    notice: { render: (notice) => (notice === undefined ? '' : blockquote(notice)) },
   },
 
   async handler(input, ctx) {
@@ -277,7 +281,7 @@ export const getCitationTool = tool('datacite_get_citation', {
       ctx.enrich.truncated({
         shown: 0,
         cap: MAX_PAYLOAD_CHARS,
-        guidance: `The complete ${input.format} document contains ${num(outcome.body.length)} UTF-16 code units, exceeding the ${num(MAX_PAYLOAD_CHARS)} inline cap. No partial document is returned; fetch downloadUrl to retrieve the complete document.`,
+        guidance: `${outcome.notice ? `${outcome.notice} ` : ''}The complete ${input.format} document contains ${num(outcome.body.length)} UTF-16 code units, exceeding the ${num(MAX_PAYLOAD_CHARS)} inline cap. No partial document is returned; fetch downloadUrl to retrieve the complete document.`,
       });
       return {
         found: true,

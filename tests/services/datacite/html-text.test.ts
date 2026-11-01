@@ -9,6 +9,18 @@ import { htmlToDescriptionBlocks, htmlToText } from '@/services/datacite/html-te
 import { fixtureText } from '../../helpers/fixtures.js';
 
 describe('htmlToText', () => {
+  it('decodes semicolon-terminated WHATWG names exactly once with case-sensitive lookup', () => {
+    const value =
+      '&beta;&alpha;&deg;&plusmn;&eacute;&frac12;&NotEqualTilde;&Afr; &AMP; &Beta; &BETA; &amp;beta; &bogus; &constructor; &beta';
+    const expected = 'βα°±é½≂̸𝔄 & Β &BETA; &beta; &bogus; &constructor; &beta';
+    expect(htmlToText(value)).toBe(expected);
+    expect(htmlToDescriptionBlocks(`<p>${value}</p>`)).toEqual([{ kind: 'text', text: expected }]);
+  });
+  it('characterizes numeric references and literal unknown names', () => {
+    expect(htmlToText('&#128; &#xD800; &Beta &constructor; &AMP;')).toBe(
+      '\u0080 \ud800 &Beta &constructor; &',
+    );
+  });
   it('keeps description paragraph, nested list, pre and table boundaries', () => {
     expect(
       htmlToDescriptionBlocks(

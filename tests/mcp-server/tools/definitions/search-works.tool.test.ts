@@ -79,7 +79,79 @@ const expectToolError = (result: ToolResultLike, reason: string, code: number) =
   return error;
 };
 
+describe('country filtering', () => {
+  it.each(['UK', 'uk'])(
+    'aliases %s to GB with disclosure on both surfaces',
+    async (affiliation_country) => {
+      const { http } = zeroHits();
+      const result = await run({ affiliation_country });
+      expect(result.isError).toBeFalsy();
+      expect(requestUrl(http).searchParams.get('affiliation-country')).toBe('GB');
+      expect(output(result).appliedFilters.affiliation_country).toBe('affiliation-country=GB');
+      expect(output(result).notice).toContain('UK → GB');
+      expect(contentText(result)).toContain('UK → GB');
+      expect(contentText(result)).toContain('affiliation-country=GB');
+    },
+  );
+  it.each(['ZZ', 'AA', 'EU'])(
+    'rejects never-assigned %s before any request',
+    async (affiliation_country) => {
+      const { http } = zeroHits();
+      const result = await run({ affiliation_country });
+      const error = expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
+      expect(error.data?.field).toBe('affiliation_country');
+      expect(error.data?.recovery).toMatchObject({ hint: expect.stringContaining('ISO 3166') });
+      expect(contentText(result)).toContain('affiliation_country');
+      expect(contentText(result)).toContain('Recovery:');
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+  it.each(['gb', 'xk', 'CH', 'AN', 'CS', 'SU', 'YU', 'TP', 'FX'])(
+    'preserves assigned country %s even on an empty page',
+    async (affiliation_country) => {
+      const { http } = zeroHits();
+      const result = await run({ affiliation_country });
+      expect(result.isError).toBeFalsy();
+      const applied = `affiliation-country=${affiliation_country.toUpperCase()}`;
+      expect(output(result).appliedFilters.affiliation_country).toBe(applied);
+      expect(contentText(result)).toContain(applied);
+      expect(requestUrl(http).searchParams.get('affiliation-country')).toBe(
+        affiliation_country.toUpperCase(),
+      );
+    },
+  );
+  it('keeps blank country unset for form clients', async () => {
+    const { http } = zeroHits();
+    const result = await run({ affiliation_country: '  ' });
+    expect(output(result).appliedFilters).toEqual({});
+    expect(contentText(result)).toContain('Applied filters:** none');
+    expect(requestUrl(http).searchParams.has('affiliation-country')).toBe(false);
+  });
+});
+
 describe('page shapes and required enrichment', () => {
+  it('decodes named entities before description snippet truncation on both surfaces', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: json(
+          doiList([
+            row('10.5555/entities', {
+              titles: [{ title: '&beta; spectrum' }],
+              descriptions: [{ description: '&alpha;'.repeat(301) }],
+            }),
+          ]),
+        ),
+      },
+    ]);
+    const result = await run({ text: 'spectrum' });
+    expect(output(result).works[0]).toMatchObject({
+      title: 'β spectrum',
+      descriptionSnippet: `${'α'.repeat(300)}…`,
+    });
+    expect(markdownText(contentText(result))).toContain('β spectrum');
+    expect(markdownText(contentText(result))).toContain(`${'α'.repeat(300)}…`);
+  });
   it('normalizes titles/snippets once and escapes remaining literal tags on both surfaces', async () => {
     initServices([
       {
@@ -110,7 +182,7 @@ describe('page shapes and required enrichment', () => {
       {
         match: onPath('https://api.ror.org', '/v2/organizations'),
         respond: () => {
-          controller.abort();
+          controller.abort(new DOMException('Lookup cancelled by caller.', 'AbortError'));
           return Promise.reject(controller.signal.reason);
         },
       },
@@ -121,7 +193,7 @@ describe('page shapes and required enrichment', () => {
       { context: { signal: controller.signal } },
     );
     expect(toolError(result).code).toBe(JsonRpcErrorCode.RequestCancelled);
-    expect(contentText(result)).toContain('This operation was aborted');
+    expect(contentText(result)).toContain('Lookup cancelled by caller.');
     expect(http.calls).toHaveLength(1);
   });
   it.each([
@@ -202,13 +274,13 @@ describe('page shapes and required enrichment', () => {
 
   it('clamps an oversized read cap before ranked-page arithmetic and discloses the applied cap', async () => {
     const { http } = initServices([
-      { match: dataCite('/dois'), respond: json({ data: [], meta: { total: 0, page: 100 } }) },
+      { match: dataCite('/dois'), respond: json({ data: [], meta: { total: 0, page: 10 } }) },
     ]);
-    const result = await run({ limit: 250, page: 100 });
+    const result = await run({ limit: 10001, page: 10 });
     expect(result.isError).toBeFalsy();
-    expect(requestUrl(http).searchParams.get('page[size]')).toBe('100');
-    expect(output(result).notice).toContain('limit=250');
-    expect(contentText(result)).toContain('limit=100');
+    expect(requestUrl(http).searchParams.get('page[size]')).toBe('1000');
+    expect(output(result).notice).toContain('limit=10001');
+    expect(contentText(result)).toContain('limit=1000');
   });
 
   it('round trips blank facet labels and literal space-containing licenses', async () => {
@@ -895,8 +967,8 @@ describe('cursor walks', () => {
     expect(decodeCursor(nextCursor!)?.q).toBe(
       stableHash(JSON.stringify({ q: '*', f: { fundedBy: '018mejw64' } })),
     );
-    expect(requestUrl(http, 1).searchParams.get('page[size]')).toBe('100');
-    expect(contentText(first)).toContain('applied limit=100');
+    expect(requestUrl(http, 1).searchParams.get('page[size]')).toBe('1000');
+    expect(contentText(first)).toContain('applied limit=1000');
     const last = await run({ funder: '10.13039/501100001659', cursor: nextCursor!, limit: 10_000 });
     expect(last.isError).toBeFalsy();
     expect(output(last).nextCursor).toBeUndefined();
@@ -1374,7 +1446,6 @@ describe('declared errors', () => {
     { fields_of_science: ['astrology'] },
     { sort: 'best' },
     { limit: 0 },
-    { limit: 10_001 },
     { page: 0 },
     { published_from: 999 },
     { published_to: 2101 },

@@ -323,7 +323,8 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
           {
             value: 'Country',
             label: 'DE',
-            description: 'ISO 3166-1 alpha-2, any case. Alpha-3 codes and names are rejected.',
+            description:
+              'Current or formerly assigned ISO 3166 alpha-2, plus XK; any case. UK aliases to GB with a notice. Unassigned codes, alpha-3 codes and names are rejected.',
           },
           { value: 'Language', label: 'en', description: 'ISO 639-1, any case.' },
           {

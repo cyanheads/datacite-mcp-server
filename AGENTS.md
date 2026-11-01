@@ -119,9 +119,10 @@ This server registers no explicit resources or prompts. Its root `skills/` tree 
 ```ts
 // src/config/server-config.ts — lazy-parsed, separate from framework config
 import { z } from '@cyanheads/mcp-ts-core';
-import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
+import { config, parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
+  clampLimits: z.stringbool().default(true).describe('Clamp oversized read counts; false advertises and enforces strict upstream caps.'),
   contactEmail: z
     .email()
     .optional()
@@ -137,7 +138,9 @@ const ServerConfigSchema = z.object({
 
 let _config: ServerConfig | undefined;
 export function getServerConfig(): ServerConfig {
+  void config.pkg; // Load the framework config and Node .env before tool schemas read the switch.
   _config ??= parseEnvConfig(ServerConfigSchema, {
+    clampLimits: 'DATACITE_CLAMP_LIMITS',
     contactEmail: 'DATACITE_CONTACT_EMAIL',
     maxRequestsPer5Min: 'DATACITE_MAX_REQUESTS_PER_5MIN',
   });
@@ -145,7 +148,7 @@ export function getServerConfig(): ServerConfig {
 }
 ```
 
-`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`DATACITE_CONTACT_EMAIL`) not the path (`contactEmail`). Throws `ConfigurationError`, which the framework prints as a clean startup banner. `initDataCiteServices()` reads the config in `setup()`, so a malformed value fails at startup. The contact email rides the `User-Agent` only — never a URL parameter, cache key, or log line.
+`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`DATACITE_CONTACT_EMAIL`) not the path (`contactEmail`), and throws `ConfigurationError` for malformed values. Count schemas read the config during tool-definition construction; the framework config accessor loads Node's `.env` first. `DATACITE_CLAMP_LIMITS` defaults to `true`: search counts apply at most 1,000 and graph counts at most 100, with requested/applied notices, logs, and a counter. `false` advertises and enforces those caps as strict maxima. The contact email rides the `User-Agent` only — never a URL parameter, cache key, or log line.
 
 For env booleans use `z.stringbool()`, never `z.coerce.boolean()` — `Boolean("false")` is `true`, so a coerced flag can't be disabled through the environment. `z.stringbool()` parses `true/false/1/0/yes/no/on/off` and rejects anything else, so `=false` actually disables.
 
@@ -254,7 +257,7 @@ See framework CLAUDE.md and the `api-errors` skill for the full auto-classificat
 src/
   index.ts                              # createApp() entry point — six tools, instructions, stateless session mode
   config/
-    server-config.ts                    # DATACITE_CONTACT_EMAIL, DATACITE_MAX_REQUESTS_PER_5MIN (Zod schema)
+    server-config.ts                    # Contact email, request budget, and read-count clamping (Zod schema)
   services/
     datacite/
       datacite-service.ts               # DataCite REST client (init/accessor): /dois, /repositories, /events, content negotiation
@@ -263,6 +266,7 @@ src/
       mappers.ts                        # Raw DataCite records → output shapes
       relation-graph.ts                 # datacite_trace_relations graph builder
       citation.ts                       # Content negotiation + CSL style verdict
+      jats-notice.ts                    # Detect empty names and inconsistent years without rewriting JATS
       cursor.ts                         # Work-search cursor envelope
       html-text.ts                      # Formatted-citation HTML → plain text
       types.ts                          # Raw DataCite response types
@@ -278,6 +282,7 @@ src/
     tools/definitions/
       *.tool.ts                         # The six tool definitions
       _schemas.ts                       # Shared input-schema helpers (blank-as-unset, DOI and id patterns, enumish)
+      _counts.ts                        # Count schemas, applied caps, and clamp telemetry
       _miss.ts                          # found: false guidance shared by datacite_get_work and datacite_get_citation
       _text.ts                          # format() helpers for depositor-supplied text (flatten, blockquote, fence)
 ```

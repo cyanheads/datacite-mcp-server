@@ -2715,10 +2715,10 @@ describe('relation_types and Event Data', () => {
 describe('declared errors and input', () => {
   it('clamps oversized max_nodes without claiming the cap was returned', async () => {
     initServices(dryad8515Routes());
-    const result = await run({ doi: ROOT, max_nodes: 500 });
+    const result = await run({ doi: ROOT, max_nodes: 10001 });
     expect(result.isError).toBeFalsy();
-    expect(output(result).notice).toContain('Requested max_nodes=500; applied max_nodes=100.');
-    expect(contentText(result)).toContain('Requested max_nodes=500; applied max_nodes=100.');
+    expect(output(result).notice).toContain('Requested max_nodes=10001; applied max_nodes=100.');
+    expect(contentText(result)).toContain('Requested max_nodes=10001; applied max_nodes=100.');
     expect(output(result).nodes.length).toBeLessThanOrEqual(100);
   });
   it.each(['10.12/x', '10.5061/', 'https://doi.org/10.5061/'])(
@@ -2809,7 +2809,6 @@ describe('declared errors and input', () => {
     { doi: ROOT, depth: 0 },
     { doi: ROOT, depth: 3 },
     { doi: ROOT, max_nodes: 0 },
-    { doi: ROOT, max_nodes: 10_001 },
     { doi: ROOT, relation_types: ['Likes'] },
   ])('rejects the malformed input %j at the schema', async (input) => {
     const { http } = initServices(dryad8515Routes());

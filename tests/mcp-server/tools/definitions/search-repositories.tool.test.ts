@@ -121,12 +121,12 @@ describe('page shapes and required enrichment', () => {
   });
 
   it('uses the applied cap for past-end arithmetic at the hard ceiling', async () => {
-    const { http } = initServices([{ match: repositories, respond: json(page([], 101)) }]);
+    const { http } = initServices([{ match: repositories, respond: json(page([], 1001)) }]);
     const result = await run({ limit: 10_000, page: 3 });
     expect(result.isError).toBeFalsy();
-    expect(requestUrl(http).searchParams.get('page[size]')).toBe('100');
+    expect(requestUrl(http).searchParams.get('page[size]')).toBe('1000');
     expect(output(result).notice).toContain('last page is 2');
-    expect(contentText(result)).toContain('Requested limit=10000; applied limit=100');
+    expect(contentText(result)).toContain('Requested limit=10000; applied limit=1000');
     expect(output(result).nextPage).toBeUndefined();
   });
   it('validates all lookup IDs before omitting any, and retains filter-array bounds', async () => {
@@ -139,12 +139,12 @@ describe('page shapes and required enrichment', () => {
   it('clamps read limits and queries only the first 25 distinct lookup IDs', async () => {
     const { http } = zeroHits();
     const ids = Array.from({ length: 27 }, (_, i) => `test.repo${i}`);
-    const result = await run({ limit: 250, repository_ids: [ids[0]!.toUpperCase(), ...ids] });
+    const result = await run({ limit: 10001, repository_ids: [ids[0]!.toUpperCase(), ...ids] });
     expect(result.isError).toBeFalsy();
-    expect(requestUrl(http).searchParams.get('page[size]')).toBe('100');
+    expect(requestUrl(http).searchParams.get('page[size]')).toBe('1000');
     expect(requestUrl(http).searchParams.get('ids')).toBe(ids.slice(0, 25).join(','));
     expect(output(result).notice).toContain('Not queried: test.repo25, test.repo26');
-    expect(contentText(result)).toContain('applied limit=100');
+    expect(contentText(result)).toContain('applied limit=1000');
     expect(output(result).notice).not.toContain('ids test.repo25');
   });
   it('answers a zero-hit page with every required enrichment field on both surfaces', async () => {
@@ -617,7 +617,6 @@ describe('declared errors', () => {
     { client_type: 'journal' },
     { field_of_science: 'astrology' },
     { limit: 0 },
-    { limit: 10_001 },
     { page: 0 },
   ])('rejects the malformed input %j at the schema', async (input) => {
     const { http } = zeroHits();

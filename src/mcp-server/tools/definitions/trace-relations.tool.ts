@@ -20,6 +20,7 @@ import {
   traceRelations,
 } from '@/services/datacite/relation-graph.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
+import { applyCount, countInput } from './_counts.js';
 import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
 import { flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
 
@@ -178,8 +179,8 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       .describe(
         'Add Event Data citation links (mostly harvested from Crossref). Citation relation types only.',
       ),
-    max_nodes: blankAsUnset(z.number().int().min(1).max(10_000).default(50)).describe(
-      'Requested node cap including the root, 1–10,000 (default 50); values above 100 apply 100 with a notice. Filled in order: own-metadata targets, records pointing at the root, Event Data endpoints, then the second hop.',
+    max_nodes: countInput(MAX_NODES, 50).describe(
+      'Requested node cap including the root, a positive integer (default 50); values above 100 apply 100 with a notice unless strict limits are configured. Filled in order: own-metadata targets, records pointing at the root, Event Data endpoints, then the second hop.',
     ),
   }),
 
@@ -386,7 +387,15 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
   },
 
   async handler(input, ctx) {
-    const maxNodes = Math.min(input.max_nodes, MAX_NODES);
+    const clampNotices: string[] = [];
+    const maxNodes = applyCount(
+      input.max_nodes,
+      MAX_NODES,
+      'max_nodes',
+      'datacite_trace_relations',
+      ctx,
+      clampNotices,
+    );
     const root = normalizeDoi(input.doi);
     if (!root) {
       throw ctx.fail(
@@ -461,8 +470,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         `To read Event Data without metadata consuming the node cap, call datacite_trace_relations with ${recipe(0)} and the same filters. Upstream ordering can change between calls; only the first 10,000 ranked events are accessible.`,
       );
     }
-    if (input.max_nodes > maxNodes)
-      notices.push(`Requested max_nodes=${input.max_nodes}; applied max_nodes=${maxNodes}.`);
+    notices.push(...clampNotices);
     const eventDataRead = graph.coverage.eventData.status === 'ok';
     if (!graph.root.isDataCiteDoi) {
       const sources = eventOnly

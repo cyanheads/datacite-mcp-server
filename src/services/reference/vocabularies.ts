@@ -2,7 +2,7 @@
  * @fileoverview Static DataCite vocabularies: resource types, relation types with
  * their inverses and groups, related-identifier, date, and contributor types,
  * repository types, certificates, client types, software platforms, common
- * license ids, ISO 639-1 language codes, and search sort orders. Read by the
+ * license ids, ISO country and language codes, and search sort orders. Read by the
  * input canonicalizers and by `datacite_list_reference`.
  * @module services/reference/vocabularies
  */
@@ -300,6 +300,18 @@ export const ISO_639_1 = new Set(
     'or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ' +
     'ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu'
   ).split(' '),
+);
+
+/**
+ * Current ISO 3166-1 and former ISO 3166-3 alpha-2 assignments, plus ROR's XK.
+ * Sources: https://salsa.debian.org/iso-codes-team/iso-codes/-/tree/main/data
+ * (`iso_3166-1.json`, `iso_3166-3.json`, alpha_2), checked 2026-11-01.
+ * Former assignments stay valid even when DataCite currently returns no matches.
+ */
+export const ISO_3166_ALPHA_2: ReadonlySet<string> = new Set(
+  'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW AN BU CS CT DD DY FQ FX HV JT MI NH NQ NT PC PU PZ RH SU TP VD WK YD YU ZR XK'.split(
+    ' ',
+  ),
 );
 
 /** Search sort orders and the upstream `sort` value each sends. */

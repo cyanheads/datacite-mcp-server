@@ -5,24 +5,8 @@
  * @module services/datacite/html-text
  */
 
+import { decodeHTMLStrict } from 'entities/decode';
 import { normalizeLineBreaks } from './query-builder.js';
-
-const NAMED_ENTITIES: Readonly<Record<string, string>> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: String.fromCodePoint(0xa0),
-  ndash: String.fromCodePoint(0x2013),
-  mdash: String.fromCodePoint(0x2014),
-  lsquo: String.fromCodePoint(0x2018),
-  rsquo: String.fromCodePoint(0x2019),
-  ldquo: String.fromCodePoint(0x201c),
-  rdquo: String.fromCodePoint(0x201d),
-  hellip: String.fromCodePoint(0x2026),
-  thinsp: String.fromCodePoint(0x2009),
-};
 
 function decodeEntity(entity: string, body: string): string {
   if (body.startsWith('#')) {
@@ -34,7 +18,7 @@ function decodeEntity(entity: string, body: string): string {
       ? String.fromCodePoint(codePoint)
       : entity;
   }
-  return Object.hasOwn(NAMED_ENTITIES, body) ? (NAMED_ENTITIES[body] as string) : entity;
+  return decodeHTMLStrict(entity);
 }
 
 const INLINE_TAGS = new Set([
@@ -105,7 +89,7 @@ const tagName = (body: string): string | undefined =>
   /^\/?([a-z][a-z0-9]*)(?=[\s/]|$)/i.exec(body)?.[1]?.toLowerCase();
 
 const decodeText = (value: string): string =>
-  value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, decodeEntity);
+  value.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, decodeEntity);
 
 /**
  * The visible text of an HTML fragment. A tag cannot contain `<`, which keeps

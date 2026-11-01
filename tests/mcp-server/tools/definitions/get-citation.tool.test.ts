@@ -113,6 +113,16 @@ const FORMAT_UNAVAILABLE_RECOVERY =
   'Recovery: Request another format such as datacite_json or csl_json, or call datacite_get_work for the full record.';
 
 describe('formatted citations', () => {
+  it('decodes scientific named references in text while retaining upstream HTML', async () => {
+    const payload = '<i>&beta;&alpha;&deg;&plusmn;&eacute;</i> &amp;beta; &constructor; &beta';
+    initServices([{ match: negotiation(DOI), respond: html(payload) }]);
+    const result = await run({ doi: DOI });
+    expect(output(result)).toMatchObject({
+      citation: 'βα°±é &beta; &constructor; &beta',
+      citationHtml: payload,
+    });
+    expect(markdownText(contentText(result))).toContain('βα°±é &beta; &constructor; &beta');
+  });
   it('renders APA by default in one request, as plain text and verbatim HTML on both surfaces', async () => {
     const { http } = initServices([{ match: negotiation(DOI), respond: html(DEFAULT_HTML) }]);
     const result = await run({ doi: DOI });
@@ -476,6 +486,87 @@ describe('locales', () => {
 });
 
 describe('machine formats', () => {
+  it('does not echo an oversized non-year value in a download warning', async () => {
+    const value = 'x'.repeat(100_001);
+    const payload = `<year iso-8601-date="2026">${value}</year>`;
+    initServices([{ match: negotiation(DOI, {}, CITATION_FORMATS.jats), respond: text(payload) }]);
+    const result = await run({ doi: DOI, format: 'jats' });
+    expect(output(result).citation).toBeUndefined();
+    expect(output(result).notice).not.toContain(value);
+    expect(output(result).notice).toContain('non-year text');
+    expect(markdownText(contentText(result))).toContain(output(result).notice!);
+  });
+  it.each([false, true])(
+    'renders literal markup in JATS warning years (oversized %s)',
+    async (oversized) => {
+      const payload = `<year iso-8601-date="2026"><![CDATA[<b>*[bad]*</b>]]></year>${oversized ? 'x'.repeat(100_001) : ''}`;
+      initServices([
+        { match: negotiation(DOI, {}, CITATION_FORMATS.jats), respond: text(payload) },
+      ]);
+      const result = await run({ doi: DOI, format: 'jats' });
+      expect(output(result).notice).toContain('non-year text');
+      expect(output(result).notice).not.toContain('<b>*[bad]*</b>');
+      expect(markdownText(contentText(result))).toContain(output(result).notice!);
+    },
+  );
+  it.each([
+    ['10.5066/p963ik77', 'usgs-p963ik77-jats.xml', true],
+    ['10.5061/dryad.234', 'dryad-234-jats.xml', false],
+  ] as const)(
+    'preserves recorded JATS for %s and reports only observed defects',
+    async (doi, file, damaged) => {
+      const payload = fixtureText(`datacite/citations/${file}`);
+      initServices([
+        { match: negotiation(doi, {}, CITATION_FORMATS.jats), respond: text(payload) },
+      ]);
+      const result = await run({ doi, format: 'jats' });
+      expect(output(result).citation).toBe(payload);
+      expect(contentText(result)).toContain(payload.trimEnd());
+      if (damaged) {
+        expect(output(result).notice).toContain(
+          '4 empty <name> elements; year "10" differs from iso-8601-date year 2026',
+        );
+        expect(markdownText(contentText(result))).toContain(output(result).notice!);
+      } else expect(output(result).notice).toBeUndefined();
+    },
+  );
+  it.each([false, true])(
+    'warns about damaged JATS while preserving complete retrieval (oversized %s)',
+    async (oversized) => {
+      const payload =
+        '<element-citation><name/><name> \r\n </name><name><surname>Smith</surname></name><year iso-8601-date="2026">10</year>' +
+        (oversized ? 'x'.repeat(100_001) : '') +
+        '</element-citation>\n';
+      const { http } = initServices([
+        { match: negotiation(DOI, {}, CITATION_FORMATS.jats), respond: text(payload) },
+      ]);
+      const result = await run({ doi: DOI, format: 'jats' });
+      const out = output(result);
+      expect(out.notice).toContain('2 empty');
+      expect(out.notice).toContain('10');
+      expect(out.notice).toContain('2026');
+      for (const format of ['csl_json', 'bibtex', 'ris', 'datacite_json']) {
+        expect(out.notice).toContain(format);
+        expect(contentText(result)).toContain(format);
+      }
+      expect(markdownText(contentText(result))).toContain(out.notice!);
+      expect(requestUrls(http)).toHaveLength(1);
+      if (oversized) {
+        expect(out.citation).toBeUndefined();
+        expect(out).toMatchObject({ shown: 0, truncated: true, totalCharacters: payload.length });
+        expect(out.downloadUrl).toContain('/application/vnd.jats+xml/');
+      } else expect(out.citation).toBe(payload);
+    },
+  );
+  it('keeps complete JATS bytes and no-signal text quiet', async () => {
+    const payload =
+      '<element-citation>\r\n<name><surname>Smith</surname></name><year iso-8601-date="2026">2026</year><year>10</year>\r\n</element-citation>\n';
+    initServices([{ match: negotiation(DOI, {}, CITATION_FORMATS.jats), respond: text(payload) }]);
+    const result = await run({ doi: DOI, format: 'jats' });
+    expect(output(result).citation).toBe(payload);
+    expect(output(result).notice).toBeUndefined();
+    expect(contentText(result)).toContain(payload.trimEnd());
+  });
   it.each([
     ['csl_json', 'application/vnd.citationstyles.csl+json', 'json'],
     ['bibtex', 'application/x-bibtex', 'bibtex'],

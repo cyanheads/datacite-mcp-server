@@ -12,12 +12,53 @@ import {
   looksLikeFunderId,
   looksLikeOrcid,
   looksLikeRor,
+  normalizeCountry,
   normalizeDoi,
   normalizeFunderId,
   normalizeLanguage,
   normalizeOrcid,
   normalizeRor,
 } from '@/services/datacite/normalize.js';
+
+describe('normalizeCountry', () => {
+  it.each([
+    'gb',
+    'xk',
+    'CH',
+    'AN',
+    'CS',
+    'SU',
+    'YU',
+    'TP',
+    'FX',
+    'BU',
+    'CT',
+    'DD',
+    'DY',
+    'FQ',
+    'HV',
+    'JT',
+    'MI',
+    'NH',
+    'NQ',
+    'NT',
+    'PC',
+    'PU',
+    'PZ',
+    'RH',
+    'VD',
+    'WK',
+    'YD',
+    'ZR',
+  ])('retains current or former assignment %s', (code) =>
+    expect(normalizeCountry(` ${code} `)).toBe(code.toUpperCase()),
+  );
+  it.each(['UK', 'uk'])('aliases %s to GB', (code) => expect(normalizeCountry(code)).toBe('GB'));
+  it.each(['ZZ', 'AA', 'EU', '', 'DEU', 'Germany', 'constructor', '__proto__'])(
+    'rejects non-country %s',
+    (code) => expect(normalizeCountry(code)).toBeUndefined(),
+  );
+});
 
 describe('normalizeDoi', () => {
   it.each([

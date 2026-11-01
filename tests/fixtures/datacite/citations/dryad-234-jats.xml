@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<element-citation publication-type="data">
+  <person-group person-group-type="author">
+    <name>
+      <surname>Zanne</surname>
+      <given-names>Amy E.</given-names>
+    </name>
+    <name>
+      <surname>Lopez-Gonzalez</surname>
+      <given-names>G.</given-names>
+    </name>
+    <name>
+      <surname>Coomes</surname>
+      <given-names>David A.</given-names>
+    </name>
+    <name>
+      <surname>Ilic</surname>
+      <given-names>Jugo</given-names>
+    </name>
+    <name>
+      <surname>Jansen</surname>
+      <given-names>Steven</given-names>
+    </name>
+    <name>
+      <surname>Lewis</surname>
+      <given-names>Simon L.</given-names>
+    </name>
+    <name>
+      <surname>Miller</surname>
+      <given-names>Regis B.</given-names>
+    </name>
+    <name>
+      <surname>Swenson</surname>
+      <given-names>Nathan G.</given-names>
+    </name>
+    <name>
+      <surname>Wiemann</surname>
+      <given-names>Michael C.</given-names>
+    </name>
+    <name>
+      <surname>Chave</surname>
+      <given-names>Jerome</given-names>
+    </name>
+  </person-group>
+  <data-title>Data from: Towards a worldwide wood economics spectrum</data-title>
+  <source>Dryad</source>
+  <year iso-8601-date="2009-02-04T23:35:24Z">2009</year>
+  <month>02</month>
+  <day>04</day>
+  <version>5</version>
+  <pub-id pub-id-type="doi">10.5061/DRYAD.234</pub-id>
+</element-citation>

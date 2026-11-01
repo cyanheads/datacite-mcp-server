@@ -14,6 +14,7 @@ import {
   STYLE_CANARY_DOI,
 } from '@/services/reference/citation.js';
 import type { DataCiteService, NegotiationResult, StyleVerdict } from './datacite-service.js';
+import { jatsNotice } from './jats-notice.js';
 
 const VERDICT_TTL_MS = 24 * 60 * 60_000;
 const TEXT = CITATION_FORMATS.text;
@@ -80,7 +81,11 @@ export async function renderCitation(
 ): Promise<CitationOutcome> {
   const { doi, style } = request;
   if (request.format !== 'text') {
-    return outcomeOf(await service.negotiate(doi, CITATION_FORMATS[request.format], {}, ctx));
+    const result = await service.negotiate(doi, CITATION_FORMATS[request.format], {}, ctx);
+    return outcomeOf(
+      result,
+      request.format === 'jats' && isRendering(result) ? jatsNotice(result.body) : undefined,
+    );
   }
 
   const params = {

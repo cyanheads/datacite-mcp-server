@@ -1,13 +1,13 @@
 /**
  * @fileoverview Identifier normalizers for the checks finer than a schema
- * pattern: DOI, ORCID iD, ROR ID, Crossref Funder ID, and ISO 639-1 language.
+ * pattern: DOI, ORCID iD, ROR ID, Crossref Funder ID, country, and ISO 639-1 language.
  * Each normalizes what is certain (case, prefixes, URL forms) and reports what
  * is not as `undefined`, leaving the caller to raise its typed reason. Also
  * builds a DOI's doi.org URL, the inverse of reading one.
  * @module services/datacite/normalize
  */
 
-import { ISO_639_1 } from '@/services/reference/vocabularies.js';
+import { ISO_639_1, ISO_3166_ALPHA_2 } from '@/services/reference/vocabularies.js';
 
 const DOI_RE = /^10\.\d{4,9}\/\S+$/;
 const DOI_URL_PREFIX_RE = /^https?:\/\/(?:dx\.)?doi\.org\//i;
@@ -115,4 +115,11 @@ export function normalizeFunderId(value: string): string | undefined {
 export function normalizeLanguage(value: string): string | undefined {
   const code = value.trim().toLowerCase();
   return ISO_639_1.has(code) ? code : undefined;
+}
+
+/** Assigned or historical country code uppercased; UK aliases to GB, XK is retained. */
+export function normalizeCountry(value: string): string | undefined {
+  const code = value.trim().toUpperCase();
+  if (code === 'UK') return 'GB';
+  return ISO_3166_ALPHA_2.has(code) ? code : undefined;
 }

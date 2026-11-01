@@ -22,6 +22,13 @@
       "version": "0.2.0",
       "environmentVariables": [
         {
+          "name": "DATACITE_CLAMP_LIMITS",
+          "description": "true applies at most 1,000 search rows or 100 graph nodes with a notice; false advertises and enforces strict maxima.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
+        },
+        {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
           "format": "string",
@@ -52,6 +59,13 @@
       "runtimeHint": "npx",
       "version": "0.2.0",
       "environmentVariables": [
+        {
+          "name": "DATACITE_CLAMP_LIMITS",
+          "description": "true applies at most 1,000 search rows or 100 graph nodes with a notice; false advertises and enforces strict maxima.",
+          "format": "boolean",
+          "isRequired": false,
+          "default": "true"
+        },
         {
           "name": "MCP_TRANSPORT_TYPE",
           "description": "Selects the HTTP transport.",

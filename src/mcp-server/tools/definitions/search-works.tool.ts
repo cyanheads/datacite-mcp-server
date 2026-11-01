@@ -23,6 +23,7 @@ import {
   looksLikeFunderId,
   looksLikeOrcid,
   looksLikeRor,
+  normalizeCountry,
   normalizeFunderId,
   normalizeLanguage,
   normalizeOrcid,
@@ -56,6 +57,7 @@ import {
   type SortOrder,
 } from '@/services/reference/vocabularies.js';
 import { getRorService } from '@/services/ror/ror-service.js';
+import { applyCount, countInput, SEARCH_PAGE_CAP } from './_counts.js';
 import {
   blankAsUnset,
   enumish,
@@ -146,7 +148,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     {
       reason: 'invalid_filter',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a creator or funder with no letters or digits, a reversed year range, or include_child_funders without a ROR funder.',
+      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a never-assigned affiliation country code, a creator or funder with no letters or digits, a reversed year range, or include_child_funders without a ROR funder.',
       severity: 'notice',
       recovery:
         'Correct the filter the error names to the form it states (identifier forms: datacite_list_reference topic identifier_formats), then retry.',
@@ -210,7 +212,7 @@ export const searchWorksTool = tool('datacite_search_works', {
           'Expected a two-letter ISO 3166-1 alpha-2 code such as DE or US; alpha-3 codes and country names match nothing upstream.',
         ),
     ).describe(
-      'ISO 3166-1 alpha-2 country of a creator or contributor affiliation, any case (DE, us). Alpha-3 codes and names are rejected.',
+      'Current or formerly assigned ISO 3166 alpha-2 country of a creator or contributor affiliation, plus XK; any case (DE, us). UK aliases to GB with a notice. Unassigned codes, alpha-3 codes and names are rejected.',
     ),
     funder: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A funder ROR ID, a Crossref Funder ID (10.13039/100000001, its doi.org URL, or the bare digits), or a funder name.',
@@ -270,8 +272,8 @@ export const searchWorksTool = tool('datacite_search_works', {
     sort: blankAsUnset(enumish(SORT_ORDER_IDS, resolveSort).optional()).describe(
       'relevance, newest, oldest, recently_updated, most_cited, most_viewed, or most_downloaded. Omitted: relevance when text or query is set, else newest. Not with cursor.',
     ),
-    limit: blankAsUnset(z.number().int().min(1).max(10_000).default(20)).describe(
-      'Requested rows per page, 1–10,000; values above 100 apply 100 with a notice.',
+    limit: countInput(SEARCH_PAGE_CAP, 20).describe(
+      'Requested rows per page, a positive integer (default 20); values above 1,000 apply 1,000 with a notice unless strict limits are configured.',
     ),
     page: blankAsUnset(z.number().int().min(1).optional()).describe(
       'Ranked page number, 1 when omitted. page × limit may not exceed 10,000; not with cursor.',
@@ -414,8 +416,15 @@ export const searchWorksTool = tool('datacite_search_works', {
   },
 
   async handler(input, ctx) {
-    const limit = Math.min(input.limit, 100);
     const notices: string[] = [];
+    const limit = applyCount(
+      input.limit,
+      SEARCH_PAGE_CAP,
+      'limit',
+      'datacite_search_works',
+      ctx,
+      notices,
+    );
     const cursor = input.cursor;
     const continuing = cursor !== undefined && cursor !== '*';
     const envelope = continuing ? decodeCursor(cursor) : undefined;
@@ -495,7 +504,19 @@ export const searchWorksTool = tool('datacite_search_works', {
     }
 
     if (input.affiliation_country) {
-      filters.affiliationCountry = input.affiliation_country.toUpperCase();
+      const country = normalizeCountry(input.affiliation_country);
+      if (!country)
+        throw ctx.fail(
+          'invalid_filter',
+          'affiliation_country is not a current or formerly assigned ISO 3166 alpha-2 code or XK.',
+          expected(
+            'affiliation_country',
+            'a current or formerly assigned ISO 3166 alpha-2 code such as GB or DE, or XK',
+          ),
+        );
+      filters.affiliationCountry = country;
+      if (input.affiliation_country.toUpperCase() === 'UK')
+        notices.push('Normalized affiliation_country UK → GB.');
       applied.affiliation_country = `affiliation-country=${filters.affiliationCountry}`;
     }
 
@@ -753,8 +774,6 @@ export const searchWorksTool = tool('datacite_search_works', {
       nextPage = page + 1;
     }
 
-    if (input.limit > limit)
-      notices.push(`Requested limit=${input.limit}; applied limit=${limit}.`);
     const rankedCeilingReached = !cursorMode && nextPage === undefined && page * limit < total;
     if (total === 0) {
       notices.push('No DataCite works matched.');
