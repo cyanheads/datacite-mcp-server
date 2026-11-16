@@ -1,14 +1,14 @@
 /**
  * @fileoverview `datacite_get_citation` — one DataCite DOI as a CSL-formatted
- * citation (style + locale) or a machine format. A style the upstream would
- * silently render as APA is rejected instead.
+ * citation (style + locale) or a machine format, returned whole or one slice at
+ * a time. A style the upstream would silently render as APA is rejected instead.
  * @module mcp-server/tools/definitions/get-citation
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { markdownLink } from '@cyanheads/mcp-ts-core/utils';
-import { renderCitation } from '@/services/datacite/citation.js';
+import { type DocumentSlice, renderCitation, sliceDocument } from '@/services/datacite/citation.js';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { htmlToText } from '@/services/datacite/html-text.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
@@ -20,25 +20,43 @@ import {
   resolveCslLocale,
 } from '@/services/reference/citation.js';
 import { buildResolver } from '@/services/reference/lookup.js';
+import { applyCount, countInput } from './_counts.js';
 import { missFields, missGuidance } from './_miss.js';
 import { blankAsUnset, doiString, enumish, MAX_CHARS, optionalString } from './_schemas.js';
 import { blockquote, fenced, flattenInline, num } from './_text.js';
 
 /**
- * The most of one upstream payload this tool returns, in characters (string
- * length). A record with thousands of related identifiers renders to megabytes.
+ * The most UTF-16 units one slice holds. A record with thousands of related
+ * identifiers renders to megabytes; a slice this long of the heaviest real
+ * exports is about 1 MB on each response surface.
  */
-const MAX_PAYLOAD_CHARS = 100_000;
+const MAX_SLICE_UNITS = 1_000_000;
+/** Units per slice when the caller sets no limit. */
+const DEFAULT_SLICE_UNITS = 100_000;
 
-/** `text` cut to at most `max` characters, never between the halves of a surrogate pair. */
-function cutAt(text: string, max: number): string {
-  if (text.length <= max) return text;
-  const last = text.charCodeAt(max - 1);
-  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+/** Where a caller gets the rest of a sliced document without paging it. */
+const REFERRALS =
+  'downloadUrl returns the whole document in one response, and datacite_get_work returns the record with each long list capped and its full count reported.';
+
+/**
+ * The notice on a slice short of the whole document: the units it holds, and
+ * `nextCall` (the call that reads on) while units remain past it.
+ */
+function sliceNotice(
+  format: CitationFormat,
+  total: number,
+  offset: number,
+  { start, end }: DocumentSlice,
+  nextCall: object,
+): string {
+  if (offset >= total) {
+    return `offset ${num(offset)} is at or past the end of this ${format} document, which runs to ${num(total)} UTF-16 units, so the slice is empty. Pass offset 0 to start from the beginning.`;
+  }
+  const span = `This ${format} document runs to ${num(total)} UTF-16 units; ${format === 'text' ? 'citationHtml' : 'citation'} holds`;
+  return end === total
+    ? `${span} the last ${num(end - start)} of them, from offset ${num(start)}. downloadUrl returns the whole document in one response.`
+    : `${span} ${num(end - start)} of them from offset ${num(start)}. Continue with datacite_get_citation ${JSON.stringify(nextCall)}. ${REFERRALS}`;
 }
-
-const cutNotice = (format: CitationFormat, total: number, shown: number): string =>
-  `The ${format} payload runs to ${num(total)} characters, past the ${num(MAX_PAYLOAD_CHARS)} this tool returns, so it is cut to its first ${num(shown)}. datacite_get_work returns the record with each long list capped and its full count reported.`;
 
 const resolveFormat = buildResolver(
   CITATION_FORMAT_IDS.map((id) => ({
@@ -70,7 +88,7 @@ const NO_RENDERING = {
 export const getCitationTool = tool('datacite_get_citation', {
   title: 'Get DataCite citation',
   description:
-    'Render one DataCite DOI as a formatted citation in a CSL style and locale (APA in US English by default), or as a machine-readable record: CSL JSON, BibTeX, RIS, DataCite JSON or XML, Schema.org JSON-LD, Codemeta, or JATS. A style the upstream renderer does not support — an unknown id or a dependent journal style — is rejected instead of silently rendered as APA. Formatted text comes back as plain text alongside the upstream HTML markup. A DOI DataCite does not hold returns found: false naming the registration agency that does.',
+    'Render one DataCite DOI as a formatted citation in a CSL style and locale (APA in US English by default), or as a machine-readable record: CSL JSON, BibTeX, RIS, DataCite JSON or XML, Schema.org JSON-LD, Codemeta, or JATS. A style the upstream renderer does not support — an unknown id or a dependent journal style — is rejected instead of silently rendered as APA. Formatted text comes back as plain text alongside the upstream HTML markup. A long document comes back one slice at a time: limit sets the slice size in UTF-16 units (default 100,000) and nextOffset continues it. A DOI DataCite does not hold returns found: false naming the registration agency that does.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
@@ -161,6 +179,12 @@ export const getCitationTool = tool('datacite_get_citation', {
     ).describe(
       'CSL locale for format text, e.g. en-GB, de-DE, fr-FR, or a bare language (de → de-DE); any case. Omitted: en-US. List: datacite_list_reference topic citation_locales.',
     ),
+    offset: blankAsUnset(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()).describe(
+      "Zero-based offset, in UTF-16 code units, where the slice starts (for text, into the upstream HTML); default 0. An offset inside a surrogate pair, or for text inside a tag or character reference, starts the slice at that unit's start. Pass nextOffset to continue. At or past the end the slice is empty.",
+    ),
+    limit: countInput(MAX_SLICE_UNITS, DEFAULT_SLICE_UNITS).describe(
+      'UTF-16 code units of the document per slice (for text, of the upstream HTML), a positive integer (default 100,000). A slice ends early rather than split a surrogate pair, or for text a tag or character reference, and runs past limit only when one such unit alone is longer. Values above 1,000,000 apply 1,000,000 with a notice unless strict limits are configured.',
+    ),
   }),
 
   output: z.object({
@@ -178,23 +202,31 @@ export const getCitationTool = tool('datacite_get_citation', {
       .string()
       .optional()
       .describe(
-        'text: the citation as plain text (tags stripped, entities decoded), cut at 100,000 upstream UTF-16 units. Machine formats: the complete payload verbatim when at most 100,000 units; otherwise omitted in favor of downloadUrl.',
+        'text: the citation as plain text (tags stripped, entities decoded) of the HTML in citationHtml; each slice is converted on its own, so join citationHtml slices, not these, to rebuild a paged text document. Machine formats: the document verbatim, or the slice of it offset and limit select, never splitting a surrogate pair; slices joined in offset order reproduce it exactly. Empty when offset is at or past the end.',
       ),
     downloadUrl: z
       .string()
       .optional()
       .describe(
-        'Exact negotiated URL for the complete machine document when it exceeds the inline cap; fetch this URL to retrieve the document.',
+        'Exact negotiated URL for the whole document, returned with a slice short of it; fetch it to retrieve the document in one response.',
       ),
     totalCharacters: z
       .number()
       .optional()
-      .describe('Complete oversized machine document length in UTF-16 code units.'),
+      .describe(
+        'Length of the whole document in UTF-16 code units (for text, of the upstream HTML), returned with a slice short of it.',
+      ),
+    nextOffset: z
+      .number()
+      .optional()
+      .describe(
+        'Where the next slice starts: call again with the same doi, format, style, locale, and limit, and this as offset. Absent once a slice reaches the end.',
+      ),
     citationHtml: z
       .string()
       .optional()
       .describe(
-        'text only: the upstream HTML markup verbatim (<i>, &amp;, small caps), cut like citation.',
+        'text only: the upstream HTML markup verbatim (<i>, &amp;, small caps): the whole rendering trimmed, or the exact slice offset and limit select, which never ends inside a tag or character reference.',
       ),
     ...missFields,
   }),
@@ -204,20 +236,18 @@ export const getCitationTool = tool('datacite_get_citation', {
       .boolean()
       .optional()
       .describe(
-        'True when the payload exceeded 100,000 UTF-16 code units: text was cut or a machine document was omitted for download.',
+        'True when citation is a slice short of the whole document: units remain past it (nextOffset), or offset starts it past the beginning.',
       ),
     shown: z
       .number()
       .optional()
-      .describe(
-        "UTF-16 code units of DataCite's payload kept inline; zero for an oversized machine document, or the units text and citationHtml derive from.",
-      ),
-    cap: z.number().optional().describe('The character cap applied: 100,000.'),
+      .describe('UTF-16 code units in this slice (for text, of the HTML in citationHtml).'),
+    cap: z.number().optional().describe('The limit applied, in UTF-16 code units.'),
     notice: z
       .string()
       .optional()
       .describe(
-        'Set when the style could not be confirmed as distinct from APA, JATS contains empty names or inconsistent years, or the payload exceeded the inline cap (length and retrieval guidance).',
+        'Set when the style could not be confirmed as distinct from APA, JATS contains empty names or inconsistent years, a limit over 1,000,000 was applied as 1,000,000, or citation is a slice of the document (its range and the call that continues it).',
       ),
   },
 
@@ -276,33 +306,35 @@ export const getCitationTool = tool('datacite_get_citation', {
       };
     }
 
+    const notices: string[] = outcome.notice ? [outcome.notice] : [];
+    const limit = applyCount(
+      input.limit,
+      MAX_SLICE_UNITS,
+      'limit',
+      'datacite_get_citation',
+      ctx,
+      notices,
+    );
     const isText = input.format === 'text';
-    if (!isText && outcome.body.length > MAX_PAYLOAD_CHARS) {
-      ctx.enrich.truncated({
-        shown: 0,
-        cap: MAX_PAYLOAD_CHARS,
-        guidance: `${outcome.notice ? `${outcome.notice} ` : ''}The complete ${input.format} document contains ${num(outcome.body.length)} UTF-16 code units, exceeding the ${num(MAX_PAYLOAD_CHARS)} inline cap. No partial document is returned; fetch downloadUrl to retrieve the complete document.`,
-      });
-      return {
-        found: true,
+    const { body } = outcome;
+    const offset = input.offset ?? 0;
+    const { start, end } = sliceDocument(body, offset, limit, isText);
+    const slice = body.slice(start, end);
+    const whole = start === 0 && end === body.length;
+    const nextOffset = end < body.length ? end : undefined;
+    if (whole) {
+      if (notices.length > 0) ctx.enrich.notice(notices.join(' '));
+    } else {
+      const nextCall = {
         doi,
         format: input.format,
-        mediaType: CITATION_FORMATS[input.format],
-        downloadUrl: outcome.downloadUrl,
-        totalCharacters: outcome.body.length,
+        ...(style && { style }),
+        ...(locale && { locale }),
+        limit,
+        offset: end,
       };
-    }
-    const payload = cutAt(outcome.body, MAX_PAYLOAD_CHARS);
-    if (payload.length < outcome.body.length) {
-      ctx.enrich.truncated({
-        shown: payload.length,
-        cap: MAX_PAYLOAD_CHARS,
-        guidance: [outcome.notice, cutNotice(input.format, outcome.body.length, payload.length)]
-          .filter(Boolean)
-          .join(' '),
-      });
-    } else if (outcome.notice) {
-      ctx.enrich.notice(outcome.notice);
+      notices.push(sliceNotice(input.format, body.length, offset, { start, end }, nextCall));
+      ctx.enrich.truncated({ shown: end - start, cap: limit, guidance: notices.join(' ') });
     }
     return {
       found: true,
@@ -311,8 +343,10 @@ export const getCitationTool = tool('datacite_get_citation', {
       mediaType: CITATION_FORMATS[input.format],
       ...(isText && { style: style ?? 'apa' }),
       ...(isText && locale && { locale }),
-      citation: isText ? htmlToText(payload) : payload,
-      ...(isText && { citationHtml: payload.trim() }),
+      citation: isText ? htmlToText(slice) : slice,
+      ...(isText && { citationHtml: whole ? slice.trim() : slice }),
+      ...(!whole && { downloadUrl: outcome.downloadUrl, totalCharacters: body.length }),
+      ...(nextOffset !== undefined && { nextOffset }),
     };
   },
 
@@ -331,6 +365,7 @@ export const getCitationTool = tool('datacite_get_citation', {
       lines.push('', markdownLink('Download complete document', result.downloadUrl));
     if (result.totalCharacters !== undefined)
       lines.push(`**Total characters:** ${num(result.totalCharacters)} (UTF-16 code units)`);
+    if (result.nextOffset !== undefined) lines.push(`**Next offset:** ${result.nextOffset}`);
     if (result.citation !== undefined) {
       lines.push(
         '',

@@ -23,7 +23,7 @@
       "environmentVariables": [
         {
           "name": "DATACITE_CLAMP_LIMITS",
-          "description": "true applies at most 1,000 search rows or 100 graph nodes with a notice; false advertises and enforces strict maxima.",
+          "description": "true applies at most 1,000 search rows, 100 graph nodes, or 1,000,000 datacite_get_citation limit units with a notice; false advertises and enforces strict maxima.",
           "format": "boolean",
           "isRequired": false,
           "default": "true"
@@ -61,7 +61,7 @@
       "environmentVariables": [
         {
           "name": "DATACITE_CLAMP_LIMITS",
-          "description": "true applies at most 1,000 search rows or 100 graph nodes with a notice; false advertises and enforces strict maxima.",
+          "description": "true applies at most 1,000 search rows, 100 graph nodes, or 1,000,000 datacite_get_citation limit units with a notice; false advertises and enforces strict maxima.",
           "format": "boolean",
           "isRequired": false,
           "default": "true"

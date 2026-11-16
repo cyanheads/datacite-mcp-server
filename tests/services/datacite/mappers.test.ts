@@ -373,7 +373,16 @@ describe('mapWork', () => {
       { field: 'creators', shown: 100, total: 120, nextOffset: 100 },
       { field: 'subjects', shown: 100, total: 101, nextOffset: 100 },
       { field: 'geoLocations', shown: 50, total: 60, nextOffset: 50 },
-      { field: 'relatedIdentifiers', shown: 100, total: 130, nextOffset: 100 },
+      {
+        field: 'relatedIdentifiers',
+        shown: 100,
+        total: 130,
+        nextOffset: 100,
+        byRelationType: [
+          { relationType: 'IsPartOf', shown: 50, total: 65, nextOffset: 50 },
+          { relationType: 'Cites', shown: 50, total: 65, nextOffset: 50 },
+        ],
+      },
       { field: 'relatedItems', shown: 25, total: 30, nextOffset: 25 },
     ]);
     expect(work.creators).toHaveLength(RECORD_LIST_CAPS.creators);
@@ -383,6 +392,123 @@ describe('mapWork', () => {
     expect(work.relatedIdentifierCounts).toEqual({ IsPartOf: 65, Cites: 65 });
     expect(work.relatedItems).toHaveLength(25);
     expect(work.geoLocations).toHaveLength(50);
+  });
+
+  describe('relatedIdentifiers by relation type', () => {
+    /** An irregular interleave, with depositor spellings outside the vocabulary mixed in. */
+    const typeAt = (i: number) =>
+      i % 7 === 0 ? 'IsCitedBy' : i % 5 === 0 ? 'isPartOf' : i % 3 === 0 ? 'HasPart' : 'Cites';
+    /** `count` entries typed by `typeAt`, then one Other and one blank-identifier Reviews. */
+    const deposit = (count: number) =>
+      record({
+        relatedIdentifiers: [
+          ...Array.from({ length: count }, (_, i) => ({
+            relationType: typeAt(i),
+            relatedIdentifier: `10.5555/r${i}`,
+          })),
+          { relationType: 'Other', relatedIdentifier: '10.5555/other' },
+          { relationType: 'Reviews', relatedIdentifier: '  ' },
+        ],
+      });
+    const mixed = deposit(250);
+    const ids = (entries: Array<{ relatedIdentifier: string }> | undefined) =>
+      (entries ?? []).map((r) => r.relatedIdentifier);
+
+    it('continues each vocabulary type past the capped prefix from exactly its shown count', () => {
+      const { work, truncatedLists } = mapWork(mixed, undefined);
+      const entry = truncatedLists.find((t) => t.field === 'relatedIdentifiers');
+      const prefix = work.relatedIdentifiers;
+      // Every valid entry in deposit order: the blank-identifier Reviews entry is not one.
+      const deposited = (mixed.attributes.relatedIdentifiers ?? []).filter((r) =>
+        r.relatedIdentifier?.trim(),
+      );
+      expect(entry).toMatchObject({ shown: 100, total: 251, nextOffset: 100 });
+      // Every type with entries past the cap, in relatedIdentifierCounts order; isPartOf is depositor
+      // spelling no relation_types value matches, so it gets no per-type continuation.
+      expect(Object.keys(work.relatedIdentifierCounts)).toEqual([
+        'IsCitedBy',
+        'Cites',
+        'HasPart',
+        'isPartOf',
+        'Other',
+      ]);
+      expect(work.relatedIdentifierCounts).toEqual({
+        IsCitedBy: 36,
+        Cites: 114,
+        HasPart: 58,
+        isPartOf: 42,
+        Other: 1,
+      });
+      // The first 100 deposits hold 15 IsCitedBy, 45 Cites, 23 HasPart, and no Other.
+      expect(entry?.byRelationType).toEqual([
+        { relationType: 'IsCitedBy', shown: 15, total: 36, nextOffset: 15 },
+        { relationType: 'Cites', shown: 45, total: 114, nextOffset: 45 },
+        { relationType: 'HasPart', shown: 23, total: 58, nextOffset: 23 },
+        { relationType: 'Other', shown: 0, total: 1, nextOffset: 0 },
+      ]);
+      for (const typed of entry?.byRelationType ?? []) {
+        const inPrefix = ids(prefix.filter((r) => r.relationType === typed.relationType));
+        const ofType = deposited
+          .filter((r) => r.relationType === typed.relationType)
+          .map((r) => r.relatedIdentifier);
+        expect(inPrefix).toHaveLength(typed.shown);
+        const page = mapWork(mixed, undefined, {
+          list: 'relatedIdentifiers',
+          offset: typed.nextOffset,
+          relationTypes: [typed.relationType],
+        });
+        const filteredAll = mapWork(mixed, undefined, {
+          list: 'relatedIdentifiers',
+          offset: 0,
+          relationTypes: [typed.relationType],
+        });
+        // The shown prefix is exactly the first `shown` entries of the filtered list, so the
+        // continuation neither repeats nor skips one.
+        expect(ids(filteredAll.work.relatedIdentifiers).slice(0, typed.shown)).toEqual(inPrefix);
+        expect(ids(page.work.relatedIdentifiers)[0]).toBe(ofType[typed.shown]);
+        expect(page.listPage).toMatchObject({
+          list: 'relatedIdentifiers',
+          relationTypes: [typed.relationType],
+          offset: typed.nextOffset,
+          total: typed.total,
+        });
+      }
+    });
+
+    it('filters before paging, in deposit order, and leaves the counts and other lists whole', () => {
+      // 400 deposits hold 149 HasPart or IsCitedBy entries: more than one page from offset 30.
+      const long = deposit(400);
+      const all = mapWork(long, undefined);
+      const selection = {
+        list: 'relatedIdentifiers',
+        relationTypes: ['HasPart', 'IsCitedBy'],
+      } as const;
+      const page = mapWork(long, undefined, { ...selection, offset: 30 });
+      const expected = Array.from({ length: 400 }, (_, i) => i)
+        .filter((i) => typeAt(i) === 'HasPart' || typeAt(i) === 'IsCitedBy')
+        .map((i) => `10.5555/r${i}`);
+      expect(expected).toHaveLength(149);
+      expect(ids(page.work.relatedIdentifiers)).toEqual(expected.slice(30, 130));
+      expect(page.listPage).toEqual({ ...selection, offset: 30, total: 149, nextOffset: 130 });
+      expect(page.work.relatedIdentifierCounts).toEqual(all.work.relatedIdentifierCounts);
+      expect(page.truncatedLists).toEqual([]);
+      // The second page continues the filtered list from nextOffset to its end.
+      const second = mapWork(long, undefined, { ...selection, offset: 130 });
+      expect(ids(second.work.relatedIdentifiers)).toEqual(expected.slice(130));
+      expect(second.listPage).toEqual({ ...selection, offset: 130, total: 149 });
+      const none = mapWork(mixed, undefined, {
+        list: 'relatedIdentifiers',
+        offset: 0,
+        relationTypes: ['IsDerivedFrom'],
+      });
+      expect(none.work.relatedIdentifiers).toEqual([]);
+      expect(none.listPage).toEqual({
+        list: 'relatedIdentifiers',
+        relationTypes: ['IsDerivedFrom'],
+        offset: 0,
+        total: 0,
+      });
+    });
   });
 
   it('drops list entries missing their identifying field and counts only the kept relations', () => {

@@ -112,11 +112,11 @@ const RELATION_TYPE_TABLE = [
   {
     id: 'Other',
     group: 'other',
-    note: 'Not a schema value; seen in a handful of records.',
+    note: 'No inverse in the schema; added in schema 4.7 for a relation no other type fits.',
   },
 ] as const satisfies readonly RelationTypeEntry[];
 
-/** The DataCite schema relationTypes plus the non-schema `Other`, each with its inverse and group. */
+/** The 39 relationTypes of DataCite schema 4.7 (`Other` added in 4.7), each with its inverse and group. */
 export const RELATION_TYPES: readonly RelationTypeEntry[] = RELATION_TYPE_TABLE;
 
 export type RelationTypeId = (typeof RELATION_TYPE_TABLE)[number]['id'];

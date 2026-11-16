@@ -530,8 +530,31 @@ describe('declared errors', () => {
     const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
     expect(error.message).toContain('(line 1, column 12)');
     expect(contentText(result)).toContain(
-      'Recovery: Fix the query syntax, or search a plain repository name',
+      'Recovery: Fix the query syntax or shorten and simplify its wildcard terms, or search a plain repository name',
     );
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('reports a wildcard term too complex to run as invalid_query naming the wildcard, its body off the wire', async () => {
+    const { http } = initServices([
+      {
+        match: repositories,
+        respond: fixtureResponse('datacite/errors/too-complex-query.json', { status: 400 }),
+      },
+    ]);
+    const result = await run({ query: 'name:*glacier*' });
+    const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toBe(
+      'DataCite declined a wildcard term in the query as too complex to run: shorten or simplify it.',
+    );
+    expect(error.data?.recovery).toEqual({
+      hint: 'Fix the query syntax or shorten and simplify its wildcard terms, or search a plain repository name; datacite_list_reference topic query_syntax lists operators.',
+    });
+    expect(contentText(result)).toContain('too complex to run');
+    for (const upstream of ['too_complex', 'Determinizing', 'automaton']) {
+      expect(JSON.stringify(result.structuredContent)).not.toContain(upstream);
+      expect(contentText(result)).not.toContain(upstream);
+    }
     expect(http.calls).toHaveLength(1);
   });
 
@@ -549,7 +572,7 @@ describe('declared errors', () => {
     expect(error.message).toContain('(line 1, column 19)');
     expect(contentText(result)).toContain('(line 1, column 19)');
     expect(contentText(result)).toContain(
-      'Recovery: Fix the query syntax, or search a plain repository name',
+      'Recovery: Fix the query syntax or shorten and simplify its wildcard terms, or search a plain repository name',
     );
     expect(http.calls).toHaveLength(1);
   });
@@ -601,7 +624,7 @@ describe('declared errors', () => {
       const error = expectToolError(result, 'rate_limited', JsonRpcErrorCode.RateLimited);
       expect(error.data).toMatchObject({ retryAfter: 30, retryable: true });
       expect(error.message).toContain('retry in 30 seconds');
-      expect(contentText(result)).toContain('(reason rate_limited · retryable)');
+      expect(contentText(result)).toContain('(reason rate_limited · retryable · retry after 30)');
       expect(http.calls).toHaveLength(1);
     },
   );

@@ -3,7 +3,7 @@
  * verdict that catches the upstream's silent APA fallback: a requested style
  * rendering identical to the DOI's default is settled by rendering a pinned
  * canary record in the same style. Verdicts depend on the style id alone and are
- * cached for 24 h.
+ * cached for 24 h. Also the slice of a rendered document one call returns.
  * @module services/datacite/citation
  */
 
@@ -14,6 +14,7 @@ import {
   STYLE_CANARY_DOI,
 } from '@/services/reference/citation.js';
 import type { DataCiteService, NegotiationResult, StyleVerdict } from './datacite-service.js';
+import { markupAround } from './html-text.js';
 import { jatsNotice } from './jats-notice.js';
 
 const VERDICT_TTL_MS = 24 * 60 * 60_000;
@@ -148,4 +149,51 @@ export async function renderCitation(
   }
   remember('unsupported');
   return { kind: 'unsupported_style' };
+}
+
+/** `[start, end)` of one slice of a document, in UTF-16 units. */
+export interface DocumentSlice {
+  end: number;
+  start: number;
+}
+
+const isHighSurrogate = (code: number): boolean => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number): boolean => code >= 0xdc00 && code <= 0xdfff;
+
+/**
+ * The unit a boundary at `position` would split: in `html`, a tag or character
+ * reference (which may hold a surrogate pair); otherwise, or outside one, a
+ * surrogate pair.
+ */
+function unitAround(body: string, position: number, html: boolean): DocumentSlice | undefined {
+  const markup = html ? markupAround(body, position) : undefined;
+  if (markup) return markup;
+  return position > 0 &&
+    isLowSurrogate(body.charCodeAt(position)) &&
+    isHighSurrogate(body.charCodeAt(position - 1))
+    ? { start: position - 1, end: position + 1 }
+    : undefined;
+}
+
+/**
+ * The slice `offset` and a positive `limit` select from `body`, in UTF-16 units.
+ * No boundary falls between the halves of a surrogate pair or, in `html`, inside
+ * a tag or character reference: it moves back to where that unit starts. Where
+ * moving the end back would empty the slice, the slice takes the whole unit
+ * instead, so a walk that continues from each `end` always advances and its
+ * slices join into the document. An offset at or past the end selects the
+ * empty slice there.
+ */
+export function sliceDocument(
+  body: string,
+  offset: number,
+  limit: number,
+  html: boolean,
+): DocumentSlice {
+  if (offset >= body.length) return { start: body.length, end: body.length };
+  const start = unitAround(body, offset, html)?.start ?? offset;
+  const end = Math.min(body.length, start + limit);
+  const split = end < body.length ? unitAround(body, end, html) : undefined;
+  if (!split) return { start, end };
+  return { start, end: split.start > start ? split.start : split.end };
 }

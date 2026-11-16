@@ -173,9 +173,10 @@ describe('slash-run identifiers at the tool boundary', () => {
     'rejects a $field of $prefix plus 100,000 slashes before normalizing it, without blocking or a request',
     async ({ field, prefix }) => {
       const { http } = initServices([]);
-      const start = performance.now();
+      const start = process.threadCpuUsage();
       const result = await run(searchWorksTool, { [field]: `${prefix}${slashes}x` });
-      expect(performance.now() - start).toBeLessThan(250);
+      const cpu = process.threadCpuUsage(start);
+      expect(cpu.user + cpu.system).toBeLessThan(250_000);
       const error = toolError(result);
       expect(error.code).toBe(JsonRpcErrorCode.InvalidParams);
       expect(error.data?.reason).toBe('invalid_arguments');

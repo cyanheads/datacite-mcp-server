@@ -11,8 +11,9 @@ import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { mapWork } from '@/services/datacite/mappers.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
+import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
 import { missFields, missGuidance } from './_miss.js';
-import { blankAsUnset, doiString } from './_schemas.js';
+import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
 import { descriptionQuote, flattenInline, num, orNA, urlLink } from './_text.js';
 
 const PersonSchema = z
@@ -55,6 +56,8 @@ const PersonSchema = z
   .describe('A creator or contributor.');
 
 const found = (description: string) => `${description} Found arm only.`;
+/** A relation_types value as the input takes it back: vocabulary ids only, so nothing to escape. */
+const typesArg = (types: readonly string[]) => `[${types.map((t) => `"${t}"`).join(', ')}]`;
 const recordLists = [
   'creators',
   'contributors',
@@ -68,17 +71,25 @@ const recordLists = [
 export const getWorkTool = tool('datacite_get_work', {
   title: 'Get DataCite work',
   description:
-    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with exact list/offset continuation recipes; select a list to retrieve later entries without losing the other metadata. datacite_trace_relations maps a bounded graph (at most 100 nodes and 1,000 edges). A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
+    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with exact list/offset continuation recipes; select a list to retrieve later entries without losing the other metadata, or relation_types to page only the related identifiers of chosen relation types. datacite_trace_relations maps a bounded graph (at most 100 nodes and 1,000 edges). A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
     {
       reason: 'offset_without_list',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'An offset is supplied without a selected list.',
+      when: 'An offset is supplied without list or relation_types.',
       severity: 'notice',
       recovery:
-        'Pass list naming the capped record list to page, or omit offset to fetch the default record.',
+        'Pass list naming the capped record list to page (relation_types pages relatedIdentifiers by relation type), or omit offset to fetch the default record.',
+    },
+    {
+      reason: 'relation_types_other_list',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'relation_types is supplied with list set to a list other than relatedIdentifiers.',
+      severity: 'notice',
+      recovery:
+        'Omit list or set it to relatedIdentifiers, the only list relation_types filters; page the other list in a separate call without relation_types.',
     },
     {
       reason: 'invalid_doi',
@@ -101,10 +112,16 @@ export const getWorkTool = tool('datacite_get_work', {
 
   input: z.object({
     list: blankAsUnset(z.enum(recordLists).optional()).describe(
-      'One capped list to page in deposit order; other record fields keep their default caps.',
+      'One capped list to page in deposit order; other record fields keep their default caps. relation_types selects relatedIdentifiers.',
+    ),
+    relation_types: optionalArray(
+      enumish(RELATION_TYPE_IDS, resolveRelationType),
+      RELATION_TYPE_IDS.length,
+    ).describe(
+      "Page only the relatedIdentifiers entries asserting these relation types (IsCitedBy, IsDerivedFrom, HasPart, IsSupplementTo, …), any case, matched exactly against the record's own deposited types, in deposit order; offset and listPage then index the filtered entries. Selects list relatedIdentifiers; another list is rejected. relatedIdentifierCounts stays the whole record's. Values: datacite_list_reference topic relation_types.",
     ),
     offset: blankAsUnset(z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()).describe(
-      'Zero-based offset into valid mapped entries of list. Defaults to zero with list; requires list.',
+      'Zero-based offset into valid mapped entries of list, after relation_types. Defaults to zero with list or relation_types; requires one of them.',
     ),
     doi: doiString().describe(
       'The DOI, e.g. 10.5061/dryad.234: 10., a 4–9 digit registrant, a slash, and a suffix. Accepted bare, with doi: or info:doi/ prefixes, as a doi.org / dx.doi.org URL, or %2F-encoded; case-insensitive.',
@@ -115,12 +132,18 @@ export const getWorkTool = tool('datacite_get_work', {
     listPage: z
       .object({
         list: z.enum(recordLists).describe('The selected record list.'),
+        relationTypes: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'The relation_types applied, deduplicated; offset, total, and nextOffset count only the entries asserting them.',
+          ),
         offset: z.number().describe('Requested zero-based offset into valid mapped entries.'),
         total: z.number().describe('Total valid mapped entries before capping.'),
         nextOffset: z
           .number()
           .optional()
-          .describe('Next offset for this same list and DOI; absent at the end.'),
+          .describe('Next offset for this same list, relation_types, and DOI; absent at the end.'),
       })
       .optional()
       .describe(
@@ -377,12 +400,18 @@ export const getWorkTool = tool('datacite_get_work', {
       )
       .optional()
       .describe(
-        found('Related identifiers, capped at 100 (full counts in relatedIdentifierCounts).'),
+        found(
+          'Related identifiers, capped at 100 (full counts in relatedIdentifierCounts); with relation_types, only the entries asserting those types.',
+        ),
       ),
     relatedIdentifierCounts: z
       .record(z.string(), z.number())
       .optional()
-      .describe(found('relationType → full count of related identifiers, before the cap.')),
+      .describe(
+        found(
+          "relationType → full count of the record's related identifiers, before the cap and any relation_types filter.",
+        ),
+      ),
     relatedItems: z
       .array(
         z
@@ -457,6 +486,25 @@ export const getWorkTool = tool('datacite_get_work', {
             nextOffset: z
               .number()
               .describe('First unread offset; call again with list set to field and this offset.'),
+            byRelationType: z
+              .array(
+                z
+                  .object({
+                    relationType: z.string().describe('A relation type with entries past the cap.'),
+                    shown: z.number().describe('Entries of this type returned.'),
+                    total: z.number().describe('Entries of this type in the record.'),
+                    nextOffset: z
+                      .number()
+                      .describe(
+                        'First unread offset among entries of this type; call again with list relatedIdentifiers, relation_types [relationType], and this offset.',
+                      ),
+                  })
+                  .describe('Where one relation type continues.'),
+              )
+              .optional()
+              .describe(
+                'relatedIdentifiers only: each relation type with entries past the cap, in relatedIdentifierCounts order. A deposited type outside the relation_types vocabulary has none.',
+              ),
           })
           .describe('One capped list.'),
       )
@@ -466,12 +514,30 @@ export const getWorkTool = tool('datacite_get_work', {
   enrichmentTrailer: {
     truncatedLists: {
       render: (lists) =>
-        `**Truncated lists:** ${(lists ?? []).map((l) => `${l.field}: ${num(l.shown)} of ${num(l.total)}; continue datacite_get_work with the same doi, list: "${l.field}", offset: ${l.nextOffset}`).join('; ')}`,
+        `**Truncated lists:** ${(lists ?? [])
+          .map((l) => {
+            const continuation = `${l.field}: ${num(l.shown)} of ${num(l.total)}; continue datacite_get_work with the same doi, list: "${l.field}", offset: ${l.nextOffset}`;
+            if (!l.byRelationType?.length) return continuation;
+            const perType = l.byRelationType.map(
+              (t) =>
+                `${t.relationType} (${num(t.shown)} of ${num(t.total)} shown) list: "${l.field}", relation_types: ${typesArg([t.relationType])}${t.nextOffset > 0 ? `, offset: ${t.nextOffset}` : ''}`,
+            );
+            return `${continuation}; or one relation type at a time with the same doi: ${perType.join('; ')}`;
+          })
+          .join('; ')}`,
     },
   },
 
   async handler(input, ctx) {
-    if (input.offset !== undefined && !input.list) throw ctx.fail('offset_without_list');
+    const relationTypes = input.relation_types && [...new Set(input.relation_types)];
+    const list = input.list ?? (relationTypes && 'relatedIdentifiers');
+    if (relationTypes && list !== 'relatedIdentifiers') {
+      throw ctx.fail(
+        'relation_types_other_list',
+        `relation_types filters relatedIdentifiers only, but list is ${list}.`,
+      );
+    }
+    if (input.offset !== undefined && !list) throw ctx.fail('offset_without_list');
     const doi = normalizeDoi(input.doi);
     if (!doi) {
       throw ctx.fail(
@@ -488,7 +554,9 @@ export const getWorkTool = tool('datacite_get_work', {
     const { work, truncatedLists, listPage, omittedGeoLocationPolygons } = mapWork(
       hit.record,
       hit.client,
-      input.list ? { list: input.list, offset: input.offset ?? 0 } : undefined,
+      list
+        ? { list, offset: input.offset ?? 0, ...(relationTypes && { relationTypes }) }
+        : undefined,
     );
     if (truncatedLists.length > 0) ctx.enrich({ truncatedLists });
     if (omittedGeoLocationPolygons > 0)
@@ -509,8 +577,9 @@ export const getWorkTool = tool('datacite_get_work', {
     if (result.missReason) lines.push(`**Miss reason:** ${result.missReason}`);
     if (result.listPage) {
       const p = result.listPage;
+      const types = p.relationTypes && typesArg(p.relationTypes);
       lines.push(
-        `**List page:** ${p.list} · offset ${p.offset} · total ${p.total}${p.nextOffset === undefined ? ' · end of list' : ` · next offset ${p.nextOffset}; continue datacite_get_work with doi: "${flattenInline(result.doi)}", list: "${p.list}", offset: ${p.nextOffset}`}`,
+        `**List page:** ${p.list}${types ? ` · relation_types ${types}` : ''} · offset ${p.offset} · total ${p.total}${p.nextOffset === undefined ? ' · end of list' : ` · next offset ${p.nextOffset}; continue datacite_get_work with doi: "${flattenInline(result.doi)}", list: "${p.list}"${types ? `, relation_types: ${types}` : ''}, offset: ${p.nextOffset}`}`,
       );
     }
     if (result.registrationAgency)

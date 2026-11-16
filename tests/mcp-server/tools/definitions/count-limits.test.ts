@@ -6,6 +6,7 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyCount } from '@/mcp-server/tools/definitions/_counts.js';
+import { getCitationTool } from '@/mcp-server/tools/definitions/get-citation.tool.js';
 import { searchRepositoriesTool } from '@/mcp-server/tools/definitions/search-repositories.tool.js';
 import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.tool.js';
 import { traceRelationsTool } from '@/mcp-server/tools/definitions/trace-relations.tool.js';
@@ -75,9 +76,37 @@ const cases = [
     fallback: 50,
     required: { doi: '10.5555/test' },
   },
+  {
+    tool: getCitationTool,
+    field: 'limit',
+    cap: 1_000_000,
+    fallback: 100_000,
+    required: { doi: '10.5555/test' },
+  },
 ] as const;
 
 describe('count schemas', () => {
+  it('advertises and enforces the 1,000,000-unit citation limit as a strict maximum with clamping off', async () => {
+    vi.resetModules();
+    vi.stubEnv('DATACITE_CLAMP_LIMITS', 'false');
+    try {
+      const { getCitationTool: strictTool } = await import(
+        '@/mcp-server/tools/definitions/get-citation.tool.js'
+      );
+      expect(z.toJSONSchema(strictTool.input, { io: 'input' }).properties?.limit).toMatchObject({
+        maximum: 1_000_000,
+        minimum: 1,
+        multipleOf: 1,
+        default: 100_000,
+      });
+      const doi = '10.5555/test';
+      expect(strictTool.input.safeParse({ doi, limit: 1_000_000 }).success).toBe(true);
+      expect(strictTool.input.safeParse({ doi, limit: 1_000_001 }).success).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
   for (const { tool, field, cap, fallback, required } of cases) {
     it(`${tool.name} advertises an unbounded whole positive count`, () => {
       const schema = z.toJSONSchema(tool.input, { io: 'input' });

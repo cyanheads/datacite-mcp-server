@@ -23,7 +23,9 @@ import { json } from './harness.js';
  *   `[503] No server available`), `negotiation-404.json`,
  *   `negotiation-400-unrenderable.json` (HTTP 400 for the default text of a
  *   record DataCite cannot render), `negotiation-500-unrenderable.json` (HTTP
- *   500 for codemeta on such a record, its body claiming `"status":400`).
+ *   500 for codemeta on such a record, its body claiming `"status":400`),
+ *   `too-complex-query.json` (HTTP 400 `too_complex_to_determinize_exception`
+ *   for a long `*…*` wildcard term, on `/dois` and `/repositories` alike).
  * - `datacite/works/` — `search-glacier.json` (3 rows + included client
  *   `gbif.col` → provider `gbif`), `facets.json` (every mapped facet group,
  *   `total` 135809087), `page-ceiling-clamped.json` (page 101 requested,

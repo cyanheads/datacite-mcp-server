@@ -31,6 +31,7 @@ import {
   upstreamErrorBody,
   userAgent,
 } from '@/services/http/upstream-client.js';
+import { SORT_ORDERS } from '@/services/reference/vocabularies.js';
 import { initRorService, shutdownRorService } from '@/services/ror/ror-service.js';
 import { recordDoi } from './mappers.js';
 import { anyPhrase, doiQuery } from './query-builder.js';
@@ -73,6 +74,17 @@ const HYDRATE_BATCH = 10;
  * next call; two still halves the time for small records.
  */
 const HYDRATE_CONCURRENCY = 2;
+
+/**
+ * The largest negotiated document or work record the response cache keeps, in
+ * retained bytes, so a document read one slice at a time is rendered upstream
+ * once per cache lifetime, and a record whose lists are paged is fetched once.
+ * The largest real export measured, a GBIF download's DataCite JSON, holds
+ * 7,843,552 bytes (all ASCII, one byte per unit); that download's own record,
+ * with 57,375 related identifiers, holds about 5.9 MB. This is a fifth of the
+ * cache's budget.
+ */
+const LARGE_RESPONSE_CACHE_BYTES = 10_000_000;
 
 /** What {@link DataCiteService.hydrate} returned. */
 export interface Hydration {
@@ -171,6 +183,70 @@ function buildUrl(path: string, params: Array<[string, string | number | undefin
 const joined = (values?: readonly string[]): string | undefined =>
   values?.length ? values.join(',') : undefined;
 
+/**
+ * The longest request URL DataCite serves, measured on `/dois`: an 8,201-byte URL
+ * was answered, and one of 8,202 bytes refused with HTTP 414.
+ */
+const MAX_URL_CHARS = 8201;
+
+/**
+ * The cursor token {@link worksSearchFits} leaves room for. DataCite builds it
+ * from a walk position and a DOI; the tokens seen run under 100 characters.
+ */
+const CURSOR_TOKEN_ALLOWANCE = 512;
+
+/** The longest upstream sort value. */
+const LONGEST_SORT = Object.values(SORT_ORDERS).reduce((longest, sort) =>
+  sort.length > longest.length ? sort : longest,
+);
+
+/** The `/dois` URL of one search page. */
+function worksSearchUrl(request: Omit<WorkSearchRequest, 'callerQuery'>): string {
+  const { filters } = request;
+  return buildUrl('/dois', [
+    ['query', request.query],
+    ['resource-type-id', joined(filters.resourceTypeIds)],
+    ['client-id', joined(filters.clientIds)],
+    ['provider-id', joined(filters.providerIds)],
+    ['affiliation-id', filters.affiliationId],
+    ['affiliation-country', filters.affiliationCountry],
+    ['funded-by', filters.fundedBy],
+    [
+      'include-funder-child-organizations',
+      filters.includeFunderChildOrganizations ? 'true' : undefined,
+    ],
+    ['license', joined(filters.licenses)],
+    ['has-citations', filters.minCitations],
+    ['sort', request.sort],
+    ['page[size]', request.size],
+    'cursor' in request.page
+      ? ['page[cursor]', request.page.cursor]
+      : ['page[number]', request.page.number],
+    ['disable-facets', request.facets ? 'false' : undefined],
+    ['fields[dois]', SEARCH_FIELDS],
+    ['include', 'client'],
+    ['affiliation', 'true'],
+    ['publisher', 'true'],
+  ]);
+}
+
+/**
+ * Whether every page of a `/dois` search for `query` and `filters` fits
+ * {@link MAX_URL_CHARS}: the URL is measured at the longest sort, a four-digit
+ * page size (DataCite serves at most 1,000 rows), facets on, and a cursor token of
+ * {@link CURSOR_TOKEN_ALLOWANCE} characters. It reads only what a work cursor
+ * fingerprints, so every page of a walk gets the same answer.
+ */
+export const worksSearchFits = (query: string, filters: WorkSearchFilters): boolean =>
+  worksSearchUrl({
+    query,
+    filters,
+    sort: LONGEST_SORT,
+    size: 1000,
+    facets: true,
+    page: { cursor: 'x'.repeat(CURSOR_TOKEN_ALLOWANCE) },
+  }).length <= MAX_URL_CHARS;
+
 /** A `/dois` page of the records matching a composed query, newest first. */
 const queryUrl = (query: string, fields: string, size: number): string =>
   buildUrl('/dois', [
@@ -183,9 +259,11 @@ const queryUrl = (query: string, fields: string, size: number): string =>
   ]);
 
 /**
- * Whether an upstream 400 is a query-string parse failure: a `parse_exception`,
- * a `token_mgr_error` lexical error (an unterminated quote or regex), or a
- * `failed to parse` value. Reads the body the HTTP boundary kept server-side.
+ * Whether an upstream 400 rejects the query string itself: a `parse_exception`,
+ * a `token_mgr_error` lexical error (an unterminated quote or regex), a
+ * `failed to parse` value, or a `too_complex_to_determinize_exception` (a
+ * wildcard term the upstream refuses to compile). Reads the body the HTTP
+ * boundary kept server-side.
  */
 function isQueryParseError(error: unknown): error is McpError {
   if (!(error instanceof McpError) || error.data?.status !== 400) return false;
@@ -193,7 +271,8 @@ function isQueryParseError(error: unknown): error is McpError {
   return (
     body.includes('parse_exception') ||
     body.includes('token_mgr_error') ||
-    body.includes('failed to parse')
+    body.includes('failed to parse') ||
+    body.includes('too_complex_to_determinize_exception')
   );
 }
 
@@ -241,36 +320,20 @@ export class DataCiteService {
 
   /** One page of a `/dois` search, with the included client objects. */
   searchWorks(request: WorkSearchRequest, ctx: Context): Promise<RawDoiList> {
-    const { filters } = request;
-    const url = buildUrl('/dois', [
-      ['query', request.query],
-      ['resource-type-id', joined(filters.resourceTypeIds)],
-      ['client-id', joined(filters.clientIds)],
-      ['provider-id', joined(filters.providerIds)],
-      ['affiliation-id', filters.affiliationId],
-      ['affiliation-country', filters.affiliationCountry],
-      ['funded-by', filters.fundedBy],
-      [
-        'include-funder-child-organizations',
-        filters.includeFunderChildOrganizations ? 'true' : undefined,
-      ],
-      ['license', joined(filters.licenses)],
-      ['has-citations', filters.minCitations],
-      ['sort', request.sort],
-      ['page[size]', request.size],
-      'cursor' in request.page
-        ? ['page[cursor]', request.page.cursor]
-        : ['page[number]', request.page.number],
-      ['disable-facets', request.facets ? 'false' : undefined],
-      ['fields[dois]', SEARCH_FIELDS],
-      ['include', 'client'],
-      ['affiliation', 'true'],
-      ['publisher', 'true'],
-    ]);
-    return this.search<RawDoiList>(url, 'searchWorks', 5 * MINUTE, request.callerQuery, ctx);
+    return this.search<RawDoiList>(
+      worksSearchUrl(request),
+      'searchWorks',
+      5 * MINUTE,
+      request.callerQuery,
+      ctx,
+    );
   }
 
-  /** The full public record for one DOI and its repository, or `undefined` when DataCite holds none. */
+  /**
+   * The full public record for one DOI and its repository, or `undefined` when
+   * DataCite holds none. Cached up to {@link LARGE_RESPONSE_CACHE_BYTES}, past
+   * the default ceiling, so paging a long record's lists reads it once.
+   */
   async getWork(
     doi: string,
     ctx: Context,
@@ -283,7 +346,9 @@ export class DataCiteService {
       ['publisher', 'true'],
       ['page[size]', 1],
     ]);
-    const list = await this.getJson<RawDoiList>(url, 'getWork', 15 * MINUTE, ctx);
+    const list = await this.getJson<RawDoiList>(url, 'getWork', 15 * MINUTE, ctx, {
+      maxCachedBytes: LARGE_RESPONSE_CACHE_BYTES,
+    });
     const record = list.data.find((item) => item.attributes.doi?.toLowerCase() === doi);
     if (!record) return;
     const clientId = record.relationships?.client?.data?.id;
@@ -446,7 +511,8 @@ export class DataCiteService {
    * DataCite answers 400 only when its renderer fails on the record. A 5xx still
    * failing after retries carries `render_failed`, because DataCite answers both
    * a renderer fault on one record and a brief outage with 5xx. Its data names
-   * the status only; the upstream body never reaches the caller.
+   * the status only; the upstream body never reaches the caller. A rendering is
+   * cached up to {@link LARGE_RESPONSE_CACHE_BYTES}, past the default ceiling.
    */
   async negotiate(
     doi: string,
@@ -464,6 +530,7 @@ export class DataCiteService {
           url,
           operation: 'negotiate',
           acceptStatuses: [200, 204, 400, 404],
+          maxCachedBytes: LARGE_RESPONSE_CACHE_BYTES,
           ttlMs: (status) => (status === 200 ? 60 * MINUTE : 5 * MINUTE),
         },
         ctx,
@@ -496,7 +563,7 @@ export class DataCiteService {
     operation: string,
     ttlMs: number,
     ctx: Context,
-    options: Pick<UpstreamRequest, 'attempts' | 'signal'> = {},
+    options: Pick<UpstreamRequest, 'attempts' | 'maxCachedBytes' | 'signal'> = {},
   ): Promise<T> {
     return this.client.get(
       { url, operation, acceptStatuses: [200], ttlMs: () => ttlMs, ...options },
@@ -535,7 +602,15 @@ export class DataCiteService {
           { cause: error },
         );
       }
-      const position = /line (\d+), column (\d+)/.exec(upstreamErrorBody(error) ?? '');
+      const body = upstreamErrorBody(error) ?? '';
+      if (body.includes('too_complex_to_determinize_exception')) {
+        throw validationError(
+          'DataCite declined a wildcard term in the query as too complex to run: shorten or simplify it.',
+          { reason: 'invalid_query' },
+          { cause: error },
+        );
+      }
+      const position = /line (\d+), column (\d+)/.exec(body);
       throw validationError(
         `DataCite could not parse the query syntax${position ? ` (line ${position[1]}, column ${position[2]})` : ''}: check for unbalanced parentheses or quotes, a dangling operator, or an unescaped reserved character.`,
         { reason: 'invalid_query' },

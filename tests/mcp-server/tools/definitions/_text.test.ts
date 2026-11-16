@@ -48,6 +48,11 @@ describe('literal Markdown roundtrips', () => {
     ]);
   });
 
+  /**
+   * Timeout 0: the body is synchronous, so vitest can't interrupt it and only compares wall time
+   * after it returns — a per-test timeout guards no hang and fails linear work on a loaded machine.
+   * The per-call thread-CPU bound is what stops a super-linear regression.
+   */
   it('bounds literal rendering thread CPU across 64-fold text growth', () => {
     for (const [unit, escapedUnit] of [
       ['[[[', '\\[\\[\\['],
@@ -94,7 +99,7 @@ describe('literal Markdown roundtrips', () => {
         { inlineSamples, quoteSamples },
       );
     }
-  });
+  }, 0);
   it.each([
     'Obs_*StationName*',
     '`code` [x](https://x.test)',
@@ -186,9 +191,10 @@ describe('fenced', () => {
 
   it('trims trailing whitespace in linear time when a long whitespace run sits mid-payload', () => {
     const payload = `${' '.repeat(100_000)}x`;
-    const start = performance.now();
+    const start = process.threadCpuUsage();
     expect(fenced(`${payload} \n\t`)).toBe(`\`\`\`\n${payload} \n\t\n\`\`\``);
-    expect(performance.now() - start).toBeLessThan(250);
+    const cpu = process.threadCpuUsage(start);
+    expect(cpu.user + cpu.system).toBeLessThan(250_000);
   });
 
   it('sizes the fence over 200,000 backtick runs without exhausting the stack', () => {

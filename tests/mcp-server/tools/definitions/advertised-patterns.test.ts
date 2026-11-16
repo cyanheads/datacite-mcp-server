@@ -191,8 +191,8 @@ describe('advertised identifier patterns', () => {
       // Keep the slope below Bun's large-input regex execution-mode boundary.
       expect(times[6]! / times[0]!).toBeLessThan(256);
     }
-    // Thread CPU above bounds the work; allow wall time for descheduling in the full suite.
-  }, 20_000);
+    // Thread CPU above bounds the work. Timeout 0: vitest can't interrupt a synchronous body, so a wall-time limit only fails linear work on a loaded machine.
+  }, 0);
   it('cover every patterned input across the tool surface', () => {
     const patterned = TOOLS.flatMap((tool) =>
       Object.entries(properties(tool))

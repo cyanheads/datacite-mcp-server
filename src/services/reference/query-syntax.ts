@@ -20,7 +20,11 @@ export const VERIFIED_QUERY_FIELDS: ReadonlyArray<{ description: string; value: 
   { value: 'descriptions.description', description: 'Abstract and other descriptions.' },
   { value: 'fundingReferences.funderName', description: 'Funder name.' },
   { value: 'fundingReferences.awardNumber', description: 'Grant or award number.' },
-  { value: 'geoLocations.geoLocationPlace', description: 'Free-text place name.' },
+  {
+    value: 'geoLocations.geoLocationPlace',
+    description:
+      'Place name exactly as deposited, case-sensitive: "Svalbard" matches neither "svalbard" nor "Svalbard, Norway". Wildcards match a substring, with spaces escaped (geoLocations.geoLocationPlace:*Gulf\\ of\\ Mexico*).',
+  },
   { value: 'language', description: 'ISO 639-1 language code.' },
   { value: 'publicationYear', description: 'Year; ranges as publicationYear:[2020 TO 2022].' },
   {

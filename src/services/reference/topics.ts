@@ -127,9 +127,10 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
         notes: [
           'Edges returned by datacite_trace_relations keep the direction and relationType the asserting record gave; an edge is never inverted into its inverse type.',
           "The relation_types input of datacite_trace_relations reads each type from the traced DOI's side: HasPart keeps the DOI's own HasPart assertions and the records asserting IsPartOf it. IsPublishedIn and Other have no inverse and match on either side.",
+          "The relation_types input of datacite_get_work pages the record's own relatedIdentifiers asserting those types, in deposit order; a type deposited in another spelling, such as isCitedBy, matches none of these values.",
           'Citation counts count IsCitedBy, IsReferencedBy, and IsSupplementTo on the cited DOI, or Cites, References, and IsSupplementedBy on the citing one.',
           'Event Data carries only the citations group (Cites, IsCitedBy, References, IsReferencedBy, IsSupplementTo, IsSupplementedBy).',
-          'relatedIdentifiers.relationType in query syntax is case-sensitive; the relation_types input of datacite_trace_relations is not.',
+          'relatedIdentifiers.relationType in query syntax is case-sensitive; the relation_types inputs of datacite_trace_relations and datacite_get_work are not.',
         ],
       };
     case 'identifier_types':

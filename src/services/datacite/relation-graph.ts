@@ -145,6 +145,11 @@ export interface TraceResult {
    */
   largeReverse: { root?: number; secondHop?: number };
   /**
+   * The query the root's reverse read sent, relation types included: the search that
+   * lists every record it matched. Absent in Event-Data-only mode, which sends none.
+   */
+  reverseQuery?: string;
+  /**
    * Event Data objects of a non-DataCite root left out because their lookup did not
    * answer in time, so nothing showed them to be DataCite DOIs.
    */
@@ -322,10 +327,11 @@ export async function traceRelations(
   const eventTypes = CITATION_RELATION_TYPES.filter(
     (type) => allowedOut(type) || (rootRecord !== undefined && allowedIn(type)),
   );
+  const reverseQuery = eventOnly ? undefined : reverseRelationQuery([root], reverseTypes);
   const [reverse, events] = await Promise.all([
-    eventOnly
+    reverseQuery === undefined
       ? Promise.resolve<ReverseRecords>({ read: { total: 0, fetched: 0 }, records: [] })
-      : readReverse(service, reverseRelationQuery([root], reverseTypes), ctx),
+      : readReverse(service, reverseQuery, ctx),
     readEvents(
       service,
       root,
@@ -568,6 +574,7 @@ export async function traceRelations(
   return {
     graph,
     available,
+    ...(reverseQuery !== undefined && { reverseQuery }),
     beyondFrontier,
     capBound,
     edgesFound: keptEdges.length,

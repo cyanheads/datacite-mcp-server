@@ -5,6 +5,7 @@
  * @module services/datacite/mappers
  */
 
+import { RELATION_TYPE_IDS, type RelationTypeId } from '@/services/reference/vocabularies.js';
 import { htmlToText } from './html-text.js';
 import { doiUrl, normalizeOrcid, normalizeRor } from './normalize.js';
 import type {
@@ -257,7 +258,18 @@ export const RECORD_LIST_CAPS = {
   geoLocations: 50,
 } as const;
 
+/** Where one relation type's `relatedIdentifiers` continue past the default cap. */
+export interface RelationTypeContinuation {
+  /** First unread offset into the entries of this type alone. */
+  nextOffset: number;
+  relationType: RelationTypeId;
+  shown: number;
+  total: number;
+}
+
 export interface TruncatedList {
+  /** `relatedIdentifiers` only: each vocabulary type with entries past the cap. */
+  byRelationType?: RelationTypeContinuation[];
   field: string;
   nextOffset: number;
   shown: number;
@@ -267,19 +279,40 @@ export interface TruncatedList {
 /** A selectable capped list in a deposited record. */
 export type RecordList = keyof typeof RECORD_LIST_CAPS;
 
-/** Paging of one selected list; offsets address valid mapped entries. */
+/** Paging of one selected list; offsets address valid mapped entries (after `relationTypes`). */
 export interface RecordListPage {
   list: RecordList;
   nextOffset?: number;
   offset: number;
+  /** The `relatedIdentifiers` relation types kept before paging. */
+  relationTypes?: RelationTypeId[];
   total: number;
+}
+
+/** One list to page; `relationTypes` keeps the `relatedIdentifiers` entries asserting those types. */
+export interface RecordListSelection {
+  list: RecordList;
+  offset: number;
+  relationTypes?: readonly RelationTypeId[];
+}
+
+const RELATION_TYPE_SET: ReadonlySet<string> = new Set(RELATION_TYPE_IDS);
+const isRelationTypeId = (type: string): type is RelationTypeId => RELATION_TYPE_SET.has(type);
+
+/** Entries per relation type. A Map: relationType is depositor text, and a plain object would read `constructor` off its prototype. */
+function countRelationTypes(entries: readonly { relationType: string }[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const { relationType } of entries) {
+    counts.set(relationType, (counts.get(relationType) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Maps a full `/dois` record to the found arm of `datacite_get_work`, with list caps applied. */
 export function mapWork(
   record: RawDoiResource,
   client: RawClientResource | undefined,
-  selection?: { list: RecordList; offset: number },
+  selection?: RecordListSelection,
 ) {
   const a = record.attributes;
   const doi = recordDoi(record);
@@ -294,6 +327,8 @@ export function mapWork(
       const nextOffset = offset + page.length;
       listPage = {
         list: field,
+        ...(field === 'relatedIdentifiers' &&
+          selection.relationTypes && { relationTypes: [...selection.relationTypes] }),
         offset,
         total: items.length,
         ...(nextOffset < items.length && { nextOffset }),
@@ -318,11 +353,9 @@ export function mapWork(
       },
     ];
   });
-  // Counted in a Map: relationType is depositor text, and a plain object would read `constructor` off its prototype.
-  const relationCounts = new Map<string, number>();
-  for (const r of relatedIdentifiers) {
-    relationCounts.set(r.relationType, (relationCounts.get(r.relationType) ?? 0) + 1);
-  }
+  const relationCounts = countRelationTypes(relatedIdentifiers);
+  // Matched exactly: the upstream stores relationType case-sensitively, as relatedIdentifierCounts keys it.
+  const relationFilter = selection?.relationTypes && new Set<string>(selection.relationTypes);
 
   const contentUrls = texts(Array.isArray(a.contentUrl) ? a.contentUrl : [a.contentUrl]);
   const publisherRor =
@@ -435,7 +468,12 @@ export function mapWork(
       const identifierType = text(i.identifierType);
       return identifier && identifierType ? [{ identifier, identifierType }] : [];
     }),
-    relatedIdentifiers: cap('relatedIdentifiers', relatedIdentifiers),
+    relatedIdentifiers: cap(
+      'relatedIdentifiers',
+      relationFilter
+        ? relatedIdentifiers.filter((r) => relationFilter.has(r.relationType))
+        : relatedIdentifiers,
+    ),
     relatedIdentifierCounts: Object.fromEntries(relationCounts),
     relatedItems: cap(
       'relatedItems',
@@ -475,6 +513,22 @@ export function mapWork(
     ...opt('updated', text(a.updated)),
     ...opt('schemaVersion', text(a.schemaVersion)),
   };
+  /**
+   * The capped prefix holds the first `shown` entries of each type in deposit order, so
+   * `relation_types: [type]` from offset `shown` continues that type without a repeat or a gap.
+   * A deposited type outside the vocabulary gets none: the input would not accept it.
+   */
+  const capped = truncatedLists.find((t) => t.field === 'relatedIdentifiers');
+  if (capped) {
+    const shownCounts = countRelationTypes(work.relatedIdentifiers);
+    const byRelationType = [...relationCounts].flatMap(([relationType, total]) => {
+      const shown = shownCounts.get(relationType) ?? 0;
+      return shown < total && isRelationTypeId(relationType)
+        ? [{ relationType, shown, total, nextOffset: shown }]
+        : [];
+    });
+    if (byRelationType.length > 0) capped.byRelationType = byRelationType;
+  }
   return { doi, work, truncatedLists, listPage, omittedGeoLocationPolygons };
 }
 

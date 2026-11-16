@@ -149,4 +149,27 @@ describe('upstream error bodies stay off the wire', () => {
     expect(JSON.stringify(result.structuredContent)).not.toContain('Was expecting');
     expect(http.calls).toHaveLength(1);
   });
+
+  it('reads a 400 for a wildcard term too complex to run as invalid_query, its body off the wire', async () => {
+    const { http } = initServices([
+      {
+        match: dataCite('/dois'),
+        respond: fixtureResponse('datacite/errors/too-complex-query.json', { status: 400 }),
+      },
+    ]);
+    const result = await runToolContract(searchWorksTool, { query: 'titles.title:*glacier*' });
+    const error = toolError(result);
+    expect(error.code).toBe(JsonRpcErrorCode.ValidationError);
+    expect(error.data?.reason).toBe('invalid_query');
+    expect(error.data?.recovery).toEqual({
+      hint: 'Fix the query syntax or shorten and simplify its wildcard terms, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
+    });
+    expect(contentText(result)).toContain('shorten and simplify its wildcard terms');
+    expect(contentText(result)).toContain('(reason invalid_query');
+    for (const upstream of ['too_complex', 'Determinizing', 'automaton', 'effort']) {
+      expect(JSON.stringify(result.structuredContent)).not.toContain(upstream);
+      expect(contentText(result)).not.toContain(upstream);
+    }
+    expect(http.calls).toHaveLength(1);
+  });
 });

@@ -52,12 +52,78 @@ export const anyPhrase = (field: string, values: readonly string[]): string =>
   `${field}:(${values.map(phrase).join(' OR ')})`;
 
 /**
- * A name matched token by token within one field — `creators.name:(smith AND j)`
- * — so word order and initials do not matter.
+ * Slop of a name proximity phrase. DataCite indexes consecutive values of an
+ * array field (one per creator or funding reference) 100 token positions apart,
+ * so any slop below 100 keeps every token inside one value; 50 still absorbs
+ * reordered words, initials, and middle names.
  */
-export function nameTokensClause(field: string, name: string): string {
-  const tokens = escapeQueryText(name.replace(/,/g, ' ')).split(' ').filter(Boolean);
-  return `${field}:(${tokens.join(' AND ')})`;
+export const NAME_PROXIMITY_SLOP = 50;
+
+/**
+ * A name matched as a proximity phrase within one value of an analyzed array
+ * field — `creators.name:"Carberry, Josiah"~50` — so word order and middle names
+ * do not matter but tokens cannot split across two creators or two funders.
+ * Inside the quotes only `"` and `\` are special.
+ */
+export const nameProximityClause = (field: string, name: string): string =>
+  `${field}:${phrase(singleLine(name))}~${NAME_PROXIMITY_SLOP}`;
+
+/**
+ * Characters a wildcard term over a keyword field escapes: the reserved set
+ * (`*` and `?` included, so a caller's wildcard characters match literally) and
+ * whitespace, which would otherwise end the term. `<`, `>`, and `/` stay bare:
+ * inside a term that opens with `*` none of them is syntax.
+ */
+const WILDCARD_ESCAPE_RE = new RegExp(`${RESERVED_RE.source}|\\s`, 'g');
+
+/** A letter that starts a word: not after a letter, mark, digit, or apostrophe. */
+const WORD_START_RE = /(?<![\p{L}\p{M}\p{N}'’])\p{L}/u;
+const EVERY_WORD_START_RE = new RegExp(WORD_START_RE, 'gu');
+const capitalize = (letter: string) => letter.toUpperCase();
+
+/** The case forms a place is tried in: as typed, lower, upper, every word capitalized, first word capitalized. */
+function placeCaseForms(place: string): string[] {
+  const lower = place.toLowerCase();
+  return [
+    ...new Set([
+      place,
+      lower,
+      place.toUpperCase(),
+      lower.replace(EVERY_WORD_START_RE, capitalize),
+      lower.replace(WORD_START_RE, capitalize),
+    ]),
+  ];
+}
+
+/**
+ * Longest case form a place is matched as a substring with. OpenSearch refuses
+ * to determinize a `*…*` term whose cost (about length² ÷ the period of any
+ * repeat in it) passes its budget; a 500-character run of one letter fails,
+ * while every form of this length passes.
+ */
+export const PLACE_SUBSTRING_MAX_CHARS = 250;
+
+/** A place matched as one exact, case-sensitive deposited name. */
+export const exactPlaceClause = (place: string): string =>
+  `geoLocations.geoLocationPlace:${phrase(place)}`;
+
+/**
+ * A place matched in `geoLocations.geoLocationPlace`, an exact, case-sensitive
+ * keyword upstream (DataCite escapes `/`, so no regex). Normally a substring
+ * match: one `*…*` wildcard per distinct case form, ORed, with whitespace runs
+ * as one escaped space, plus the value exactly as typed, since a deposited name
+ * can hold a whitespace run or a no-break space; uppercase `AND` / `OR` / `NOT`
+ * keep their case, since an escaped space makes them part of the term. A form
+ * longer than {@link PLACE_SUBSTRING_MAX_CHARS} makes it {@link exactPlaceClause}
+ * instead. `place` must be nonempty; an empty one would match every place.
+ */
+export function placeClause(place: string): { clause: string; match: 'substring' | 'exact' } {
+  const forms = [...new Set([place, ...placeCaseForms(place.replace(/\s+/g, ' '))])];
+  if (forms.some((form) => form.length > PLACE_SUBSTRING_MAX_CHARS)) {
+    return { clause: exactPlaceClause(place), match: 'exact' };
+  }
+  const terms = forms.map((form) => `*${form.replace(WILDCARD_ESCAPE_RE, (char) => `\\${char}`)}*`);
+  return { clause: `geoLocations.geoLocationPlace:(${terms.join(' OR ')})`, match: 'substring' };
 }
 
 /** Both stored forms of an ORCID iD, bare and as an orcid.org URL. */

@@ -9,7 +9,6 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
-import { reverseRelationQuery } from '@/services/datacite/query-builder.js';
 import {
   type GraphEdge,
   MAX_EDGES,
@@ -21,7 +20,7 @@ import {
 } from '@/services/datacite/relation-graph.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
 import { applyCount, countInput } from './_counts.js';
-import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
+import { blankAsUnset, doiString, enumish, MAX_CHARS, optionalArray } from './_schemas.js';
 import { flattenInline, num, numOrNA, orNA, tableCell } from './_text.js';
 
 /** Relation types that record a citation of the asserting side's target… */
@@ -59,7 +58,6 @@ function citationNotice(
   foundEdges: readonly GraphEdge[],
   relationTypes: readonly string[] | undefined,
   maxNodes: number,
-  reverseCutForSize: boolean,
 ): string | undefined {
   if (!graph.rootCounts) return;
   const { citationCount, versionCount, versionOfCount } = graph.rootCounts;
@@ -91,10 +89,9 @@ function citationNotice(
     );
   }
   const { reverseMetadata: reverse, eventData } = graph.coverage;
+  // The shortfall notice gives the counts; it stays a cause here so the read is not called complete.
   if (reverse.total > reverse.fetched) {
-    causes.push(
-      `This call read ${num(reverse.fetched)} of the ${num(reverse.total)} DataCite records whose related identifiers name this DOI, the most one call reads${reverseCutForSize ? ' of records that large' : ''}.`,
-    );
+    causes.push('Not every DataCite record that points at this DOI was read.');
   }
   const { total = 0, fetched = 0 } = eventData;
   if (eventData.status === 'skipped') {
@@ -382,7 +379,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       .string()
       .optional()
       .describe(
-        'Coverage caveats: non-DataCite root, no relations found, Event Data unavailable, records pointing at a DOI too large to read 100 of, Event Data objects left out and nodes left unhydrated because DataCite did not answer in time, node cap, unexpanded second hop, neighbours past the second-hop limit, edge cap, uncounted citations.',
+        'Coverage caveats: non-DataCite root, no relations found, Event Data unavailable, records pointing at the DOI left unread (past the 100 one call reads, or past 10 when they are too large to read 100 of) with the datacite_search_works query that lists them all, Event Data objects left out and nodes left unhydrated because DataCite did not answer in time, node cap, unexpanded second hop, neighbours past the second-hop limit, edge cap, uncounted citations.',
       ),
   },
 
@@ -412,6 +409,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       edgesFound,
       foundEdges,
       largeReverse,
+      reverseQuery,
       unconfirmedEvents,
       unexpanded,
       unhydrated,
@@ -510,9 +508,23 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
     /** A reverse read the first page's related identifiers stopped at that page. */
     const largeRecords = (pointedAt: string, reader: string, listed: number, read: ReverseRead) =>
       `The DataCite records that point at ${pointedAt} are large (the first ${num(read.fetched)} list ${num(listed)} related identifiers between them), so ${reader} read ${num(read.fetched)} of the ${num(read.total)} rather than up to ${REVERSE_PAGE_SIZE}`;
+    /** The query the root's reverse read sent, when the query input of datacite_search_works takes it. */
+    const searchQuery =
+      reverseQuery !== undefined && reverseQuery.length <= MAX_CHARS.query
+        ? reverseQuery
+        : undefined;
+    const listAll = searchQuery
+      ? `; pass query ${searchQuery} to datacite_search_works to list them all`
+      : '';
+    // Event-Data-only mode reads no reverse records (total and fetched are both 0).
+    const reverseShort = reverseMetadata.total > reverseMetadata.fetched;
     if (largeReverse.root !== undefined) {
       notices.push(
-        `${largeRecords('this DOI', 'this call', largeReverse.root, reverseMetadata)}; pass query ${reverseRelationQuery([root])} to datacite_search_works to list them all.`,
+        `${largeRecords('this DOI', 'this call', largeReverse.root, reverseMetadata)}${listAll}.`,
+      );
+    } else if (reverseShort) {
+      notices.push(
+        `This call read ${num(reverseMetadata.fetched)} of the ${num(reverseMetadata.total)} DataCite records that point at this DOI${relationTypes ? ' with the requested relation_types' : ''} (at most ${REVERSE_PAGE_SIZE} per call)${listAll}.`,
       );
     }
     if (largeReverse.secondHop !== undefined && reverseMetadata.secondHop) {
@@ -547,9 +559,9 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
           : []),
       ];
       // With no step left, a search still lists the records pointing at the root, when there are any.
-      if (steps.length === 0 && graph.coverage.reverseMetadata.total > 0) {
+      if (steps.length === 0 && reverseMetadata.total > 0 && searchQuery) {
         steps.push(
-          `pass query ${reverseRelationQuery([root])} to datacite_search_works to list the DataCite records that point at this DOI`,
+          `pass ${reverseShort ? 'the query above' : `query ${searchQuery}`} to datacite_search_works to list the DataCite records that point at this DOI`,
         );
       }
       notices.push(
@@ -582,15 +594,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       );
     }
     const citations =
-      !eventOnly &&
-      citationNotice(
-        root,
-        graph,
-        foundEdges,
-        relationTypes,
-        maxNodes,
-        largeReverse.root !== undefined,
-      );
+      !eventOnly && citationNotice(root, graph, foundEdges, relationTypes, maxNodes);
     if (citations) notices.push(citations);
     const notice = notices.join(' ');
     if (edgeCapBound) ctx.enrich({ truncated: true, edgesFound });

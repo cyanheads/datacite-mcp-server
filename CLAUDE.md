@@ -2,8 +2,8 @@
 
 **Server:** @cyanheads/datacite-mcp-server
 **Version:** 0.2.1
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.4.0
 **Zod:** ^4.6.7
 
@@ -148,7 +148,7 @@ export function getServerConfig(): ServerConfig {
 }
 ```
 
-`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`DATACITE_CONTACT_EMAIL`) not the path (`contactEmail`), and throws `ConfigurationError` for malformed values. Count schemas read the config during tool-definition construction; the framework config accessor loads Node's `.env` first. `DATACITE_CLAMP_LIMITS` defaults to `true`: search counts apply at most 1,000 and graph counts at most 100, with requested/applied notices, logs, and a counter. `false` advertises and enforces those caps as strict maxima. The contact email rides the `User-Agent` only — never a URL parameter, cache key, or log line.
+`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`DATACITE_CONTACT_EMAIL`) not the path (`contactEmail`), and throws `ConfigurationError` for malformed values. Count schemas read the config during tool-definition construction; the framework config accessor loads Node's `.env` first. `DATACITE_CLAMP_LIMITS` defaults to `true`: search counts apply at most 1,000, graph counts at most 100, and the `datacite_get_citation` `limit` at most 1,000,000, with requested/applied notices, logs, and a counter. `false` advertises and enforces those caps as strict maxima. The contact email rides the `User-Agent` only — never a URL parameter, cache key, or log line.
 
 For env booleans use `z.stringbool()`, never `z.coerce.boolean()` — `Boolean("false")` is `true`, so a coerced flag can't be disabled through the environment. `z.stringbool()` parses `true/false/1/0/yes/no/on/off` and rejects anything else, so `=false` actually disables.
 
@@ -261,19 +261,19 @@ src/
   services/
     datacite/
       datacite-service.ts               # DataCite REST client (init/accessor): /dois, /repositories, /events, content negotiation
-      query-builder.ts                  # Filters → query params and escaped query clauses
+      query-builder.ts                  # Filters → query params and escaped query clauses (name proximity, place case forms)
       normalize.ts                      # DOI, ORCID iD, ROR ID, Crossref Funder ID, language normalizers
       mappers.ts                        # Raw DataCite records → output shapes
       relation-graph.ts                 # datacite_trace_relations graph builder
-      citation.ts                       # Content negotiation + CSL style verdict
+      citation.ts                       # Content negotiation + CSL style verdict + document slicing
       jats-notice.ts                    # Detect empty names and inconsistent years without rewriting JATS
       cursor.ts                         # Work-search cursor envelope
-      html-text.ts                      # Formatted-citation HTML → plain text
+      html-text.ts                      # Formatted-citation HTML → plain text + markup boundaries
       types.ts                          # Raw DataCite response types
     doi-ra/
       doi-ra-service.ts                 # doi.org registration-agency lookup (DOIs DataCite doesn't hold)
     ror/
-      ror-service.ts                    # Exact FundRef-to-ROR mapping; bounded literal-search fallback
+      ror-service.ts                    # Bounded exact FundRef-to-ROR mapping
     http/
       upstream-client.ts                # Cache → pacer → fetch pipeline, retry, deadline, 429 / pacer-shed handling
       ttl-cache.ts                      # Shared in-process LRU with per-entry TTLs
@@ -393,7 +393,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`bun run bundle` produces `dist/datacite-mcp-server.mcpb` for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`; root development paths need root-anchored exclusions, while root `skills/` ships. `scripts/clean-mcpb.ts` prunes dev dependencies and strips dependency agent docs, platform-specific native bindings, node-gyp generator output containing build-host paths, and build-only package files. Compiled `*.node` addons stay. MCPB is stdio-only. `release-and-publish` attaches the bundle to the GitHub Release at the stable `releases/latest/download/datacite-mcp-server.mcpb` URL used by the README badge.
+`bun run bundle` produces `dist/datacite-mcp-server.mcpb` for one-click install in Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`; root development paths need root-anchored exclusions, while root `skills/` ships. `scripts/clean-mcpb.ts` prunes dev dependencies and strips dependency agent docs (`framework-skills/`, `skills/`, `.claude/`, `.agents/`, `AGENTS.md`, and `CLAUDE.md` at a package's root, and `SKILL.md` anywhere; a `skills/` deeper in a package is runtime code and stays), platform-specific native bindings, node-gyp generator output containing build-host paths, and build-only package files. Compiled `*.node` addons stay. MCPB is stdio-only. `release-and-publish` attaches the bundle to the GitHub Release at the stable `releases/latest/download/datacite-mcp-server.mcpb` URL used by the README badge.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, that every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"` (the host substitutes nothing else — `"${X}"` reaches the server as that literal string), and that an optional string option carries `"default": ""`. A user-supplied variable also goes into the plugin manifests — `.claude-plugin/plugin.json` `userConfig` + `env`, `.codex-plugin/mcp.json` `env_vars` (see Checklist) — plus `.env.example` and the README Configuration table.
 

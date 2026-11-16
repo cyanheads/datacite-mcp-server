@@ -8,11 +8,11 @@
 
 import type { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
-import { afterEach, describe, expect, it } from 'vitest';
+import { type FetchMockHarness, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.tool.js';
 import { decodeCursor, encodeCursor } from '@/services/datacite/cursor.js';
-import { funderIdClause, stableHash } from '@/services/datacite/query-builder.js';
+import { funderIdClause, placeClause, stableHash } from '@/services/datacite/query-builder.js';
 import type {
   RawDoiAttributes,
   RawDoiList,
@@ -30,14 +30,17 @@ import {
   contentText,
   dataCite,
   declaredSeverities,
+  hang,
   initServices,
   json,
+  once,
   onPath,
   param,
   requestUrl,
   structured,
   type ToolResultLike,
   teardownServices,
+  text as textResponse,
   toolError,
 } from '../../../helpers/harness.js';
 import { markdownText } from '../../../helpers/markdown.js';
@@ -55,6 +58,9 @@ type Output = z.infer<typeof searchWorksTool.output> & {
 const CURSOR_TOKEN = 'MTMxNDc4NTc3OTAwMCwxMC4xNTk0L3dkY2MvbWJfaHNnXzIwMDdfMjAxMA';
 /** `created` of the last row on the recorded first cursor page. */
 const FIRST_PAGE_LAST_CREATED = Date.parse('2011-08-31T10:16:19Z');
+/** The notice for a place matched exactly, whichever limit sent it there. */
+const PLACE_EXACT_NOTICE =
+  'place matched whole deposited place names exactly and case-sensitively, since one of the case forms it is tried in is over 250 characters or matching inside place names would make the request longer than DataCite accepts; pass a shorter part of it to match inside place names.';
 
 afterEach(teardownServices);
 
@@ -77,6 +83,18 @@ const expectToolError = (result: ToolResultLike, reason: string, code: number) =
   expect(error.data?.reason).toBe(reason);
   expect(contentText(result)).toContain(`(reason ${reason}`);
   return error;
+};
+
+/**
+ * `sentence`, as structuredContent carries it, quotes the cursor "*": content[]
+ * renders that value as a code span, never `\*`, and a Markdown parse reads the
+ * sentence back unchanged.
+ */
+const expectStartCursorSpan = (result: ToolResultLike, sentence: string) => {
+  const text = contentText(result);
+  expect(text).toContain(sentence.replaceAll('"*"', '"`*`"'));
+  expect(text).not.toContain('\\*');
+  expect(markdownText(text)).toContain(sentence);
 };
 
 describe('country filtering', () => {
@@ -176,26 +194,30 @@ describe('page shapes and required enrichment', () => {
     expect(markdownText(contentText(result))).toContain('A &lt;i&gt; <b>');
     expect(markdownText(contentText(result))).toContain('A T < 5 and p > 0 &lt;i&gt;');
   });
-  it('propagates cancellation during ROR lookup on both surfaces without searching DataCite', async () => {
-    const controller = new AbortController();
-    const { http } = initServices([
-      {
-        match: onPath('https://api.ror.org', '/v2/organizations'),
-        respond: () => {
-          controller.abort(new DOMException('Lookup cancelled by caller.', 'AbortError'));
-          return Promise.reject(controller.signal.reason);
+  it.each([false, true])(
+    'propagates cancellation during ROR lookup on both surfaces without searching DataCite (include_child_funders %s)',
+    async (include_child_funders) => {
+      const controller = new AbortController();
+      const { http } = initServices([
+        {
+          match: onPath('https://api.ror.org', '/v2/organizations'),
+          respond: () => {
+            controller.abort(new DOMException('Lookup cancelled by caller.', 'AbortError'));
+            return Promise.reject(controller.signal.reason);
+          },
         },
-      },
-    ]);
-    const result = await runToolContract(
-      searchWorksTool,
-      { funder: '10.13039/501100001659' },
-      { context: { signal: controller.signal } },
-    );
-    expect(toolError(result).code).toBe(JsonRpcErrorCode.RequestCancelled);
-    expect(contentText(result)).toContain('Lookup cancelled by caller.');
-    expect(http.calls).toHaveLength(1);
-  });
+      ]);
+      const result = await runToolContract(
+        searchWorksTool,
+        { funder: '10.13039/501100001659', include_child_funders },
+        { context: { signal: controller.signal } },
+      );
+      expect(toolError(result).code).toBe(JsonRpcErrorCode.RequestCancelled);
+      expect(toolError(result).data?.reason).toBeUndefined();
+      expect(contentText(result)).toContain('Lookup cancelled by caller.');
+      expect(http.calls).toHaveLength(1);
+    },
+  );
   it.each([
     { number_of_results: 0, items: [] },
     {
@@ -235,13 +257,292 @@ describe('page shapes and required enrichment', () => {
     ).toBe(true);
   });
 
-  it('keeps child-funder expansion exclusive to explicitly supplied RORs', async () => {
-    const { http } = zeroHits();
-    const result = await run({ funder: '10.13039/501100001659', include_child_funders: true });
-    expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
-    expect(contentText(result)).toContain('ROR ID');
-    expect(http.calls).toHaveLength(0);
+  describe('child organizations of a Crossref Funder ID', () => {
+    const FUNDREF = '10.13039/501100001659';
+    const rorRoute = (body: unknown, init?: ResponseInit) => ({
+      match: onPath('https://api.ror.org', '/v2/organizations'),
+      respond: json(body, init),
+    });
+    const fundrefItem = (ror: string) => ({
+      id: `https://ror.org/${ror}`,
+      external_ids: [{ type: 'fundref', all: ['501100001659'] }],
+    });
+    const resolved = { number_of_results: 1, items: [fundrefItem('018mejw64')] };
+
+    it('looks the exact ROR up once, then sends funded-by with child organizations and echoes both', async () => {
+      const { http } = initServices([
+        rorRoute(resolved),
+        { match: dataCite('/dois'), respond: json(doiList([row('10.1234/a')], { total: 1 })) },
+      ]);
+      const result = await run({ funder: FUNDREF, include_child_funders: true });
+      expect(result.isError).toBeFalsy();
+      expect(http.calls.map((call) => new URL(call.request.url).origin)).toEqual([
+        'https://api.ror.org',
+        'https://api.datacite.org',
+      ]);
+      const url = requestUrl(http, 1);
+      expect(url.searchParams.get('funded-by')).toBe('018mejw64');
+      expect(url.searchParams.get('include-funder-child-organizations')).toBe('true');
+      expect(url.searchParams.get('query')).toBe('*');
+      expect(output(result).appliedFilters).toEqual({
+        funder: 'funded-by=018mejw64 (+ child organizations)',
+      });
+      expect(output(result)).not.toHaveProperty('notice');
+      expect(contentText(result)).toContain(
+        '- funder → funded-by=018mejw64 (+ child organizations)',
+      );
+      expect(contentText(result)).not.toContain('may be omitted');
+    });
+
+    it.each([
+      { name: 'no exact match', body: { number_of_results: 0, items: [] } },
+      {
+        name: 'several exact matches',
+        body: { number_of_results: 2, items: [fundrefItem('018mejw64'), fundrefItem('021nxhr62')] },
+      },
+      {
+        name: 'an incomplete answer',
+        body: { number_of_results: 2, items: [fundrefItem('018mejw64')] },
+      },
+    ])(
+      'rejects $name as invalid_filter after the one lookup, before any DataCite request',
+      async ({ body }) => {
+        const { http } = initServices([
+          rorRoute(body),
+          { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+        ]);
+        const result = await run({ funder: FUNDREF, include_child_funders: true });
+        const error = expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
+        expect(error.message).toBe(
+          "include_child_funders needs the funder's ROR identity, and ROR maps the Crossref Funder ID in funder to no single organization: it lists none, lists several, or answered incompletely.",
+        );
+        expect(error.data?.field).toBe('funder');
+        expect(error.data).not.toHaveProperty('retryable');
+        const hint =
+          "Set funder to the funder's ROR ID (bare or a ror.org URL), or set include_child_funders to false to match this Crossref Funder ID without child organizations.";
+        expect(error.data?.recovery).toEqual({ hint });
+        expect(markdownText(contentText(result))).toContain(`Recovery: ${hint}`);
+        expect(contentText(result)).not.toContain('retryable');
+        expect(contentText(result)).not.toContain('021nxhr62');
+        expect(contentText(result)).not.toContain(FUNDREF);
+        expect(http.calls).toHaveLength(1);
+        expect(requestUrl(http).origin).toBe('https://api.ror.org');
+      },
+    );
+
+    const botCheck = '<!DOCTYPE html><html><title>Just a moment...</title></html>';
+    /** The ror_unavailable error, after asserting it on both surfaces with no DataCite request. */
+    const expectRorUnavailable = (result: ToolResultLike, http: FetchMockHarness) => {
+      const error = expectToolError(result, 'ror_unavailable', JsonRpcErrorCode.ServiceUnavailable);
+      expect(error.message).toBe(
+        "include_child_funders needs the funder's ROR identity, and ROR was unavailable to look up the Crossref Funder ID in funder.",
+      );
+      expect(error.data?.retryable).toBe(true);
+      const hint =
+        "Retry the same call shortly; to search now, set funder to the funder's ROR ID (bare or a ror.org URL), which needs no lookup, or set include_child_funders to false to match the Crossref Funder ID without child organizations.";
+      expect(error.data?.recovery).toEqual({ hint });
+      const wire = contentText(result);
+      expect(markdownText(wire)).toContain(`Recovery: ${hint}`);
+      expect(wire).toContain('(reason ror_unavailable · retryable');
+      expect(wire).not.toContain(FUNDREF);
+      expect(http.calls).toHaveLength(1);
+      return error;
+    };
+
+    it.each([
+      { name: 'a 503', respond: () => json({}, { status: 503 }) },
+      { name: 'a 502', respond: () => json({}, { status: 502 }) },
+      { name: 'a 429', respond: () => json({}, { status: 429 }) },
+      {
+        name: 'a 403 bot-check page',
+        respond: () =>
+          textResponse(botCheck, { status: 403, headers: { 'content-type': 'text/html' } }),
+      },
+      {
+        name: 'a 200 bot-check page',
+        respond: () => textResponse(botCheck, { headers: { 'content-type': 'text/html' } }),
+      },
+      { name: 'a body that is not JSON', respond: () => json('{') },
+      { name: 'a network failure', respond: () => Promise.reject(new TypeError('fetch failed')) },
+    ])(
+      'reports $name from ROR as the retryable ror_unavailable, before any DataCite request',
+      async ({ respond }) => {
+        const { http } = initServices([
+          { match: onPath('https://api.ror.org', '/v2/organizations'), respond },
+          { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+        ]);
+        const result = await run({ funder: FUNDREF, include_child_funders: true });
+        expectRorUnavailable(result, http);
+        expect(requestUrl(http).origin).toBe('https://api.ror.org');
+      },
+    );
+
+    it('reports a ROR lookup that outlasts its five seconds as ror_unavailable', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      try {
+        const { http } = initServices([
+          { match: onPath('https://api.ror.org', '/v2/organizations'), respond: hang },
+          { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+        ]);
+        const pending = run({ funder: FUNDREF, include_child_funders: true });
+        await vi.advanceTimersByTimeAsync(5001);
+        expectRorUnavailable(await pending, http);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('looks ROR up again on retry after an outage, then expands to child organizations', async () => {
+      const { http } = initServices([
+        once(onPath('https://api.ror.org', '/v2/organizations'), () => json({}, { status: 503 })),
+        rorRoute(resolved),
+        { match: dataCite('/dois'), respond: json(doiList([row('10.1234/a')], { total: 1 })) },
+      ]);
+      expectRorUnavailable(await run({ funder: FUNDREF, include_child_funders: true }), http);
+      const retried = await run({ funder: FUNDREF, include_child_funders: true });
+      expect(retried.isError).toBeFalsy();
+      expect(http.calls.map((call) => new URL(call.request.url).origin)).toEqual([
+        'https://api.ror.org',
+        'https://api.ror.org',
+        'https://api.datacite.org',
+      ]);
+      expect(requestUrl(http, 2).searchParams.get('funded-by')).toBe('018mejw64');
+      expect(output(retried).appliedFilters).toEqual({
+        funder: 'funded-by=018mejw64 (+ child organizations)',
+      });
+    });
+
+    it('keeps the literal fallback, with its notice, when ROR is unavailable and no children are asked for', async () => {
+      const { http } = initServices([
+        rorRoute({}, { status: 503 }),
+        { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+      ]);
+      const result = await run({ funder: FUNDREF });
+      expect(result.isError).toBeFalsy();
+      expect(output(result).appliedFilters.funder).toBe(funderIdClause(FUNDREF));
+      expect(output(result).notice).toContain('matching its literal deposited identifier only');
+      expect(contentText(result)).toContain('works deposited with a ROR may be omitted');
+      expect(http.calls).toHaveLength(2);
+    });
+
+    it.each([{ funder: 'Wellcome Trust' }, {}])(
+      'names no sample ROR when include_child_funders has nothing to expand: %j',
+      async (input) => {
+        const { http } = zeroHits();
+        const result = await run({ ...input, include_child_funders: true });
+        const error = expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
+        expect(error.message).toBe(
+          'include_child_funders applies only when funder is a ROR ID or a Crossref Funder ID.',
+        );
+        expect(error.data?.recovery).toEqual({
+          hint: "Set funder to the funder's ROR ID or Crossref Funder ID when include_child_funders is true, or set include_child_funders to false (datacite_list_reference topic identifier_formats lists every accepted form), then retry.",
+        });
+        expect(contentText(result)).not.toContain('021nxhr62');
+        expect(http.calls).toHaveLength(0);
+      },
+    );
+
+    it('continues a child-organization walk from the ROR its envelope carries, without a lookup', async () => {
+      const opening = initServices([
+        rorRoute(resolved),
+        {
+          match: dataCite('/dois', param('page[cursor]', '1')),
+          respond: json({
+            data: [row('10.1234/first', { created: '2026-01-01' })],
+            meta: { total: 2 },
+            links: { next: 'https://api.datacite.org/dois?page%5Bcursor%5D=second' },
+          }),
+        },
+      ]);
+      const first = await run({ funder: FUNDREF, include_child_funders: true, cursor: '*' });
+      expect(first.isError).toBeFalsy();
+      expect(opening.http.calls).toHaveLength(2);
+      const nextCursor = output(first).nextCursor as string;
+      expect(decodeCursor(nextCursor)).toMatchObject({
+        f: { id: FUNDREF, ror: '018mejw64' },
+        q: stableHash(
+          JSON.stringify({
+            q: '*',
+            f: { fundedBy: '018mejw64', includeFunderChildOrganizations: true },
+          }),
+        ),
+      });
+      // ROR is unreachable now: a continuation that looked it up again would lose the expansion.
+      const resumed = initServices([
+        rorRoute({}, { status: 503 }),
+        {
+          match: dataCite('/dois', param('page[cursor]', 'second')),
+          respond: json(doiList([row('10.1234/second', { created: '2026-01-02' })], { total: 2 })),
+        },
+      ]);
+      const last = await run({ funder: FUNDREF, include_child_funders: true, cursor: nextCursor });
+      expect(last.isError).toBeFalsy();
+      expect(resumed.http.calls).toHaveLength(1);
+      const url = requestUrl(resumed.http);
+      expect(url.searchParams.get('funded-by')).toBe('018mejw64');
+      expect(url.searchParams.get('include-funder-child-organizations')).toBe('true');
+      expect(output(last).appliedFilters).toEqual(output(first).appliedFilters);
+      expect(output(last).nextCursor).toBeUndefined();
+      expect(contentText(last)).toContain('**Last page.**');
+    });
+
+    it.each([
+      {
+        name: 'a literal-matching walk',
+        f: { id: FUNDREF },
+        q: funderIdClause(FUNDREF),
+        filters: {},
+      },
+      {
+        name: 'a walk without child organizations',
+        f: { id: FUNDREF, ror: '018mejw64' },
+        q: '*',
+        filters: { fundedBy: '018mejw64' },
+      },
+      { name: 'a 0.2.1 literal walk', f: undefined, q: funderIdClause(FUNDREF), filters: {} },
+    ])(
+      'rejects resuming $name with child organizations as invalid_cursor, before any request',
+      async ({ f, q, filters }) => {
+        const { http } = initServices([
+          rorRoute(resolved),
+          { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+        ]);
+        const cursor = encodeCursor({
+          t: 'second',
+          q: stableHash(JSON.stringify({ q, f: filters })),
+          c: 0,
+          n: 1,
+          ...(f && { f }),
+        });
+        const result = await run({ funder: FUNDREF, include_child_funders: true, cursor });
+        const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+        expect(error.message).toBe('cursor belongs to a different query or filter set.');
+        expect(http.calls).toHaveLength(0);
+      },
+    );
+
+    it('resumes a 0.2.1 cursor for a ROR walk with child organizations', async () => {
+      const { http } = initServices([
+        { match: dataCite('/dois'), respond: json(doiList([], { total: 1 })) },
+      ]);
+      const cursor = encodeCursor({
+        t: 'second',
+        q: stableHash(
+          JSON.stringify({
+            q: '*',
+            f: { fundedBy: '021nxhr62', includeFunderChildOrganizations: true },
+          }),
+        ),
+        c: 0,
+        n: 1,
+      });
+      const result = await run({ funder: '021nxhr62', include_child_funders: true, cursor });
+      expect(result.isError).toBeFalsy();
+      expect(http.calls).toHaveLength(1);
+      expect(requestUrl(http).searchParams.get('include-funder-child-organizations')).toBe('true');
+    });
   });
+
   it('resolves only an exact FundRef identity before query echo and cursor fingerprinting', async () => {
     const { http } = initServices([
       {
@@ -500,7 +801,7 @@ describe('request parameters', () => {
       'fundingReferences.funderIdentifier:("10.13039/100000001" OR "https://doi.org/10.13039/100000001") AND ' +
       'subjects.subject:"Glaciology" AND ' +
       'subjects.subject:("FOS: Earth and related environmental sciences") AND ' +
-      'language:en AND geoLocations.geoLocationPlace:"Alps" AND publicationYear:[2010 TO 2020]';
+      'language:en AND geoLocations.geoLocationPlace:(*Alps* OR *alps* OR *ALPS*) AND publicationYear:[2010 TO 2020]';
     const url = requestUrl(http);
     expect(Object.fromEntries(url.searchParams)).toEqual({
       query,
@@ -536,7 +837,7 @@ describe('request parameters', () => {
       provider_ids: 'provider-id=kadq',
       licenses: 'license=cc-by-4.0',
       language: 'language:en',
-      place: 'geoLocations.geoLocationPlace:"Alps"',
+      place: 'geoLocations.geoLocationPlace:(*Alps* OR *alps* OR *ALPS*)',
       published: 'publicationYear:[2010 TO 2020]',
       min_citations: 'has-citations=2',
     });
@@ -566,22 +867,205 @@ describe('request parameters', () => {
     );
   });
 
-  it('matches a name creator, affiliation, and funder token by token or as a phrase', async () => {
+  it('matches a creator and funder name as a proximity phrase within one value, and an affiliation as a phrase', async () => {
     const { http } = zeroHits();
-    await run({
+    const result = await run({
       creator: 'Carberry, Josiah',
       affiliation: 'ETH Zürich',
       funder: 'Wellcome Trust',
       published_to: 2022,
     });
     expect(requestUrl(http).searchParams.get('query')).toBe(
-      'creators.name:(Carberry AND Josiah) AND ' +
+      'creators.name:"Carberry, Josiah"~50 AND ' +
         '(creators.affiliation.name:"ETH Zürich" OR contributors.affiliation.name:"ETH Zürich") AND ' +
-        'fundingReferences.funderName:(Wellcome AND Trust) AND publicationYear:[* TO 2022]',
+        'fundingReferences.funderName:"Wellcome Trust"~50 AND publicationYear:[* TO 2022]',
     );
+    expect(output(result).appliedFilters).toMatchObject({
+      creator: 'creators.name:"Carberry, Josiah"~50',
+      funder: 'fundingReferences.funderName:"Wellcome Trust"~50',
+    });
+    const text = markdownText(contentText(result));
+    expect(text).toContain('creator → creators.name:"Carberry, Josiah"~50');
+    expect(text).toContain('funder → fundingReferences.funderName:"Wellcome Trust"~50');
   });
 
-  it('sends / in text and name tokens bare, for DataCite to escape itself', async () => {
+  it.each([
+    { place: 'norway', clause: 'geoLocations.geoLocationPlace:(*norway* OR *NORWAY* OR *Norway*)' },
+    {
+      place: 'Yaquina Bay, OR',
+      clause:
+        'geoLocations.geoLocationPlace:(*Yaquina\\ Bay,\\ OR* OR *yaquina\\ bay,\\ or* OR *YAQUINA\\ BAY,\\ OR* OR *Yaquina\\ Bay,\\ Or* OR *Yaquina\\ bay,\\ or*)',
+    },
+  ])(
+    'sends place $place as the OR of its case forms and echoes that clause',
+    async ({ place, clause }) => {
+      const { http } = zeroHits();
+      const result = await run({ place });
+      expect(requestUrl(http).searchParams.get('query')).toBe(clause);
+      expect(output(result).effectiveQuery).toBe(clause);
+      expect(output(result).appliedFilters).toEqual({ place: clause });
+      const text = contentText(result);
+      expect(text).toContain(`Query: \`${clause}\``);
+      expect(markdownText(text)).toContain(`place → ${clause}`);
+    },
+  );
+
+  it('treats a place of line-break characters alone as unset, never as a match on every place', async () => {
+    const { http } = zeroHits();
+    const result = await run({ place: '\u0085\u001c' });
+    expect(result.isError).toBeFalsy();
+    expect(requestUrl(http).searchParams.get('query')).toBe('*');
+    expect(output(result).appliedFilters).toEqual({});
+    expect(contentText(result)).toContain('Applied filters:** none');
+  });
+
+  it.each([
+    { name: 'a value past 250 characters', place: `Station ${'a('.repeat(125)}` },
+    { name: 'ß×126, whose uppercase form SS×126 is 252 characters', place: 'ß'.repeat(126) },
+    {
+      name: 'a value 254 characters as typed and 243 with its whitespace run collapsed',
+      place: `Gulf${' '.repeat(11)}${'of Mexico '.repeat(24)}`.trim(),
+    },
+  ])(
+    'matches $name exactly, as 0.2.1 did, with one notice joined to the others on both surfaces',
+    async ({ place }) => {
+      const { http } = zeroHits();
+      const result = await run({ place, affiliation_country: 'UK' });
+      const clause = `geoLocations.geoLocationPlace:"${place}"`;
+      expect(requestUrl(http).searchParams.get('query')).toBe(clause);
+      expect(output(result).appliedFilters).toEqual({
+        affiliation_country: 'affiliation-country=GB',
+        place: clause,
+      });
+      const notice = `Normalized affiliation_country UK → GB. ${PLACE_EXACT_NOTICE} No DataCite works matched.`;
+      expect(output(result).notice).toBe(notice);
+      expect(markdownText(contentText(result))).toContain(notice);
+      expect(markdownText(contentText(result))).toContain(`place → ${clause}`);
+    },
+  );
+
+  describe('place and the DataCite URL limit', () => {
+    /** Measured: DataCite answered an 8,201-byte URL and refused 8,202 bytes with HTTP 414. */
+    const MAX_URL_CHARS = 8201;
+    /**
+     * What every page is measured with beyond what page 1 of a ranked call sends: a
+     * 512-character cursor token in place of `page[number]=1`. A ranked call at limit
+     * 1000, sort most_downloaded, and facets on differs from that measure only there.
+     */
+    const PAGE_ALLOWANCE = 'page%5Bcursor%5D='.length + 512 - 'page%5Bnumber%5D=1'.length;
+    /** What a digits-only place adds to a query, beside its digits, once percent-encoded. */
+    const SUBSTRING_OVERHEAD = '+AND+geoLocations.geoLocationPlace%3A%28**%29'.length;
+    const EXACT_OVERHEAD = '+AND+geoLocations.geoLocationPlace%3A%22%22'.length;
+    const widest = { limit: 1000, sort: 'most_downloaded', include_facets: true } as const;
+    const sentLength = (http: FetchMockHarness, index: number) =>
+      (http.calls[index] as FetchMockHarness['calls'][number]).request.url.length;
+
+    it('keeps the substring clause while every page fits, and matches exactly one character past', async () => {
+      const { http } = zeroHits();
+      // 790 CJK characters, nine URL characters each once percent-encoded.
+      const text = '中'.repeat(790);
+      const probe = await run({ ...widest, text });
+      expect(output(probe).appliedFilters).toEqual({});
+      const fits = MAX_URL_CHARS - PAGE_ALLOWANCE;
+      const digits = fits - sentLength(http, 0) - SUBSTRING_OVERHEAD;
+      expect(digits).toBeGreaterThan(1);
+      expect(digits).toBeLessThan(250);
+
+      const atLimit = await run({ ...widest, text, place: '1'.repeat(digits) });
+      const substring = `geoLocations.geoLocationPlace:(*${'1'.repeat(digits)}*)`;
+      expect(sentLength(http, 1)).toBe(fits);
+      expect(requestUrl(http, 1).searchParams.get('query')).toBe(`(${text}) AND ${substring}`);
+      expect(output(atLimit).appliedFilters).toEqual({ place: substring });
+      expect(output(atLimit).notice).not.toContain(PLACE_EXACT_NOTICE);
+      expect(markdownText(contentText(atLimit))).toContain(`place → ${substring}`);
+      expect(markdownText(contentText(atLimit))).not.toContain(PLACE_EXACT_NOTICE);
+
+      const pastLimit = await run({ ...widest, text, place: '1'.repeat(digits + 1) });
+      const exact = `geoLocations.geoLocationPlace:"${'1'.repeat(digits + 1)}"`;
+      expect(sentLength(http, 2)).toBe(sentLength(http, 0) + EXACT_OVERHEAD + digits + 1);
+      expect(requestUrl(http, 2).searchParams.get('query')).toBe(`(${text}) AND ${exact}`);
+      expect(output(pastLimit).appliedFilters).toEqual({ place: exact });
+      const notice = `${PLACE_EXACT_NOTICE} No DataCite works matched.`;
+      expect(output(pastLimit).notice).toBe(notice);
+      expect(markdownText(contentText(pastLimit))).toContain(notice);
+      expect(markdownText(contentText(pastLimit))).toContain(`place → ${exact}`);
+    });
+
+    it('matches a 250-character mixed-case non-Latin place exactly, inside the limit, where its forms would pass it', async () => {
+      const { http } = zeroHits();
+      const place = `${'ⰰⰀⰱⰁ ⰲⰂ '.repeat(31)}ⰰⰀ`;
+      expect(place).toHaveLength(250);
+      // Every case form fits the per-form cap, so the request length alone sends it exact.
+      expect(placeClause(place).match).toBe('substring');
+      const result = await run({ place, limit: 1 });
+      const exact = `geoLocations.geoLocationPlace:"${place}"`;
+      expect(requestUrl(http).searchParams.get('query')).toBe(exact);
+      expect(sentLength(http, 0)).toBeLessThanOrEqual(MAX_URL_CHARS);
+      expect(output(result).appliedFilters).toEqual({ place: exact });
+      const notice = `${PLACE_EXACT_NOTICE} No DataCite works matched.`;
+      expect(output(result).notice).toBe(notice);
+      expect(markdownText(contentText(result))).toContain(notice);
+    });
+
+    it("keeps page 1's clause on page 2 of a walk, whatever page 2's limit, facets, or token length", async () => {
+      // 800 CJK characters, nine URL characters each once percent-encoded.
+      const text = '中'.repeat(800);
+      const token = 'T'.repeat(400);
+      // Three case forms: xxx…, XXX…, Xxx….
+      const place = 'x'.repeat(100);
+      const exact = `geoLocations.geoLocationPlace:"${place}"`;
+      /** Page 2 over page 1: limit 1000 for 1, facets on, and its token for the cursor 1. */
+      const page2Growth = '000'.length + '&disable-facets=false'.length + token.length - '1'.length;
+      const { http } = initServices([
+        {
+          match: dataCite('/dois', param('page[cursor]', '1')),
+          respond: json({
+            data: [row('10.1234/first', { created: '2026-01-01' })],
+            meta: { total: 2 },
+            links: { next: `https://api.datacite.org/dois?page%5Bcursor%5D=${token}` },
+          }),
+        },
+        {
+          match: dataCite('/dois', param('page[cursor]', token)),
+          respond: json(doiList([row('10.1234/second', { created: '2026-01-02' })], { total: 2 })),
+        },
+      ]);
+      const probe = await run({ text, cursor: '*', limit: 1 });
+      expect(output(probe).appliedFilters).toEqual({});
+      // As a substring, page 1 would fit the limit by its own length, but page 2 would not.
+      const substringPage1 =
+        sentLength(http, 0) +
+        '+AND+geoLocations.geoLocationPlace%3A%28**+OR+**+OR+**%29'.length +
+        3 * place.length;
+      expect(substringPage1).toBeLessThanOrEqual(MAX_URL_CHARS);
+      expect(substringPage1 + page2Growth).toBeGreaterThan(MAX_URL_CHARS);
+
+      const first = await run({ text, place, cursor: '*', limit: 1 });
+      expect(sentLength(http, 1)).toBe(sentLength(http, 0) + EXACT_OVERHEAD + place.length);
+      expect(output(first).appliedFilters).toEqual({ place: exact });
+      expect(output(first).notice).toBe(PLACE_EXACT_NOTICE);
+
+      const second = await run({
+        text,
+        place,
+        cursor: output(first).nextCursor as string,
+        limit: 1000,
+        include_facets: true,
+      });
+      expect(second.isError).toBeFalsy();
+      expect(http.calls).toHaveLength(3);
+      expect(requestUrl(http, 2).searchParams.get('page[cursor]')).toBe(token);
+      expect(sentLength(http, 2)).toBe(sentLength(http, 1) + page2Growth);
+      expect(sentLength(http, 2)).toBeLessThanOrEqual(MAX_URL_CHARS);
+      expect(output(second).effectiveQuery).toBe(output(first).effectiveQuery);
+      expect(output(second).appliedFilters).toEqual({ place: exact });
+      expect(output(second).notice).toBe(PLACE_EXACT_NOTICE);
+      expect(markdownText(contentText(second))).toContain(PLACE_EXACT_NOTICE);
+      expect(markdownText(contentText(second))).toContain(`place → ${exact}`);
+    });
+  });
+
+  it('sends / in text and name phrases bare, for DataCite to escape itself', async () => {
     const { http } = zeroHits();
     const result = await run({
       text: '10.5061/dryad.234',
@@ -589,7 +1073,7 @@ describe('request parameters', () => {
       funder: 'NASA/JPL',
     });
     const composed =
-      '(10.5061/dryad.234) AND creators.name:(Smith/Jones) AND fundingReferences.funderName:(NASA/JPL)';
+      '(10.5061/dryad.234) AND creators.name:"Smith/Jones"~50 AND fundingReferences.funderName:"NASA/JPL"~50';
     expect(requestUrl(http).searchParams.get('query')).toBe(composed);
     expect(output(result).effectiveQuery).toBe(composed);
     expect(contentText(result)).toContain(`Query: \`${composed}\``);
@@ -744,6 +1228,120 @@ describe('request parameters', () => {
     await run({ limit: 1 });
     expect(requestUrl(http, 1).searchParams.get('page[size]')).toBe('1');
   });
+});
+
+describe('version_scope', () => {
+  const SERIES = 'NOT relatedIdentifiers.relationType:IsVersionOf';
+  const RELEASES = 'NOT relatedIdentifiers.relationType:HasVersion';
+
+  it.each([
+    { version_scope: 'series', clause: SERIES },
+    { version_scope: 'releases', clause: RELEASES },
+    { version_scope: ' Series ', clause: SERIES },
+    { version_scope: 'RELEASES', clause: RELEASES },
+  ])(
+    'sends $version_scope as the case-exact clause alone and echoes it on both surfaces',
+    async ({ version_scope, clause }) => {
+      const { http } = zeroHits();
+      const result = await run({ version_scope });
+      expect(result.isError).toBeFalsy();
+      expect(requestUrl(http).searchParams.get('query')).toBe(clause);
+      expect(output(result).effectiveQuery).toBe(clause);
+      expect(output(result).appliedFilters).toEqual({ version_scope: clause });
+      expect(contentText(result)).toContain(`- version_scope → ${clause}`);
+      expect(markdownText(contentText(result))).toContain(`version_scope → ${clause}`);
+    },
+  );
+
+  it('ANDs the clause after the caller query, text, and every other clause', async () => {
+    const { http } = zeroHits();
+    const result = await run({
+      query: 'titles.title:glacier',
+      text: 'mass balance',
+      creator: '0000-0002-1825-0097',
+      published_from: 2024,
+      min_citations: 1,
+      version_scope: 'releases',
+    });
+    const composed = `(titles.title:glacier) AND (mass balance) AND creators.nameIdentifiers.nameIdentifier:("0000-0002-1825-0097" OR "https://orcid.org/0000-0002-1825-0097") AND publicationYear:[2024 TO *] AND ${RELEASES}`;
+    expect(requestUrl(http).searchParams.get('query')).toBe(composed);
+    expect(requestUrl(http).searchParams.get('has-citations')).toBe('1');
+    expect(output(result).effectiveQuery).toBe(composed);
+    expect(Object.keys(output(result).appliedFilters)).toEqual([
+      'creator',
+      'published',
+      'version_scope',
+      'min_citations',
+    ]);
+  });
+
+  it.each([{}, { version_scope: 'all' }, { version_scope: 'ALL' }, { version_scope: '  ' }])(
+    'sends the same request as 0.2.1 and echoes nothing for %j',
+    async (scope) => {
+      const scoped = zeroHits();
+      const result = await run({ text: 'glacier', ...scope });
+      expect(result.isError).toBeFalsy();
+      const baseline = zeroHits();
+      await run({ text: 'glacier' });
+      expect(requestUrl(scoped.http).href).toBe(requestUrl(baseline.http).href);
+      expect(requestUrl(scoped.http).searchParams.get('query')).toBe('(glacier)');
+      expect(output(result).appliedFilters).toEqual({});
+      expect(contentText(result)).not.toContain('version_scope');
+    },
+  );
+
+  it('keeps the scope through a walk and rejects resuming it under another scope, before any request', async () => {
+    const { http } = initServices([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: json({
+          data: [row('10.1234/first', { created: '2026-01-01' })],
+          meta: { total: 2 },
+          links: { next: 'https://api.datacite.org/dois?page%5Bcursor%5D=second' },
+        }),
+      },
+      {
+        match: dataCite('/dois', param('page[cursor]', 'second')),
+        respond: json(doiList([row('10.1234/second', { created: '2026-01-02' })], { total: 2 })),
+      },
+    ]);
+    const first = await run({ text: 'glacier', version_scope: 'series', cursor: '*' });
+    const nextCursor = output(first).nextCursor as string;
+    expect(decodeCursor(nextCursor)?.q).toBe(
+      stableHash(JSON.stringify({ q: `(glacier) AND ${SERIES}`, f: {} })),
+    );
+    for (const scope of [{ version_scope: 'releases' }, { version_scope: 'all' }, {}]) {
+      const wrong = await run({ text: 'glacier', ...scope, cursor: nextCursor });
+      const error = expectToolError(wrong, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe('cursor belongs to a different query or filter set.');
+    }
+    expect(http.calls).toHaveLength(1);
+    const last = await run({ text: 'glacier', version_scope: 'series', cursor: nextCursor });
+    expect(last.isError).toBeFalsy();
+    expect(requestUrl(http, 1).searchParams.get('query')).toBe(`(glacier) AND ${SERIES}`);
+    expect(output(last).nextCursor).toBeUndefined();
+    expect(contentText(last)).toContain('**Last page.**');
+  });
+
+  it.each([{}, { version_scope: 'all' }])(
+    'resumes a 0.2.1 cursor with %j and rejects it under series',
+    async (scope) => {
+      const { http } = initServices([
+        { match: dataCite('/dois'), respond: json(doiList([], { total: 1 })) },
+      ]);
+      const cursor = encodeCursor({
+        t: 'second',
+        q: stableHash(JSON.stringify({ q: '(glacier)', f: {} })),
+        c: 0,
+        n: 1,
+      });
+      const resumed = await run({ text: 'glacier', ...scope, cursor });
+      expect(resumed.isError).toBeFalsy();
+      const narrowed = await run({ text: 'glacier', version_scope: 'series', cursor });
+      expectToolError(narrowed, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+      expect(http.calls).toHaveLength(1);
+    },
+  );
 });
 
 describe('cursor walks', () => {
@@ -1161,7 +1759,11 @@ describe('cursor walks', () => {
       const result = await run({ text: 'glacier', cursor: forged.toString('base64url') });
       const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
       expect(error.message).toBe('cursor is neither "*" nor a nextCursor this tool returned.');
-      expect(contentText(result)).toContain('Error: cursor is neither "\\*" nor a nextCursor');
+      const hint =
+        'Pass cursor "*" to start a walk, or pass the nextCursor from the previous page unchanged.';
+      expect(error.data?.recovery).toEqual({ hint });
+      expectStartCursorSpan(result, `Error: ${error.message}`);
+      expectStartCursorSpan(result, `Recovery: ${hint}`);
       expect(http.calls).toHaveLength(0);
     },
   );
@@ -1178,7 +1780,72 @@ describe('cursor walks', () => {
     const result = await run({ ...input, cursor: cursor as string });
     const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
     expect(error.message).toBe('cursor belongs to a different query or filter set.');
+    const hint =
+      'Repeat the exact query and filters that produced this cursor, or start a new walk with cursor "*".';
+    expect(error.data?.recovery).toEqual({ hint });
+    expectStartCursorSpan(result, `Recovery: ${hint}`);
     expect(http.calls).toHaveLength(1);
+  });
+
+  it('quotes the start cursor as a code span when a cursor belongs to a different funder', async () => {
+    const { http } = zeroHits();
+    const cursor = encodeCursor({
+      t: 'second',
+      q: stableHash(JSON.stringify({ q: '*', f: { fundedBy: '018mejw64' } })),
+      c: 0,
+      n: 1,
+      f: { id: '10.13039/100000001', ror: '018mejw64' },
+    });
+    const result = await run({ funder: '10.13039/501100001659', cursor });
+    const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toBe('cursor belongs to a different funder.');
+    const hint =
+      'Repeat the exact funder that produced this cursor, or start a new walk with cursor "*".';
+    expect(error.data?.recovery).toEqual({ hint });
+    expectStartCursorSpan(result, `Recovery: ${hint}`);
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it.each([
+    { input: { creator: 'Carberry, Josiah' }, legacyQuery: 'creators.name:(Carberry AND Josiah)' },
+    {
+      input: { funder: 'Wellcome Trust' },
+      legacyQuery: 'fundingReferences.funderName:(Wellcome AND Trust)',
+    },
+    { input: { place: 'Svalbard' }, legacyQuery: 'geoLocations.geoLocationPlace:"Svalbard"' },
+  ])(
+    'rejects a 0.2.1 cursor for a walk with $input, before any request',
+    async ({ input, legacyQuery }) => {
+      const { http } = zeroHits();
+      const cursor = encodeCursor({
+        t: CURSOR_TOKEN,
+        q: stableHash(JSON.stringify({ q: legacyQuery, f: {} })),
+        c: FIRST_PAGE_LAST_CREATED,
+        n: 50,
+      });
+      const result = await run({ ...input, cursor });
+      const error = expectToolError(result, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe('cursor belongs to a different query or filter set.');
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+
+  it('continues a walk with a creator name, funder name, and place through its own nextCursor', async () => {
+    const input = { creator: 'Carberry, Josiah', funder: 'Wellcome Trust', place: 'Svalbard' };
+    const { http } = initServices([
+      firstPage,
+      {
+        match: dataCite('/dois', param('page[cursor]', CURSOR_TOKEN)),
+        respond: json(doiList([row('10.1594/wdcc/next', { created: '2011-09-01T00:00:00Z' })])),
+      },
+    ]);
+    const first = output(await run({ ...input, cursor: '*' }));
+    expect(first.nextCursor).toBeDefined();
+    const second = await run({ ...input, cursor: first.nextCursor as string });
+    expect(second.isError).toBeFalsy();
+    expect(output(second).effectiveQuery).toBe(first.effectiveQuery);
+    expect(http.calls).toHaveLength(2);
+    expect(requestUrl(http, 1).searchParams.get('query')).toBe(first.effectiveQuery);
   });
 
   it('rejects a page the upstream served by restarting the walk from the beginning', async () => {
@@ -1195,7 +1862,10 @@ describe('cursor walks', () => {
     expect(error.message).toBe(
       'DataCite restarted the walk from the beginning instead of continuing it.',
     );
-    expect(contentText(result)).toContain('Start the walk again with cursor "\\*"');
+    const hint =
+      'Start the walk again with cursor "*"; the previous position could not be resumed.';
+    expect(error.data?.recovery).toEqual({ hint });
+    expectStartCursorSpan(result, `Recovery: ${hint}`);
     expect(http.calls).toHaveLength(2);
   });
 
@@ -1260,6 +1930,7 @@ describe('declared errors', () => {
       page_ceiling: 'notice',
       invalid_cursor: 'notice',
       conflicting_paging: 'notice',
+      ror_unavailable: 'error',
       rate_limited: 'error',
     });
   });
@@ -1270,10 +1941,10 @@ describe('declared errors', () => {
     const error = expectToolError(result, 'invalid_query', JsonRpcErrorCode.ValidationError);
     expect(error.message).toContain('(line 1, column 12)');
     expect(error.data?.recovery).toEqual({
-      hint: 'Fix the query syntax, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
+      hint: 'Fix the query syntax or shorten and simplify its wildcard terms, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
     });
     expect(contentText(result)).toContain(
-      'Recovery: Fix the query syntax, or move plain words to text',
+      'Recovery: Fix the query syntax or shorten and simplify its wildcard terms, or move plain words to text',
     );
     expect(http.calls).toHaveLength(1);
   });
@@ -1290,7 +1961,7 @@ describe('declared errors', () => {
     expect(error.message).toContain('(line 1, column 24)');
     expect(contentText(result)).toContain('(line 1, column 24)');
     expect(contentText(result)).toContain(
-      'Recovery: Fix the query syntax, or move plain words to text',
+      'Recovery: Fix the query syntax or shorten and simplify its wildcard terms, or move plain words to text',
     );
     expect(http.calls).toHaveLength(1);
   });
@@ -1361,13 +2032,15 @@ describe('declared errors', () => {
       name: 'include_child_funders with a funder name',
       input: { funder: 'Wellcome Trust', include_child_funders: true },
       field: 'funder',
-      message: 'include_child_funders applies only when funder is a ROR ID.',
+      message:
+        'include_child_funders applies only when funder is a ROR ID or a Crossref Funder ID.',
     },
     {
       name: 'include_child_funders without a funder',
       input: { include_child_funders: true },
       field: 'funder',
-      message: 'include_child_funders applies only when funder is a ROR ID.',
+      message:
+        'include_child_funders applies only when funder is a ROR ID or a Crossref Funder ID.',
     },
     {
       name: 'a two-letter language outside ISO 639-1',
@@ -1400,6 +2073,10 @@ describe('declared errors', () => {
     },
   );
 
+  /** The declared page_ceiling recovery, which the framework fills on both throws. */
+  const PAGE_CEILING_HINT =
+    'Page numbers reach only the first 10,000 matches; narrow the filters, or restart with cursor "*" to walk the whole result set in registration order.';
+
   it('rejects page × limit past 10,000 as page_ceiling before any request', async () => {
     const { http } = zeroHits();
     const result = await run({ text: 'glacier', page: 101, limit: 100 });
@@ -1407,7 +2084,8 @@ describe('declared errors', () => {
     expect(error.message).toBe(
       'page 101 × limit 100 = 10100 exceeds the 10,000-match ceiling of ranked paging.',
     );
-    expect(contentText(result)).toContain('restart with cursor "\\*"');
+    expect(error.data?.recovery).toEqual({ hint: PAGE_CEILING_HINT });
+    expectStartCursorSpan(result, `Recovery: ${PAGE_CEILING_HINT}`);
     expect(http.calls).toHaveLength(0);
   });
 
@@ -1421,6 +2099,8 @@ describe('declared errors', () => {
     const result = await run({ text: 'glacier', page: 101, limit: 99 });
     const error = expectToolError(result, 'page_ceiling', JsonRpcErrorCode.ValidationError);
     expect(error.message).toBe('DataCite served page 100 instead of the requested page 101.');
+    expect(error.data?.recovery).toEqual({ hint: PAGE_CEILING_HINT });
+    expectStartCursorSpan(result, `Recovery: ${PAGE_CEILING_HINT}`);
     expect(http.calls).toHaveLength(1);
   });
 
@@ -1430,7 +2110,7 @@ describe('declared errors', () => {
     const error = expectToolError(result, 'rate_limited', JsonRpcErrorCode.RateLimited);
     expect(error.data).toMatchObject({ retryAfter: 30, retryable: true });
     expect(error.message).toContain('retry in 30 seconds');
-    expect(contentText(result)).toContain('(reason rate_limited · retryable)');
+    expect(contentText(result)).toContain('(reason rate_limited · retryable · retry after 30)');
     expect(http.calls).toHaveLength(1);
   });
 
@@ -1445,6 +2125,7 @@ describe('declared errors', () => {
     { resource_types: ['podcast'] },
     { fields_of_science: ['astrology'] },
     { sort: 'best' },
+    { version_scope: 'concepts' },
     { limit: 0 },
     { page: 0 },
     { published_from: 999 },
@@ -1479,6 +2160,30 @@ describe('zero-hit notices', () => {
     ].join(' ');
     expect(output(result).notice).toBe(notice);
     expect(contentText(result)).toContain(`> ${notice}`);
+  });
+
+  it('joins the creator-name, funder-name, and place fragments into one notice', async () => {
+    zeroHits();
+    const result = await run({
+      creator: 'Woodhouse Shinichi',
+      funder: 'Forschungsgemeinschaft Council',
+      place: 'gulf of mexico',
+    });
+    const notice = [
+      'No DataCite works matched.',
+      "Name matching needs every token in one creator field; try a surname alone or the creator's ORCID iD.",
+      "Funder-name matching needs every token in one funding reference; try one distinctive word of the name, or the funder's ROR ID or Crossref Funder ID.",
+      'Place matching looks for the value inside deposited place names as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized; give a multi-word name its usual capitalization (Gulf of Mexico), or try one word of it.',
+      'Several filters are ANDed together; drop one at a time to find the one excluding everything.',
+    ].join(' ');
+    expect(output(result).notice).toBe(notice);
+    expect(markdownText(contentText(result))).toContain(notice);
+  });
+
+  it('adds no name or place fragment for identifier creators and funders without a place', async () => {
+    zeroHits();
+    const result = await run({ creator: '0000-0002-1825-0097', funder: '021nxhr62' });
+    expect(output(result).notice).toBe('No DataCite works matched.');
   });
 
   it('adds only the fragments whose condition holds', async () => {

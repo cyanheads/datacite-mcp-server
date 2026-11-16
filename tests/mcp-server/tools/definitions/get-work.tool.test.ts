@@ -280,6 +280,331 @@ describe('selected record lists', () => {
   });
 });
 
+describe('relation_types', () => {
+  /**
+   * The shape of 10.15468/dl.zy73hw, a GBIF download: thousands of IsDerivedFrom
+   * datasets, two HasMetadata API URLs, and the one citing article deposited last.
+   */
+  const GBIF = '10.15468/dl.zy73hw';
+  const CITING = '10.1002/ecog.08589';
+  const derived = (i: number) => `10.15468/ds-${String(i).padStart(4, '0')}`;
+  const gbifDownload = () =>
+    recordPage(GBIF, {
+      titles: [{ title: 'Occurrence Download' }],
+      relatedIdentifiers: [
+        ...Array.from({ length: 4910 }, (_, i) => ({
+          relationType: 'IsDerivedFrom',
+          relatedIdentifier: derived(i),
+          relatedIdentifierType: 'DOI',
+        })),
+        ...['dwca', 'eml'].map((kind) => ({
+          relationType: 'HasMetadata',
+          relatedIdentifier: `https://api.gbif.org/v1/occurrence/download/${kind}`,
+          relatedIdentifierType: 'URL',
+        })),
+        { relationType: 'IsCitedBy', relatedIdentifier: CITING, relatedIdentifierType: 'DOI' },
+      ],
+    });
+  const FULL_COUNTS = { IsDerivedFrom: 4910, HasMetadata: 2, IsCitedBy: 1 };
+  const call = (input: Record<string, unknown>) =>
+    runToolContract(getWorkTool, { doi: GBIF, ...input } as z.input<typeof getWorkTool.input>);
+
+  /** The list-page continuation content[] prints, parsed back into tool input. */
+  const continuation = (text: string) => {
+    const match =
+      /continue datacite_get_work with doi: "([^"]+)", list: "(\w+)", relation_types: (\[[^\]]*\]), offset: (\d+)/.exec(
+        text,
+      );
+    if (!match) return;
+    const [, doi, list, types, offset] = match;
+    return { doi, list, relation_types: JSON.parse(types ?? '[]'), offset: Number(offset) };
+  };
+
+  it('pages one relation type in a single call and keeps the full counts', async () => {
+    const { http } = initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    const result = await call({ relation_types: ['iscitedby'] });
+    expect(result.isError).toBeFalsy();
+    const out = output(result);
+    expect(out.relatedIdentifiers).toEqual([
+      { relationType: 'IsCitedBy', relatedIdentifier: CITING, relatedIdentifierType: 'DOI' },
+    ]);
+    expect(out.listPage).toEqual({
+      list: 'relatedIdentifiers',
+      relationTypes: ['IsCitedBy'],
+      offset: 0,
+      total: 1,
+    });
+    expect(out.relatedIdentifierCounts).toEqual(FULL_COUNTS);
+    expect(out).not.toHaveProperty('truncatedLists');
+    const text = contentText(result);
+    expect(text).toContain(
+      '**List page:** relatedIdentifiers · relation_types ["IsCitedBy"] · offset 0 · total 1 · end of list',
+    );
+    expect(text).toContain(`**IsCitedBy** — 1 of 1\n- ${CITING} (DOI)`);
+    expect(text).toContain('**IsDerivedFrom** — 0 of 4,910');
+    expect(text).not.toContain('Truncated lists');
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('walks a large relation type past 100 through every emitted continuation, without gaps or repeats', async () => {
+    initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    const seen: string[] = [];
+    let input: Record<string, unknown> | undefined = { relation_types: ['IsDerivedFrom'] };
+    let pages = 0;
+    while (input) {
+      const result = await call(input);
+      const out = output(result);
+      const page = out.relatedIdentifiers ?? [];
+      expect(page.every((r) => r.relationType === 'IsDerivedFrom')).toBe(true);
+      seen.push(...page.map((r) => r.relatedIdentifier));
+      const { listPage } = out;
+      expect(listPage).toMatchObject({ list: 'relatedIdentifiers', total: 4910 });
+      const next = continuation(contentText(result));
+      if (listPage?.nextOffset === undefined) {
+        expect(listPage?.offset).toBe(4900);
+        expect(page).toHaveLength(10);
+        expect(next).toBeUndefined();
+        expect(contentText(result)).toContain('· offset 4900 · total 4910 · end of list');
+      } else {
+        expect(next).toEqual({
+          doi: GBIF,
+          list: 'relatedIdentifiers',
+          relation_types: ['IsDerivedFrom'],
+          offset: listPage.nextOffset,
+        });
+      }
+      input = next;
+      pages++;
+    }
+    expect(pages).toBe(50);
+    expect(seen).toEqual(Array.from({ length: 4910 }, (_, i) => derived(i)));
+  });
+
+  it('names one exact call per relation type past the default cap, on both surfaces', async () => {
+    initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    const result = await runToolContract(getWorkTool, { doi: GBIF });
+    const out = output(result);
+    expect(out.truncatedLists).toEqual([
+      {
+        field: 'relatedIdentifiers',
+        shown: 100,
+        total: 4913,
+        nextOffset: 100,
+        byRelationType: [
+          { relationType: 'IsDerivedFrom', shown: 100, total: 4910, nextOffset: 100 },
+          { relationType: 'HasMetadata', shown: 0, total: 2, nextOffset: 0 },
+          { relationType: 'IsCitedBy', shown: 0, total: 1, nextOffset: 0 },
+        ],
+      },
+    ]);
+    expect(out.relatedIdentifierCounts).toEqual(FULL_COUNTS);
+    const text = contentText(result);
+    expect(text).toContain(
+      '**Truncated lists:** relatedIdentifiers: 100 of 4,913; continue datacite_get_work with the same doi, list: "relatedIdentifiers", offset: 100; or one relation type at a time with the same doi: IsDerivedFrom (100 of 4,910 shown) list: "relatedIdentifiers", relation_types: ["IsDerivedFrom"], offset: 100; HasMetadata (0 of 2 shown) list: "relatedIdentifiers", relation_types: ["HasMetadata"]; IsCitedBy (0 of 1 shown) list: "relatedIdentifiers", relation_types: ["IsCitedBy"]',
+    );
+    // Each printed per-type call, executed as written, starts at that type's first unshown entry.
+    const recipes = [
+      ...text.matchAll(
+        /(\w+) \([\d,]+ of [\d,]+ shown\) list: "(\w+)", relation_types: (\[[^\]]*\])(?:, offset: (\d+))?/g,
+      ),
+    ];
+    expect(recipes.map(([, type]) => type)).toEqual(['IsDerivedFrom', 'HasMetadata', 'IsCitedBy']);
+    const firsts: Record<string, string | undefined> = {};
+    for (const [, type, list, types, offset] of recipes) {
+      const page = output(
+        await call({
+          list,
+          relation_types: JSON.parse(types ?? '[]'),
+          ...(offset !== undefined && { offset: Number(offset) }),
+        }),
+      );
+      firsts[type ?? ''] = page.relatedIdentifiers?.[0]?.relatedIdentifier;
+    }
+    expect(firsts).toEqual({
+      IsDerivedFrom: derived(100),
+      HasMetadata: 'https://api.gbif.org/v1/occurrence/download/dwca',
+      IsCitedBy: CITING,
+    });
+  });
+
+  it('matches the deposited type exactly and names no per-type call outside the vocabulary', async () => {
+    const entry = (relationType: string, i: number) => ({
+      relationType,
+      relatedIdentifier: `10.5555/${relationType}-${i}`,
+    });
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/mixed', {
+          relatedIdentifiers: [
+            ...Array.from({ length: 101 }, (_, i) => entry('Cites', i)),
+            entry('isCitedBy', 0),
+            entry('IsCitedBy', 0),
+            entry('constructor', 0),
+          ],
+        }),
+      },
+    ]);
+    const filtered = output(
+      await runToolContract(getWorkTool, { doi: '10.5555/mixed', relation_types: ['IsCitedBy'] }),
+    );
+    expect(filtered.relatedIdentifiers?.map((r) => r.relatedIdentifier)).toEqual([
+      '10.5555/IsCitedBy-0',
+    ]);
+    expect(filtered.listPage).toMatchObject({ total: 1 });
+
+    const result = await runToolContract(getWorkTool, { doi: '10.5555/mixed' });
+    expect(output(result).truncatedLists).toEqual([
+      {
+        field: 'relatedIdentifiers',
+        shown: 100,
+        total: 104,
+        nextOffset: 100,
+        byRelationType: [
+          { relationType: 'Cites', shown: 100, total: 101, nextOffset: 100 },
+          { relationType: 'IsCitedBy', shown: 0, total: 1, nextOffset: 0 },
+        ],
+      },
+    ]);
+    const text = contentText(result);
+    expect(text).toContain('list: "relatedIdentifiers", offset: 100;');
+    expect(text).not.toContain('relation_types: ["isCitedBy"]');
+    expect(text).not.toContain('relation_types: ["constructor"]');
+  });
+
+  it('keeps the plain continuation alone when every type past the cap is outside the vocabulary', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/odd', {
+          relatedIdentifiers: [
+            ...Array.from({ length: 100 }, (_, i) => ({
+              relationType: 'Cites',
+              relatedIdentifier: `10.5555/c${i}`,
+            })),
+            { relationType: 'isCitedBy', relatedIdentifier: '10.5555/lower' },
+          ],
+        }),
+      },
+    ]);
+    const result = await runToolContract(getWorkTool, { doi: '10.5555/odd' });
+    expect(output(result).truncatedLists).toEqual([
+      { field: 'relatedIdentifiers', shown: 100, total: 101, nextOffset: 100 },
+    ]);
+    const text = contentText(result);
+    expect(text).toContain(
+      '**Truncated lists:** relatedIdentifiers: 100 of 101; continue datacite_get_work with the same doi, list: "relatedIdentifiers", offset: 100',
+    );
+    expect(text).not.toContain('relation_types');
+  });
+
+  it('answers an unasserted type and an offset past the end with an empty page, and collapses repeats', async () => {
+    initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    const unasserted = await call({ relation_types: ['HasPart'] });
+    expect(output(unasserted)).toMatchObject({
+      relatedIdentifiers: [],
+      listPage: { list: 'relatedIdentifiers', relationTypes: ['HasPart'], offset: 0, total: 0 },
+      relatedIdentifierCounts: FULL_COUNTS,
+    });
+    expect(output(unasserted).listPage).not.toHaveProperty('nextOffset');
+    expect(contentText(unasserted)).toContain(
+      'relatedIdentifiers · relation_types ["HasPart"] · offset 0 · total 0 · end of list',
+    );
+
+    const past = output(await call({ relation_types: ['IsCitedBy'], offset: 5 }));
+    expect(past.relatedIdentifiers).toEqual([]);
+    expect(past.listPage).toEqual({
+      list: 'relatedIdentifiers',
+      relationTypes: ['IsCitedBy'],
+      offset: 5,
+      total: 1,
+    });
+
+    const repeated = output(
+      await call({ relation_types: ['IsCitedBy', 'is-cited-by', ' ISCITEDBY '] }),
+    );
+    expect(repeated.listPage?.relationTypes).toEqual(['IsCitedBy']);
+    expect(repeated.relatedIdentifiers).toHaveLength(1);
+
+    // A page that fills the cap exactly at the end of the filtered list ends it.
+    const exact = await call({ relation_types: ['IsDerivedFrom'], offset: 4810 });
+    expect(output(exact).relatedIdentifiers).toHaveLength(100);
+    expect(output(exact).listPage).toEqual({
+      list: 'relatedIdentifiers',
+      relationTypes: ['IsDerivedFrom'],
+      offset: 4810,
+      total: 4910,
+    });
+    expect(contentText(exact)).toContain('· offset 4810 · total 4910 · end of list');
+
+    // A value outside the vocabulary fails input validation, naming the field.
+    const unknown = await call({ relation_types: ['IsRelatedTo'] });
+    expect(toolError(unknown).code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(contentText(unknown)).toContain('relation_types');
+  });
+
+  it('keeps deposit order across several types and carries them all in the continuation', async () => {
+    initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    const several = await call({
+      relation_types: ['IsCitedBy', 'HasMetadata', 'IsDerivedFrom'],
+      offset: 4850,
+    });
+    const out = output(several);
+    expect(out.relatedIdentifiers?.map((r) => r.relationType)).toEqual([
+      ...Array.from({ length: 60 }, () => 'IsDerivedFrom'),
+      'HasMetadata',
+      'HasMetadata',
+      'IsCitedBy',
+    ]);
+    expect(out.listPage).toEqual({
+      list: 'relatedIdentifiers',
+      relationTypes: ['IsCitedBy', 'HasMetadata', 'IsDerivedFrom'],
+      offset: 4850,
+      total: 4913,
+    });
+    const first = await call({ relation_types: ['IsCitedBy', 'HasMetadata', 'IsDerivedFrom'] });
+    expect(continuation(contentText(first))).toEqual({
+      doi: GBIF,
+      list: 'relatedIdentifiers',
+      relation_types: ['IsCitedBy', 'HasMetadata', 'IsDerivedFrom'],
+      offset: 100,
+    });
+  });
+
+  it('selects relatedIdentifiers without list, rejects another list, and keeps offset_without_list', async () => {
+    const { http } = initServices([{ match: dataCite('/dois'), respond: gbifDownload() }]);
+    for (const list of [undefined, '', ' ', 'relatedIdentifiers']) {
+      const result = await call({ relation_types: ['IsCitedBy'], offset: 0, list });
+      expect(output(result).listPage).toEqual({
+        list: 'relatedIdentifiers',
+        relationTypes: ['IsCitedBy'],
+        offset: 0,
+        total: 1,
+      });
+    }
+    const requests = http.calls.length;
+    const conflict = await call({ relation_types: ['IsCitedBy'], list: 'creators' });
+    expect(toolError(conflict)).toMatchObject({
+      code: JsonRpcErrorCode.ValidationError,
+      data: {
+        reason: 'relation_types_other_list',
+        recovery: { hint: expect.stringContaining('relatedIdentifiers') },
+      },
+    });
+    const text = contentText(conflict);
+    expect(text).toContain('(reason relation_types_other_list');
+    expect(text).toContain('relatedIdentifiers');
+    expect(http.calls).toHaveLength(requests);
+
+    for (const input of [{ offset: 3 }, { offset: 3, relation_types: [] }]) {
+      expect(toolError(await call(input)).data?.reason).toBe('offset_without_list');
+    }
+    expect(
+      output(await call({ relation_types: ['', ' '], list: 'creators' })).listPage,
+    ).toMatchObject({ list: 'creators' });
+  });
+});
+
 describe('found arm', () => {
   it('pages polygon-only entries before caps and retains mixed geometry and interior points', async () => {
     initServices([
@@ -630,7 +955,16 @@ describe('found arm', () => {
     expect(out.truncatedLists).toEqual([
       { field: 'creators', shown: 100, total: 120, nextOffset: 100 },
       { field: 'geoLocations', shown: 50, total: 60, nextOffset: 50 },
-      { field: 'relatedIdentifiers', shown: 100, total: 130, nextOffset: 100 },
+      {
+        field: 'relatedIdentifiers',
+        shown: 100,
+        total: 130,
+        nextOffset: 100,
+        byRelationType: [
+          { relationType: 'IsPartOf', shown: 50, total: 65, nextOffset: 50 },
+          { relationType: 'Cites', shown: 50, total: 65, nextOffset: 50 },
+        ],
+      },
       { field: 'relatedItems', shown: 25, total: 30, nextOffset: 25 },
     ]);
     expect(out.creators).toHaveLength(100);
@@ -645,6 +979,9 @@ describe('found arm', () => {
         `${list.field}: ${list.shown} of ${list.total}; continue datacite_get_work with the same doi, list: "${list.field}", offset: ${list.nextOffset}`,
       );
     }
+    expect(text).toContain(
+      'or one relation type at a time with the same doi: IsPartOf (50 of 65 shown) list: "relatedIdentifiers", relation_types: ["IsPartOf"], offset: 50; Cites (50 of 65 shown) list: "relatedIdentifiers", relation_types: ["Cites"], offset: 50; relatedItems: 25 of 30;',
+    );
     expect(text).toContain('**IsPartOf** — 50 of 65');
     expect(text).toContain('**Cites** — 50 of 65');
   });
@@ -1112,13 +1449,14 @@ describe('rate limiting', () => {
     const error = toolError(result);
     expect(error.code).toBe(JsonRpcErrorCode.RateLimited);
     expect(error.data).toMatchObject({ reason: 'rate_limited', retryAfter: 30, retryable: true });
-    expect(contentText(result)).toContain('(reason rate_limited · retryable)');
+    expect(contentText(result)).toContain('(reason rate_limited · retryable · retry after 30)');
     expect(http.calls).toHaveLength(1);
   });
 
   it('logs invalid_doi at notice and a spent budget at error', () => {
     expect(declaredSeverities(getWorkTool.errors)).toEqual({
       offset_without_list: 'notice',
+      relation_types_other_list: 'notice',
       invalid_doi: 'notice',
       rate_limited: 'error',
     });

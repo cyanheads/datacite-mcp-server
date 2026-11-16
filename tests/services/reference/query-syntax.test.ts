@@ -11,6 +11,18 @@ import {
   VERIFIED_QUERY_FIELDS,
 } from '@/services/reference/query-syntax.js';
 
+/** The verified entry for the place field, as datacite_list_reference lists it. */
+const PLACE_FIELD_DESCRIPTION =
+  'Place name exactly as deposited, case-sensitive: "Svalbard" matches neither "svalbard" nor "Svalbard, Norway". Wildcards match a substring, with spaces escaped (geoLocations.geoLocationPlace:*Gulf\\ of\\ Mexico*).';
+
+describe('VERIFIED_QUERY_FIELDS', () => {
+  it('describes geoLocations.geoLocationPlace as an exact, case-sensitive name with wildcards for substrings', () => {
+    expect(
+      VERIFIED_QUERY_FIELDS.find((field) => field.value === 'geoLocations.geoLocationPlace'),
+    ).toEqual({ value: 'geoLocations.geoLocationPlace', description: PLACE_FIELD_DESCRIPTION });
+  });
+});
+
 describe('unknownFieldPrefix', () => {
   it('names a word the upstream would read as a nonexistent field', () => {
     expect(unknownFieldPrefix('Climate change: impacts')).toBe('change');
@@ -48,9 +60,10 @@ describe('unknownFieldPrefix', () => {
   });
 
   it('scans a long unterminated run of escaped quotes in linear time', () => {
-    const start = performance.now();
+    const start = process.threadCpuUsage();
     expect(unknownFieldPrefix(`"${'\\"'.repeat(50_000)} bogus:x`)).toBe('bogus');
-    expect(performance.now() - start).toBeLessThan(250);
+    const cpu = process.threadCpuUsage(start);
+    expect(cpu.user + cpu.system).toBeLessThan(250_000);
   });
 
   it('returns undefined for a query with no field prefix at all', () => {

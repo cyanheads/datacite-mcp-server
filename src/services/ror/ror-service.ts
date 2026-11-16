@@ -1,10 +1,11 @@
 /**
- * @fileoverview Bounded exact FundRef-to-ROR identity lookup, with literal-search fallback.
+ * @fileoverview Bounded exact FundRef-to-ROR identity lookup.
  * @module services/ror/ror-service
  */
 
 import { type Context, z } from '@cyanheads/mcp-ts-core';
 import { config } from '@cyanheads/mcp-ts-core/config';
+import { McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createPacer, type Pacer } from '@cyanheads/mcp-ts-core/utils';
 import { normalizeRor } from '@/services/datacite/normalize.js';
 import { TtlCache } from '@/services/http/ttl-cache.js';
@@ -21,6 +22,18 @@ const AnswerSchema = z.object({
     )
     .max(20),
 });
+
+/**
+ * What the FundRef-to-ROR lookup established. `unmatched`: ROR answered, naming
+ * no organization with the Crossref Funder ID, several, or an incomplete list,
+ * and the answer is cached like any other. `unavailable`: ROR gave no answer to
+ * read (an outage, a rate limit, a timeout, a redirect, a block page, or a body
+ * that is not JSON), which is never cached, so the next lookup asks again.
+ */
+export type FunderResolution =
+  | { status: 'resolved'; ror: string }
+  | { status: 'unmatched' }
+  | { status: 'unavailable' };
 
 /** Injectable network and pacing boundaries for the ROR lookup. */
 export interface RorServiceOptions {
@@ -55,12 +68,15 @@ export class RorService {
     this.pacer.dispose();
   }
 
-  /** One attempt, including queue time, within five seconds and the shared call deadline. */
-  async resolveFunder(funderId: string, ctx: Context): Promise<string | undefined> {
+  /**
+   * One attempt, including queue time, within five seconds and the shared call
+   * deadline. Caller cancellation is rethrown; every other failure is `unavailable`.
+   */
+  async resolveFunder(funderId: string, ctx: Context): Promise<FunderResolution> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      return await this.client.get(
+      const resolved = await this.client.get(
         {
           url: `https://api.ror.org/v2/organizations?query=${encodeURIComponent(funderId.slice('10.13039/'.length))}`,
           operation: 'resolveFunder',
@@ -88,9 +104,13 @@ export class RorService {
           return matches.length === 1 ? matches[0] : undefined;
         },
       );
+      return resolved ? { status: 'resolved', ror: resolved } : { status: 'unmatched' };
     } catch (error) {
       if (ctx.signal.aborted) throw error;
-      return undefined;
+      ctx.log.warning('ROR funder lookup got no answer', {
+        ...(error instanceof McpError && { code: error.code }),
+      });
+      return { status: 'unavailable' };
     } finally {
       clearTimeout(timer);
     }

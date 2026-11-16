@@ -96,6 +96,36 @@ describe('query parse errors', () => {
     expect(error.message).toMatch(/^DataCite could not parse the query syntax: check/);
   });
 
+  // Both paths answered the same too-complex wildcard with this body, captured live.
+  it.each(['/dois', '/repositories'])(
+    'reads a wildcard term too complex to run on %s as a query error, never as a bare 400',
+    async (path) => {
+      const { http, svc } = build([
+        { match: dataCite(path), respond: parse400('datacite/errors/too-complex-query.json') },
+      ]);
+      const search = (callerQuery: boolean) =>
+        path === '/dois'
+          ? svc.searchWorks(
+              { ...SEARCH, callerQuery, query: 'titles.title:*glacier*' },
+              createMockContext(),
+            )
+          : svc.searchRepositories(
+              { callerQuery, page: 1, size: 20, query: 'name:*glacier*' },
+              createMockContext(),
+            );
+      const caller = await rejection(search(true));
+      expect(caller.code).toBe(JsonRpcErrorCode.ValidationError);
+      expect(caller.data?.reason).toBe('invalid_query');
+      expect(caller.message).toBe(
+        'DataCite declined a wildcard term in the query as too complex to run: shorten or simplify it.',
+      );
+      const server = await rejection(search(false));
+      expect(server.code).toBe(JsonRpcErrorCode.InternalError);
+      expect(server.data?.reason).toBeUndefined();
+      expect(http.calls).toHaveLength(2);
+    },
+  );
+
   it.each([
     { path: '/dois', fixture: 'token-mgr-error-query.json', position: '(line 1, column 24)' },
     {
@@ -208,6 +238,27 @@ describe('/dois requests', () => {
     await expect(
       svc.getRecord('10.5061/dryad.2345', NODE_FIELDS, createMockContext()),
     ).resolves.toBeUndefined();
+  });
+
+  it('caches a work record past the default 1,000,000-byte ceiling, so paging its lists fetches it once', async () => {
+    const list = fixtureJson<RawDoiList>('datacite/works/record-dryad-234.json');
+    const record = list.data[0];
+    if (!record) throw new Error('fixture holds no record');
+    record.attributes.relatedIdentifiers = Array.from({ length: 20_000 }, (_, index) => ({
+      relatedIdentifier: `10.5555/related.${index}`,
+      relatedIdentifierType: 'DOI',
+      relationType: 'IsDerivedFrom',
+    }));
+    const body = JSON.stringify(list);
+    expect(body.length).toBeGreaterThan(1_000_000);
+    expect(body.length).toBeLessThan(10_000_000);
+    const { http, svc } = build([{ match: dataCite('/dois'), respond: () => json(body) }]);
+    const ctx = createMockContext();
+    const first = await svc.getWork('10.5061/dryad.234', ctx);
+    const second = await svc.getWork('10.5061/dryad.234', ctx);
+    expect(first?.record.attributes.relatedIdentifiers).toHaveLength(20_000);
+    expect(second?.record.attributes.relatedIdentifiers).toHaveLength(20_000);
+    expect(http.calls).toHaveLength(1);
   });
 
   it('returns a record without a client when the list includes none', async () => {

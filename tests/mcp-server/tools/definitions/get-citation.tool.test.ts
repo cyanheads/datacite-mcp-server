@@ -486,12 +486,12 @@ describe('locales', () => {
 });
 
 describe('machine formats', () => {
-  it('does not echo an oversized non-year value in a download warning', async () => {
+  it('does not echo an oversized non-year value in the JATS warning on a slice', async () => {
     const value = 'x'.repeat(100_001);
     const payload = `<year iso-8601-date="2026">${value}</year>`;
     initServices([{ match: negotiation(DOI, {}, CITATION_FORMATS.jats), respond: text(payload) }]);
     const result = await run({ doi: DOI, format: 'jats' });
-    expect(output(result).citation).toBeUndefined();
+    expect(output(result).citation).toBe(payload.slice(0, 100_000));
     expect(output(result).notice).not.toContain(value);
     expect(output(result).notice).toContain('non-year text');
     expect(markdownText(contentText(result))).toContain(output(result).notice!);
@@ -552,9 +552,22 @@ describe('machine formats', () => {
       expect(markdownText(contentText(result))).toContain(out.notice!);
       expect(requestUrls(http)).toHaveLength(1);
       if (oversized) {
-        expect(out.citation).toBeUndefined();
-        expect(out).toMatchObject({ shown: 0, truncated: true, totalCharacters: payload.length });
+        expect(out).toMatchObject({
+          citation: payload.slice(0, 100_000),
+          shown: 100_000,
+          nextOffset: 100_000,
+          truncated: true,
+          totalCharacters: payload.length,
+        });
         expect(out.downloadUrl).toContain('/application/vnd.jats+xml/');
+        const second = await run({ doi: DOI, format: 'jats', offset: out.nextOffset });
+        const rest = output(second);
+        const jatsWarning = out.notice!.slice(0, out.notice!.indexOf(' This jats document'));
+        expect(jatsWarning).toContain('2 empty');
+        expect(rest.citation).toBe(payload.slice(100_000));
+        expect(rest.notice).toContain(`${jatsWarning} This jats document`);
+        expect(markdownText(contentText(second))).toContain(rest.notice!);
+        expect(requestUrls(http)).toHaveLength(1);
       } else expect(out.citation).toBe(payload);
     },
   );
@@ -668,12 +681,41 @@ describe('machine formats', () => {
   });
 });
 
-describe('payload size', () => {
+describe('document slices', () => {
   const CAP = 100_000;
   const DATACITE_JSON = 'application/vnd.datacite.datacite+json';
+  const DATACITE_JSON_URL = `https://api.datacite.org/dois/${DATACITE_JSON}/${DOI_PATH}`;
   const count = (n: number) => n.toLocaleString('en-US');
-  const sizeNotice = (format: string, total: number, shown = CAP) =>
-    `The ${format} payload runs to ${count(total)} characters, past the ${count(CAP)} this tool returns, so it is cut to its first ${count(shown)}. datacite_get_work returns the record with each long list capped and its full count reported.`;
+  const REFERRALS =
+    'downloadUrl returns the whole document in one response, and datacite_get_work returns the record with each long list capped and its full count reported.';
+  /** The notice on a slice with units after it, naming the call that reads them. */
+  const nextNotice = (format: string, total: number, start: number, shown: number, next: object) =>
+    `This ${format} document runs to ${count(total)} UTF-16 units; ${format === 'text' ? 'citationHtml' : 'citation'} holds ${count(shown)} of them from offset ${count(start)}. Continue with datacite_get_citation ${JSON.stringify(next)}. ${REFERRALS}`;
+
+  /** The call a slice's notice names, checked against the tool's input schema. */
+  const nextCall = (notice: string | undefined): Input => {
+    const recipe = /Continue with datacite_get_citation (\{[^}]*\})\./.exec(notice ?? '')?.[1];
+    if (!recipe) throw new Error(`No next call in notice: ${notice}`);
+    const input = JSON.parse(recipe) as Input;
+    expect(getCitationTool.input.safeParse(input).success).toBe(true);
+    return input;
+  };
+
+  /** Follows each notice's next call from `first` until a slice ends the document. */
+  async function walk(first: Input) {
+    const pages: Output[] = [];
+    let input = first;
+    for (;;) {
+      const result = await run(input);
+      const out = output(result);
+      pages.push(out);
+      expect(markdownText(contentText(result))).toContain(out.notice!);
+      if (out.nextOffset === undefined) return pages;
+      expect(contentText(result)).toContain(`**Next offset:** ${out.nextOffset}`);
+      input = nextCall(out.notice);
+      expect(input.offset).toBe(out.nextOffset);
+    }
+  }
 
   it.each([
     ['csl_json', '{"title":"', '"}'],
@@ -685,7 +727,7 @@ describe('payload size', () => {
     ['codemeta', '{"name":"', '"}'],
     ['jats', '<article><title>', '</title></article>'],
   ] as const)(
-    'keeps %s complete below and at the cap, and offers download above it',
+    'keeps %s whole up to the default limit, and returns its first 100,000 units one unit past it',
     async (format, prefix, suffix) => {
       for (const length of [20, CAP - 1, CAP, CAP + 1]) {
         const size = Math.max(length, prefix.length + suffix.length);
@@ -698,9 +740,13 @@ describe('payload size', () => {
         const out = output(result);
         expect(result.isError).not.toBe(true);
         if (size <= CAP) {
-          expect(out.citation).toBe(payload);
-          expect(out).not.toHaveProperty('downloadUrl');
-          expect(out).not.toHaveProperty('truncated');
+          expect(out).toEqual({
+            found: true,
+            doi: DOI,
+            format,
+            mediaType: CITATION_FORMATS[format],
+            citation: payload,
+          });
           expect(contentText(result)).toContain(payload.trimEnd());
           if (prefix.startsWith('{'))
             expect(JSON.parse(out.citation!)).toEqual({
@@ -709,19 +755,33 @@ describe('payload size', () => {
               ),
             });
         } else {
-          expect(out).not.toHaveProperty('citation');
-          expect(out).toMatchObject({
-            downloadUrl: `https://api.datacite.org/dois/${CITATION_FORMATS[format]}/10.5061%2Fdryad.8515`,
-            totalCharacters: CAP + 1,
-            truncated: true,
-            shown: 0,
-            cap: CAP,
+          const downloadUrl = `https://api.datacite.org/dois/${CITATION_FORMATS[format]}/${DOI_PATH}`;
+          const notice = nextNotice(format, CAP + 1, 0, CAP, {
+            doi: DOI,
+            format,
+            limit: CAP,
+            offset: CAP,
           });
-          expect(contentText(result)).toContain(
-            `[Download complete document](<https://api.datacite.org/dois/${CITATION_FORMATS[format]}/10.5061%2Fdryad.8515>)`,
-          );
-          expect(contentText(result)).toContain('100,001');
-          expect(contentText(result)).toContain('fetch downloadUrl');
+          expect(out).toEqual({
+            found: true,
+            doi: DOI,
+            format,
+            mediaType: CITATION_FORMATS[format],
+            citation: payload.slice(0, CAP),
+            downloadUrl,
+            totalCharacters: CAP + 1,
+            nextOffset: CAP,
+            truncated: true,
+            shown: CAP,
+            cap: CAP,
+            notice,
+          });
+          const content = contentText(result);
+          expect(content).toContain(`[Download complete document](<${downloadUrl}>)`);
+          expect(content).toContain('**Total characters:** 100,001 (UTF-16 code units)');
+          expect(content).toContain(`**Next offset:** ${CAP}`);
+          expect(content).toContain(`\n${payload.slice(0, CAP)}\n`);
+          expect(markdownText(content)).toContain(notice);
         }
         expect(http.calls).toHaveLength(1);
         teardownServices();
@@ -729,43 +789,189 @@ describe('payload size', () => {
     },
   );
 
-  it('keeps the formatted-text cut surrogate-safe on both surfaces', async () => {
-    const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
-    initServices([{ match: negotiation(DOI), respond: html(payload) }]);
-    const result = await run({ doi: DOI });
-    expect(output(result)).toMatchObject({
-      citation: 'a'.repeat(CAP - 1),
-      citationHtml: 'a'.repeat(CAP - 1),
-      truncated: true,
-      shown: CAP - 1,
-      cap: CAP,
-    });
-    expect(contentText(result)).toContain('a'.repeat(CAP - 1));
-    expect(output(result)).not.toHaveProperty('downloadUrl');
+  it('walks a machine document slice by slice to its end, rendering it upstream once', async () => {
+    const payload = `${'a'.repeat(CAP - 1)}😀${'b'.repeat(CAP - 2)}😀${'c'.repeat(50_000)}`;
+    const { http } = initServices([
+      { match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) },
+    ]);
+    const pages = await walk({ doi: DOI, format: 'datacite_json' });
+    expect(pages.map((page) => page.citation).join('')).toBe(payload);
+    expect(pages.map(({ shown, nextOffset }) => ({ shown, nextOffset }))).toEqual([
+      { shown: CAP - 1, nextOffset: CAP - 1 },
+      { shown: CAP, nextOffset: 2 * CAP - 1 },
+      { shown: 50_002, nextOffset: undefined },
+    ]);
+    for (const page of pages) {
+      expect(page).toMatchObject({
+        truncated: true,
+        cap: CAP,
+        totalCharacters: payload.length,
+        downloadUrl: DATACITE_JSON_URL,
+      });
+    }
+    expect(pages[2]!.notice).toBe(
+      `This datacite_json document runs to ${count(payload.length)} UTF-16 units; citation holds the last 50,002 of them, from offset 199,999. downloadUrl returns the whole document in one response.`,
+    );
+    expect(http.calls).toHaveLength(1);
   });
 
-  it('returns a complete download instead of a partial machine document on both surfaces', async () => {
-    const payload = `{"id":"x","filler":"${'a'.repeat(2_000_000)}"}`;
+  it.each([
+    { name: 'at the end', offset: 2 * CAP + 1 },
+    { name: 'past the end', offset: Number.MAX_SAFE_INTEGER },
+  ])('answers an offset $name with an empty slice and no next offset', async ({ offset }) => {
+    const payload = 'z'.repeat(2 * CAP + 1);
     initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
-    const result = await run({ doi: DOI, format: 'datacite_json' });
+    const result = await run({ doi: DOI, format: 'datacite_json', offset });
     const out = output(result);
-    expect(out).not.toHaveProperty('citation');
-    expect(out).toMatchObject({
+    const notice = `offset ${count(offset)} is at or past the end of this datacite_json document, which runs to 200,001 UTF-16 units, so the slice is empty. Pass offset 0 to start from the beginning.`;
+    expect(out).toEqual({
+      found: true,
+      doi: DOI,
+      format: 'datacite_json',
+      mediaType: DATACITE_JSON,
+      citation: '',
+      downloadUrl: DATACITE_JSON_URL,
+      totalCharacters: payload.length,
       truncated: true,
       shown: 0,
       cap: CAP,
-      downloadUrl:
-        'https://api.datacite.org/dois/application/vnd.datacite.datacite+json/10.5061%2Fdryad.8515',
-      totalCharacters: payload.length,
+      notice,
     });
-    const content = contentText(result);
-    expect(content).toContain(
-      '[Download complete document](<https://api.datacite.org/dois/application/vnd.datacite.datacite+json/10.5061%2Fdryad.8515>)',
+    expect(markdownText(contentText(result))).toContain(notice);
+    expect(contentText(result)).not.toContain('**Next offset:**');
+  });
+
+  it('returns a document of exactly limit units whole, and one unit more as a slice', async () => {
+    for (const payload of ['0123456789', '0123456789X']) {
+      initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+      const out = output(await run({ doi: DOI, format: 'datacite_json', limit: 10 }));
+      if (payload.length === 10) {
+        expect(out).toEqual({
+          found: true,
+          doi: DOI,
+          format: 'datacite_json',
+          mediaType: DATACITE_JSON,
+          citation: payload,
+        });
+      } else {
+        expect(out).toMatchObject({ citation: '0123456789', nextOffset: 10, shown: 10, cap: 10 });
+        expect(nextCall(out.notice)).toEqual({
+          doi: DOI,
+          format: 'datacite_json',
+          limit: 10,
+          offset: 10,
+        });
+      }
+      teardownServices();
+    }
+  });
+
+  it('starts one unit early from an offset inside a surrogate pair', async () => {
+    const payload = `ab😀cd`;
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+    const out = output(await run({ doi: DOI, format: 'datacite_json', offset: 3, limit: 2 }));
+    expect(out).toMatchObject({ citation: '😀', shown: 2, nextOffset: 4 });
+    expect(out.notice).toContain('holds 2 of them from offset 2.');
+  });
+
+  it('applies a limit over 1,000,000 as 1,000,000 with a notice, and continues with the applied limit', async () => {
+    const payload = 'x'.repeat(1_000_005);
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
+    const result = await run({ doi: DOI, format: 'datacite_json', limit: 2_000_000 });
+    const out = output(result);
+    expect(out).toMatchObject({
+      citation: 'x'.repeat(1_000_000),
+      nextOffset: 1_000_000,
+      shown: 1_000_000,
+      cap: 1_000_000,
+    });
+    expect(out.notice).toBe(
+      `Requested limit=2000000; applied limit=1000000. ${nextNotice('datacite_json', 1_000_005, 0, 1_000_000, { doi: DOI, format: 'datacite_json', limit: 1_000_000, offset: 1_000_000 })}`,
     );
-    expect(content).toContain(`**Total characters:** ${count(payload.length)}`);
-    expect(out.notice).toContain('downloadUrl');
-    expect(content).toContain('downloadUrl');
-    expect(content).not.toContain('```json');
+    expect(markdownText(contentText(result))).toContain(out.notice!);
+  });
+
+  it('discloses a clamped limit on a document the slice holds whole', async () => {
+    initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text('{}') }]);
+    const result = await run({ doi: DOI, format: 'datacite_json', limit: 1_000_001 });
+    expect(output(result)).toEqual({
+      found: true,
+      doi: DOI,
+      format: 'datacite_json',
+      mediaType: DATACITE_JSON,
+      citation: '{}',
+      notice: 'Requested limit=1000001; applied limit=1000000.',
+    });
+    expect(contentText(result)).toContain('Requested limit=1000001; applied limit=1000000.');
+  });
+
+  it.each([
+    [{ offset: -1 }, 'offset'],
+    [{ offset: 1.5 }, 'offset'],
+    [{ limit: 0 }, 'limit'],
+    [{ limit: 2.5 }, 'limit'],
+  ])('rejects %j before any request', async (bad, field) => {
+    const { http } = initServices([]);
+    const result = await run({ doi: DOI, format: 'datacite_json', ...bad });
+    const error = toolError(result);
+    expect(error.code).toBe(JsonRpcErrorCode.InvalidParams);
+    expect(error.message).toContain(field);
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('ignores offset and limit on a DOI DataCite does not hold', async () => {
+    const doi = '10.1038/nature12373';
+    initServices([
+      {
+        match: negotiation(doi, {}, DATACITE_JSON),
+        respond: fixtureResponse('datacite/errors/negotiation-404.json', { status: 404 }),
+      },
+      { match: doiRa(doi), respond: fixtureResponse('doi-ra/crossref.json') },
+    ]);
+    const out = output(await run({ doi, format: 'datacite_json', offset: 7, limit: 5_000_000 }));
+    expect(out).toMatchObject({ found: false, missReason: 'other_agency' });
+    expect(out).not.toHaveProperty('citation');
+    expect(out).not.toHaveProperty('notice');
+  });
+
+  it('pages formatted text through its HTML, ending outside tags and references, with the style notice on every slice', async () => {
+    const style = 'apa-single-spaced';
+    const htmlBody = 'Ab <i>Cd</i> &amp; Ef.';
+    const { http } = initServices([
+      { match: negotiation(DOI, { style, locale: 'de-DE' }), respond: html(htmlBody) },
+    ]);
+    getDataCiteService().styleVerdicts.set(style, 'apa_variant_unconfirmed', 86_400_000);
+    const pages = await walk({ doi: DOI, style: 'APA-Single-Spaced', locale: 'de', limit: 5 });
+    expect(pages.map((page) => page.citationHtml)).toEqual([
+      'Ab ',
+      '<i>Cd',
+      '</i> ',
+      '&amp;',
+      ' Ef.',
+    ]);
+    expect(pages.map((page) => page.citationHtml).join('')).toBe(htmlBody);
+    expect(pages.map((page) => page.citation)).toEqual(['Ab', 'Cd', '', '&', 'Ef.']);
+    expect(pages[0]!.notice).toBe(
+      `${CACHED_APA_VARIANT_NOTICE} ${nextNotice('text', htmlBody.length, 0, 3, { doi: DOI, format: 'text', style, locale: 'de-DE', limit: 5, offset: 3 })}`,
+    );
+    for (const page of pages) {
+      expect(page.notice).toContain(CACHED_APA_VARIANT_NOTICE);
+      expect(page).toMatchObject({ style, locale: 'de-DE', totalCharacters: htmlBody.length });
+    }
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('takes a whole reference rather than an empty slice, and trims only a whole rendering', async () => {
+    const htmlBody = ' Ab &amp; Cd ';
+    initServices([{ match: negotiation(DOI), respond: html(htmlBody) }]);
+    const reference = output(await run({ doi: DOI, offset: 4, limit: 2 }));
+    expect(reference).toMatchObject({ citationHtml: '&amp;', citation: '&', nextOffset: 9 });
+    const whole = output(await run({ doi: DOI }));
+    expect(whole).toMatchObject({ citationHtml: htmlBody.trim(), citation: 'Ab & Cd' });
+    expect(whole).not.toHaveProperty('totalCharacters');
+    const tail = output(await run({ doi: DOI, offset: 9 }));
+    expect(tail).toMatchObject({ citationHtml: ' Cd ', citation: 'Cd', shown: 4 });
+    expect(tail).not.toHaveProperty('nextOffset');
   });
 
   it('returns a payload of exactly 100,000 characters whole, with no disclosure', async () => {
@@ -779,18 +985,44 @@ describe('payload size', () => {
       mediaType: DATACITE_JSON,
       citation: payload,
     });
-    expect(contentText(result)).not.toContain('payload runs to');
+    // Both disclosures name the unit: the slice notice ("runs to … UTF-16 units") and the
+    // **Total characters:** line ("UTF-16 code units").
+    expect(contentText(result)).not.toContain('UTF-16');
   });
 
-  it('counts surrogate pairs in oversized machine exports without returning a split document', async () => {
+  it('ends a machine slice before a surrogate pair the limit would split, on both surfaces', async () => {
     const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
     initServices([{ match: negotiation(DOI, {}, DATACITE_JSON), respond: text(payload) }]);
-    const out = output(await run({ doi: DOI, format: 'datacite_json' }));
-    expect(out).not.toHaveProperty('citation');
-    expect(out).toMatchObject({ truncated: true, shown: 0, cap: CAP, totalCharacters: CAP + 6 });
+    const result = await run({ doi: DOI, format: 'datacite_json' });
+    expect(output(result)).toMatchObject({
+      citation: 'a'.repeat(CAP - 1),
+      truncated: true,
+      shown: CAP - 1,
+      cap: CAP,
+      nextOffset: CAP - 1,
+      totalCharacters: CAP + 6,
+    });
+    expect(contentText(result)).toContain(`\`\`\`json\n${'a'.repeat(CAP - 1)}\n\`\`\``);
   });
 
-  it('cuts a formatted citation before deriving its text, keeping a style notice beside the disclosure', async () => {
+  it('ends a formatted-text slice before a surrogate pair, keeping its download URL', async () => {
+    const payload = `${'a'.repeat(CAP - 1)}😀 tail`;
+    initServices([{ match: negotiation(DOI), respond: html(payload) }]);
+    const result = await run({ doi: DOI });
+    expect(output(result)).toMatchObject({
+      citation: 'a'.repeat(CAP - 1),
+      citationHtml: 'a'.repeat(CAP - 1),
+      truncated: true,
+      shown: CAP - 1,
+      cap: CAP,
+      nextOffset: CAP - 1,
+      totalCharacters: CAP + 6,
+      downloadUrl: `https://api.datacite.org/dois/text/x-bibliography/${DOI_PATH}`,
+    });
+    expect(contentText(result)).toContain('a'.repeat(CAP - 1));
+  });
+
+  it('slices a formatted citation before deriving its text, keeping a style notice beside the disclosure', async () => {
     const style = 'apa-single-spaced';
     const htmlBody = `${'Author, A., '.repeat(10_000)}(2020). <i>Big</i>.`;
     initServices([{ match: negotiation(DOI, { style }), respond: html(htmlBody) }]);
@@ -799,11 +1031,48 @@ describe('payload size', () => {
     const out = output(result);
     expect(out.citationHtml).toBe(htmlBody.slice(0, CAP));
     expect(out.citation).toBe(htmlBody.slice(0, CAP).trim());
-    const notice = `${CACHED_APA_VARIANT_NOTICE} ${sizeNotice('text', htmlBody.length)}`;
-    expect(out).toMatchObject({ truncated: true, shown: CAP, cap: CAP, notice });
+    const notice = `${CACHED_APA_VARIANT_NOTICE} ${nextNotice('text', htmlBody.length, 0, CAP, { doi: DOI, format: 'text', style, limit: CAP, offset: CAP })}`;
+    expect(out).toMatchObject({ truncated: true, shown: CAP, cap: CAP, nextOffset: CAP, notice });
     const content = contentText(result);
-    expect(content).toContain(`> ${notice}`);
+    expect(markdownText(content)).toContain(notice);
     expect(content.length).toBeLessThan(2 * CAP + 3_000);
+  });
+});
+
+describe('the shared response cache', () => {
+  const JSON_BODY = '{"id":"x","title":"Café 😀 <i>T</i> &amp;"}';
+  const routes = () => [
+    { match: negotiation(DOI, {}, CITATION_FORMATS.datacite_json), respond: text(JSON_BODY) },
+    { match: negotiation(DOI, {}, CITATION_FORMATS.bibtex), respond: text('@misc{x}') },
+    { match: negotiation(DOI, { style: 'ieee' }), respond: html(IEEE_HTML) },
+    { match: negotiation(DOI), respond: html(DEFAULT_HTML) },
+  ];
+  const INPUTS: Input[] = [
+    { doi: DOI, format: 'datacite_json' },
+    { doi: DOI, format: 'datacite_json', offset: 25, limit: 7 },
+    { doi: DOI, format: 'bibtex' },
+    { doi: DOI },
+    { doi: DOI, offset: 40, limit: 30 },
+    { doi: DOI, style: 'ieee' },
+    { doi: DOI, style: 'ieee', limit: 12 },
+  ];
+
+  it('answers each input the same fresh as after other formats and styles of the DOI were cached', async () => {
+    const fresh = [];
+    for (const input of INPUTS) {
+      initServices(routes());
+      fresh.push(await run(input));
+      teardownServices();
+    }
+    const { http } = initServices(routes());
+    for (const priming of [...INPUTS].reverse()) await run(priming);
+    const primed = [];
+    for (const input of INPUTS) primed.push(await run(input));
+    for (const [index, result] of primed.entries()) {
+      expect(result.structuredContent).toEqual(fresh[index]!.structuredContent);
+      expect(contentText(result)).toBe(contentText(fresh[index]!));
+    }
+    expect(http.calls).toHaveLength(4);
   });
 });
 
@@ -1047,7 +1316,7 @@ describe('declared errors and input', () => {
     const error = expectToolError(result, 'rate_limited', JsonRpcErrorCode.RateLimited);
     expect(error.data).toMatchObject({ retryAfter: 30, retryable: true });
     expect(error.message).toContain('retry in 30 seconds');
-    expect(contentText(result)).toContain('(reason rate_limited · retryable)');
+    expect(contentText(result)).toContain('(reason rate_limited · retryable · retry after 30)');
     expect(http.calls).toHaveLength(1);
   });
 

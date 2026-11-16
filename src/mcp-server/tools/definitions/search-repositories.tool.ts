@@ -59,11 +59,11 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'DataCite rejects the syntax of the query input (unbalanced parentheses or quotes, dangling operator).',
+      when: 'DataCite rejects the query input: its syntax (unbalanced parentheses or quotes, dangling operator), or a wildcard term too complex for DataCite to run.',
       severity: 'notice',
       thrownBy: 'service',
       recovery:
-        'Fix the query syntax, or search a plain repository name; datacite_list_reference topic query_syntax lists operators.',
+        'Fix the query syntax or shorten and simplify its wildcard terms, or search a plain repository name; datacite_list_reference topic query_syntax lists operators.',
     },
     {
       reason: 'conflicting_lookup',

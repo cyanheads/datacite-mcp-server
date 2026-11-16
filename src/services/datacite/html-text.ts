@@ -2,6 +2,7 @@
  * @fileoverview Plain text from deposited metadata and formatted citations:
  * recognized formatting tags stripped, block boundaries separated, entities
  * decoded once, whitespace collapsed, and scientific comparisons preserved.
+ * Also locates the tag or character reference a slice boundary falls inside.
  * @module services/datacite/html-text
  */
 
@@ -88,8 +89,44 @@ const BLOCK_TAGS = new Set([
 const tagName = (body: string): string | undefined =>
   /^\/?([a-z][a-z0-9]*)(?=[\s/]|$)/i.exec(body)?.[1]?.toLowerCase();
 
-const decodeText = (value: string): string =>
-  value.replace(/&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi, decodeEntity);
+/** A character reference the text conversions decode: named, decimal, or hex, `;`-terminated. */
+const REFERENCE = /&(#x[0-9a-f]+|#\d+|[a-z][a-z0-9]*);/gi;
+/** {@link REFERENCE}, matched only at `lastIndex`. */
+const REFERENCE_AT = new RegExp(REFERENCE.source, 'iy');
+
+const decodeText = (value: string): string => value.replace(REFERENCE, decodeEntity);
+
+/** `#`, an ASCII digit, or an ASCII letter: what follows `&` in a reference. */
+const isReferenceChar = (code: number): boolean =>
+  code === 0x23 ||
+  (code >= 0x30 && code <= 0x39) ||
+  ((code | 0x20) >= 0x61 && (code | 0x20) <= 0x7a);
+
+/**
+ * The tag or character reference the boundary before `position` falls strictly
+ * inside, as `[start, end)`, or `undefined`. A tag is what the conversions here
+ * strip (`<`, then no `<` or `>`, then `>`) and a reference is one they decode,
+ * so HTML cut outside both converts to the text its units contribute. Linear in
+ * the distance to the nearest bracket, and to the end of a reference it finds.
+ */
+export function markupAround(
+  html: string,
+  position: number,
+): { end: number; start: number } | undefined {
+  let open = position - 1;
+  while (open >= 0 && html[open] !== '<' && html[open] !== '>') open--;
+  if (html[open] === '<') {
+    let close = position;
+    while (close < html.length && html[close] !== '<' && html[close] !== '>') close++;
+    if (html[close] === '>') return { start: open, end: close + 1 };
+  }
+  let amp = position - 1;
+  while (amp >= 0 && isReferenceChar(html.charCodeAt(amp))) amp--;
+  if (html[amp] !== '&') return;
+  REFERENCE_AT.lastIndex = amp;
+  const end = amp + (REFERENCE_AT.exec(html)?.[0].length ?? 0);
+  return end > position ? { start: amp, end } : undefined;
+}
 
 /**
  * The visible text of an HTML fragment. A tag cannot contain `<`, which keeps

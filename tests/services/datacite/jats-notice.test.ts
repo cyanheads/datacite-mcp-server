@@ -75,5 +75,5 @@ describe('jatsNotice', () => {
       expect(samples[3]! / samples[0]!).toBeLessThan(256);
       console.info('JATS scanner CPU', process.versions.bun ? 'Bun' : 'Node', index, samples);
     }
-  });
+  }, 0);
 });

@@ -52,10 +52,12 @@ describe('getServerConfig', () => {
     const { traceRelationsTool } = await import(
       '@/mcp-server/tools/definitions/trace-relations.tool.js'
     );
+    const { getCitationTool } = await import('@/mcp-server/tools/definitions/get-citation.tool.js');
     for (const { tool, field, cap, base } of [
       { tool: searchWorksTool, field: 'limit', cap: 1000, base: {} },
       { tool: searchRepositoriesTool, field: 'limit', cap: 1000, base: {} },
       { tool: traceRelationsTool, field: 'max_nodes', cap: 100, base: { doi: '10.5555/test' } },
+      { tool: getCitationTool, field: 'limit', cap: 1_000_000, base: { doi: '10.5555/test' } },
     ]) {
       expect(z.toJSONSchema(tool.input, { io: 'input' }).properties?.[field]).toMatchObject({
         maximum: cap,

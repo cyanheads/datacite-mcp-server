@@ -235,10 +235,11 @@ describe('slash runs in ORCID and ROR values', () => {
   const slashes = '/'.repeat(100_000);
 
   it('rejects a long inner run of slashes in linear time', () => {
-    const start = performance.now();
+    const start = process.threadCpuUsage();
     expect(normalizeOrcid(`orcid.org/${slashes}x`)).toBeUndefined();
     expect(normalizeRor(`ror.org/${slashes}x`)).toBeUndefined();
-    expect(performance.now() - start).toBeLessThan(250);
+    const cpu = process.threadCpuUsage(start);
+    expect(cpu.user + cpu.system).toBeLessThan(250_000);
   });
 
   it('strips a long trailing run of slashes', () => {

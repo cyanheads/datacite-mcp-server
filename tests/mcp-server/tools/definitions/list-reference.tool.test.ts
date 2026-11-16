@@ -92,6 +92,10 @@ describe('datacite_list_reference', () => {
       'Other',
     ]);
     expect(byValue.get('IsIdenticalTo')?.inverse).toBe('IsIdenticalTo');
+    // Schema 4.7 (2026-03-03) added Other to relationType.
+    expect(byValue.get('Other')?.description).toBe(
+      'No inverse in the schema; added in schema 4.7 for a relation no other type fits.',
+    );
     expect(
       entries.filter((entry) => entry.group === 'citations').map((entry) => entry.value),
     ).toEqual([
@@ -102,6 +106,19 @@ describe('datacite_list_reference', () => {
       'IsSupplementTo',
       'IsSupplementedBy',
     ]);
+  });
+
+  it('notes how each relation_types input reads its types, and that neither is case-sensitive', async () => {
+    const result = await run('relation_types');
+    const { notes } = output(result);
+    const text = contentText(result);
+    for (const note of [
+      "The relation_types input of datacite_get_work pages the record's own relatedIdentifiers asserting those types, in deposit order; a type deposited in another spelling, such as isCitedBy, matches none of these values.",
+      'relatedIdentifiers.relationType in query syntax is case-sensitive; the relation_types inputs of datacite_trace_relations and datacite_get_work are not.',
+    ]) {
+      expect(notes).toContain(note);
+      expect(text).toContain(`- ${flattenInline(note)}`);
+    }
   });
 
   it('lists each sort order with the upstream sort parameter it sends', async () => {
@@ -142,6 +159,16 @@ describe('datacite_list_reference', () => {
     expect(reserved).not.toContain('\\ / must be escaped');
     expect(reserved).toContain('Leave / bare');
     expect(contentText(result)).toContain(`- ${flattenInline(reserved ?? '')}`);
+  });
+
+  it('describes the place field as an exact, case-sensitive name with wildcards for substrings', async () => {
+    const result = await run('query_syntax');
+    const place = output(result).entries.find(
+      (entry) => entry.value === 'geoLocations.geoLocationPlace',
+    );
+    expect(place?.description).toContain('exactly as deposited, case-sensitive');
+    expect(place?.description).toContain('geoLocations.geoLocationPlace:*Gulf\\ of\\ Mexico*');
+    expect(markdownText(contentText(result))).toContain(place?.description);
   });
 
   it('leaves out the CSL locales DataCite renders as APA in US English, and says why', async () => {

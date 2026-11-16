@@ -42,7 +42,7 @@
     "datacite_clamp_limits": {
       "type": "string",
       "title": "Clamp read counts",
-      "description": "true (default) applies at most 1,000 search rows or 100 graph nodes with a notice. false rejects counts above those caps.",
+      "description": "true (default) applies at most 1,000 search rows, 100 graph nodes, or 1,000,000 datacite_get_citation limit units with a notice. false rejects counts above those caps.",
       "default": "true"
     },
     "datacite_contact_email": {

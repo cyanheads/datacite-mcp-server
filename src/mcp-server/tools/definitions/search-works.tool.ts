@@ -17,6 +17,7 @@ import {
 import {
   getDataCiteService,
   type WorkSearchFilters,
+  worksSearchFits,
 } from '@/services/datacite/datacite-service.js';
 import { mapWorkRow } from '@/services/datacite/mappers.js';
 import {
@@ -34,10 +35,13 @@ import {
   anyPhrase,
   composeQuery,
   escapeQueryText,
+  exactPlaceClause,
   funderIdClause,
-  nameTokensClause,
+  nameProximityClause,
   orcidClause,
+  PLACE_SUBSTRING_MAX_CHARS,
   phrase,
+  placeClause,
   singleLine,
   stableHash,
   yearRangeClause,
@@ -48,6 +52,7 @@ import {
   fieldOfScienceLabels,
   resolveFieldOfScience,
 } from '@/services/reference/fields-of-science.js';
+import { buildResolver } from '@/services/reference/lookup.js';
 import { unknownFieldPrefix } from '@/services/reference/query-syntax.js';
 import {
   RESOURCE_TYPE_IDS,
@@ -71,6 +76,22 @@ import { blockquote, flattenInline, num, numOrNA, orNA, tableCell, urlLink } fro
 
 /** Page numbers reach only this many matches upstream. */
 const PAGE_CEILING = 10_000;
+
+/** Error options for a message or hint that quotes the cursor "*" for the caller to send back verbatim. */
+const START_CURSOR = { literals: ['*'] };
+
+/** The notice for a place matched exactly, whichever limit sent it there. */
+const PLACE_EXACT_NOTICE = `place matched whole deposited place names exactly and case-sensitively, since one of the case forms it is tried in is over ${PLACE_SUBSTRING_MAX_CHARS} characters or matching inside place names would make the request longer than DataCite accepts; pass a shorter part of it to match inside place names.`;
+
+const VERSION_SCOPE_IDS = ['all', 'series', 'releases'] as const;
+const resolveVersionScope = buildResolver(VERSION_SCOPE_IDS.map((id) => ({ id })));
+
+/** The records each version_scope drops, by the version relation they assert (relationType is case-sensitive upstream). */
+const VERSION_SCOPE_CLAUSES = {
+  all: undefined,
+  series: 'NOT relatedIdentifiers.relationType:IsVersionOf',
+  releases: 'NOT relatedIdentifiers.relationType:HasVersion',
+} satisfies Record<(typeof VERSION_SCOPE_IDS)[number], string | undefined>;
 
 const resolveSort = (value: string) =>
   SORT_ORDER_IDS.find(
@@ -112,6 +133,7 @@ const AppliedFiltersSchema = z
     language: z.string().optional().describe('Language clause as sent.'),
     place: z.string().optional().describe('Place clause as sent.'),
     published: z.string().optional().describe('Publication-year clause as sent.'),
+    version_scope: z.string().optional().describe('Version-relation clause as sent.'),
     min_citations: z.string().optional().describe('has-citations as sent.'),
   })
   .describe('Every applied filter as sent upstream; {} when none.');
@@ -124,7 +146,7 @@ const facetList = (list: RawFacet[] | undefined) =>
 export const searchWorksTool = tool('datacite_search_works', {
   title: 'Search DataCite works',
   description:
-    'Search DataCite DOI metadata for datasets, software, samples, workflows, and other research outputs. Combine plain words (`text`) or OpenSearch query syntax (`query`) with filters for resource type, creator (ORCID iD or name), affiliation (ROR ID or name), affiliation country, funder (ROR ID, Crossref Funder ID, or name), subject, field of science, repository, provider, license, language, geographic place, publication-year range, and minimum citation count. Returns the total match count and compact rows — DOI, title, first creators, year, type, repository, licenses, and citation/view/download counts — plus optional top facet counts. Page numbers reach the first 10,000 ranked matches; pass cursor "*" to walk any result set in full, in registration order.',
+    'Search DataCite DOI metadata for datasets, software, samples, workflows, and other research outputs. Combine plain words (`text`) or OpenSearch query syntax (`query`) with filters for resource type, creator (ORCID iD or name), affiliation (ROR ID or name), affiliation country, funder (ROR ID, Crossref Funder ID, or name), subject, field of science, repository, provider, license, language, geographic place, publication-year range, and minimum citation count. Returns the total match count and compact rows — DOI, title, first creators, year, type, repository, licenses, and citation/view/download counts — plus optional top facet counts. The total counts DOIs, so a versioned work counts once per DOI — its concept DOI and each version DOI, as Zenodo registers them; set version_scope to series to count each version series once, or releases to count only the versions. Page numbers reach the first 10,000 ranked matches; pass cursor "*" to walk any result set in full, in registration order.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
@@ -139,16 +161,16 @@ export const searchWorksTool = tool('datacite_search_works', {
     {
       reason: 'invalid_query',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'DataCite rejects the syntax of the query input (unbalanced parentheses or quotes, dangling operator).',
+      when: 'DataCite rejects the query input: its syntax (unbalanced parentheses or quotes, dangling operator), or a wildcard term too complex for DataCite to run.',
       severity: 'notice',
       thrownBy: 'service',
       recovery:
-        'Fix the query syntax, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
+        'Fix the query syntax or shorten and simplify its wildcard terms, or move plain words to text, which escapes every reserved character; datacite_list_reference topic query_syntax lists field paths and operators.',
     },
     {
       reason: 'invalid_filter',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a never-assigned affiliation country code, a creator or funder with no letters or digits, a reversed year range, or include_child_funders without a ROR funder.',
+      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a never-assigned affiliation country code, a creator or funder with no letters or digits, a reversed year range, or include_child_funders with a funder name, no funder, or a Crossref Funder ID that ROR maps to no single organization.',
       severity: 'notice',
       recovery:
         'Correct the filter the error names to the form it states (identifier forms: datacite_list_reference topic identifier_formats), then retry.',
@@ -176,6 +198,14 @@ export const searchWorksTool = tool('datacite_search_works', {
       severity: 'notice',
       recovery:
         'A cursor walk runs in registration order and ignores ranking; drop page and sort, or drop cursor to use ranked pages.',
+    },
+    {
+      reason: 'ror_unavailable',
+      code: JsonRpcErrorCode.ServiceUnavailable,
+      when: 'include_child_funders is true with a Crossref Funder ID, and ROR gave no answer to its lookup: an outage, a rate limit, a timeout, or a block page.',
+      retryable: true,
+      recovery:
+        "Retry the same call shortly; to search now, set funder to the funder's ROR ID (bare or a ror.org URL), which needs no lookup, or set include_child_funders to false to match the Crossref Funder ID without child organizations.",
     },
     {
       reason: 'rate_limited',
@@ -215,12 +245,14 @@ export const searchWorksTool = tool('datacite_search_works', {
       'Current or formerly assigned ISO 3166 alpha-2 country of a creator or contributor affiliation, plus XK; any case (DE, us). UK aliases to GB with a notice. Unassigned codes, alpha-3 codes and names are rejected.',
     ),
     funder: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
-      'A funder ROR ID, a Crossref Funder ID (10.13039/100000001, its doi.org URL, or the bare digits), or a funder name.',
+      'A funder ROR ID, a Crossref Funder ID (10.13039/100000001, its doi.org URL, or the bare digits), or a funder name — every name token must appear in one funding reference.',
     ),
     include_child_funders: z
       .boolean()
       .default(false)
-      .describe("Also match the ROR funder's child organizations. Only with a ROR funder."),
+      .describe(
+        "Also match the funder's child organizations in ROR. Needs funder as a ROR ID, or a Crossref Funder ID that resolves to exactly one ROR ID; rejected with a funder name or no funder.",
+      ),
     subject: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A subject phrase, matched case-insensitively against subject terms.',
     ),
@@ -258,7 +290,7 @@ export const searchWorksTool = tool('datacite_search_works', {
         ),
     ).describe('ISO 639-1 language code of the work, any case (en, de).'),
     place: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
-      'A geographic place phrase, matched against deposited place names.',
+      'A place name, matched anywhere inside deposited place names, so India also matches Indiana. Tried as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized: give a multi-word name its usual capitalization (Gulf of Mexico). For one exact, case-sensitive name, use query geoLocations.geoLocationPlace:"Svalbard" instead.',
     ),
     published_from: blankAsUnset(z.number().int().min(1000).max(2100).optional()).describe(
       'Earliest publication year (inclusive). Alone, the range is open-ended.',
@@ -268,6 +300,11 @@ export const searchWorksTool = tool('datacite_search_works', {
     ),
     min_citations: blankAsUnset(z.number().int().min(1).optional()).describe(
       'Only works DataCite records at least this many citations for.',
+    ),
+    version_scope: blankAsUnset(
+      enumish(VERSION_SCOPE_IDS, resolveVersionScope).default('all'),
+    ).describe(
+      "Which DOIs of a versioned work count. all (default): every DOI, so a Zenodo upload counts at least twice — its concept DOI and each version DOI. series: drops every record asserting IsVersionOf, so a version series counts once, through its concept DOI; a version whose concept DOI fails another filter (a later publication year, a changed creator or affiliation) or lies outside DataCite is not counted at all. releases: drops every record asserting HasVersion, so each version counts and concept DOIs drop out. Neither collapses Figshare's .vN DOIs, which point at their base DOI with IsIdenticalTo, so those pairs still count twice.",
     ),
     sort: blankAsUnset(enumish(SORT_ORDER_IDS, resolveSort).optional()).describe(
       'relevance, newest, oldest, recently_updated, most_cited, most_viewed, or most_downloaded. Omitted: relevance when text or query is set, else newest. Not with cursor.',
@@ -389,7 +426,11 @@ export const searchWorksTool = tool('datacite_search_works', {
   }),
 
   enrichment: {
-    totalCount: z.number().describe('Total works matching the query and filters.'),
+    totalCount: z
+      .number()
+      .describe(
+        'Total DOIs matching the query and filters; a versioned work counts once per DOI (see version_scope).',
+      ),
     effectiveQuery: z.string().describe('The composed query string sent upstream.'),
     sortApplied: z
       .enum(SORT_ORDER_IDS)
@@ -428,6 +469,30 @@ export const searchWorksTool = tool('datacite_search_works', {
     const cursor = input.cursor;
     const continuing = cursor !== undefined && cursor !== '*';
     const envelope = continuing ? decodeCursor(cursor) : undefined;
+    if (continuing && !envelope) {
+      throw ctx.fail(
+        'invalid_cursor',
+        'cursor is neither "*" nor a nextCursor this tool returned.',
+        {
+          recovery: {
+            hint: 'Pass cursor "*" to start a walk, or pass the nextCursor from the previous page unchanged.',
+          },
+        },
+        START_CURSOR,
+      );
+    }
+    /** A continuation whose query, filters, or funder identity differ from the walk that issued it. */
+    const cursorMismatch = () =>
+      ctx.fail(
+        'invalid_cursor',
+        'cursor belongs to a different query or filter set.',
+        {
+          recovery: {
+            hint: 'Repeat the exact query and filters that produced this cursor, or start a new walk with cursor "*".',
+          },
+        },
+        START_CURSOR,
+      );
     let funderIdentity: WorkCursor['f'];
     /** Error data naming the rejected field and the form it expects — never the rejected value. */
     const expected = (field: string, form: string) => ({
@@ -479,7 +544,7 @@ export const searchWorksTool = tool('datacite_search_works', {
           );
         }
         creatorIsName = true;
-        addClause('creator', nameTokensClause('creators.name', input.creator));
+        addClause('creator', nameProximityClause('creators.name', input.creator));
       }
     }
 
@@ -520,11 +585,11 @@ export const searchWorksTool = tool('datacite_search_works', {
       applied.affiliation_country = `affiliation-country=${filters.affiliationCountry}`;
     }
 
-    let funderRor: string | undefined;
+    let funderIsName = false;
     if (input.funder) {
       if (looksLikeRor(input.funder)) {
-        funderRor = normalizeRor(input.funder);
-        if (!funderRor) {
+        const ror = normalizeRor(input.funder);
+        if (!ror) {
           throw ctx.fail(
             'invalid_filter',
             'funder carries a ror.org prefix but is not a ROR ID.',
@@ -534,8 +599,7 @@ export const searchWorksTool = tool('datacite_search_works', {
             ),
           );
         }
-        filters.fundedBy = funderRor;
-        applied.funder = `funded-by=${funderRor}${input.include_child_funders ? ' (+ child organizations)' : ''}`;
+        filters.fundedBy = ror;
       } else if (looksLikeFunderId(input.funder)) {
         const funderId = normalizeFunderId(input.funder);
         if (!funderId) {
@@ -549,30 +613,49 @@ export const searchWorksTool = tool('datacite_search_works', {
           );
         }
         if (envelope?.f && envelope.f.id !== funderId) {
-          throw ctx.fail('invalid_cursor', 'cursor belongs to a different funder.', {
-            recovery: {
-              hint: 'Repeat the exact funder that produced this cursor, or start a new walk with cursor "*".',
+          throw ctx.fail(
+            'invalid_cursor',
+            'cursor belongs to a different funder.',
+            {
+              recovery: {
+                hint: 'Repeat the exact funder that produced this cursor, or start a new walk with cursor "*".',
+              },
             },
-          });
+            START_CURSOR,
+          );
         }
         // A continuation keeps its original match set; legacy envelopes used the literal ID.
-        const resolved = continuing
-          ? envelope?.f?.ror
-          : input.include_child_funders
-            ? undefined
-            : await getRorService().resolveFunder(funderId, ctx);
+        const lookup = continuing ? undefined : await getRorService().resolveFunder(funderId, ctx);
+        const resolved = lookup?.status === 'resolved' ? lookup.ror : envelope?.f?.ror;
         funderIdentity = { id: funderId, ...(resolved && { ror: resolved }) };
         if (resolved) {
           filters.fundedBy = resolved;
-          applied.funder = `funded-by=${resolved}`;
+        } else if (input.include_child_funders) {
+          // Child organizations come from ROR's hierarchy; literal matching cannot reach them.
+          if (continuing) throw cursorMismatch();
+          if (lookup?.status === 'unavailable') {
+            throw ctx.fail(
+              'ror_unavailable',
+              "include_child_funders needs the funder's ROR identity, and ROR was unavailable to look up the Crossref Funder ID in funder.",
+            );
+          }
+          throw ctx.fail(
+            'invalid_filter',
+            "include_child_funders needs the funder's ROR identity, and ROR maps the Crossref Funder ID in funder to no single organization: it lists none, lists several, or answered incompletely.",
+            {
+              field: 'funder',
+              recovery: {
+                hint: "Set funder to the funder's ROR ID (bare or a ror.org URL), or set include_child_funders to false to match this Crossref Funder ID without child organizations.",
+              },
+            },
+          );
         } else {
           addClause('funder', funderIdClause(funderId));
-          if (!input.include_child_funders)
-            notices.push(
-              continuing
-                ? 'This cursor walk retains literal Crossref Funder ID matching; works deposited with a ROR may be omitted.'
-                : 'The Crossref Funder ID could not be resolved to one exact ROR identity; matching its literal deposited identifier only, so works deposited with a ROR may be omitted.',
-            );
+          notices.push(
+            continuing
+              ? 'This cursor walk retains literal Crossref Funder ID matching; works deposited with a ROR may be omitted.'
+              : 'The Crossref Funder ID could not be resolved to one exact ROR identity; matching its literal deposited identifier only, so works deposited with a ROR may be omitted.',
+          );
         }
       } else {
         if (!/[\p{L}\p{N}]/u.test(input.funder)) {
@@ -582,21 +665,22 @@ export const searchWorksTool = tool('datacite_search_works', {
             expected('funder', 'a ROR ID, a Crossref Funder ID, or a funder name'),
           );
         }
-        addClause('funder', nameTokensClause('fundingReferences.funderName', input.funder));
+        funderIsName = true;
+        addClause('funder', nameProximityClause('fundingReferences.funderName', input.funder));
       }
     }
-    if (input.include_child_funders) {
-      if (!funderRor) {
-        throw ctx.fail(
-          'invalid_filter',
-          'include_child_funders applies only when funder is a ROR ID.',
-          expected(
-            'funder',
-            'a ROR ID such as 021nxhr62 when include_child_funders is true, or set include_child_funders to false',
-          ),
-        );
-      }
-      filters.includeFunderChildOrganizations = true;
+    if (filters.fundedBy) {
+      if (input.include_child_funders) filters.includeFunderChildOrganizations = true;
+      applied.funder = `funded-by=${filters.fundedBy}${input.include_child_funders ? ' (+ child organizations)' : ''}`;
+    } else if (input.include_child_funders) {
+      throw ctx.fail(
+        'invalid_filter',
+        'include_child_funders applies only when funder is a ROR ID or a Crossref Funder ID.',
+        expected(
+          'funder',
+          "the funder's ROR ID or Crossref Funder ID when include_child_funders is true, or set include_child_funders to false",
+        ),
+      );
     }
 
     if (input.subject) {
@@ -637,9 +721,12 @@ export const searchWorksTool = tool('datacite_search_works', {
       addClause('language', `language:${language}`);
     }
 
-    if (input.place) {
-      addClause('place', `geoLocations.geoLocationPlace:${phrase(singleLine(input.place))}`);
-    }
+    // A value of line-break characters alone survives the schema's trim but is blank here.
+    const placeValue = input.place && singleLine(input.place);
+    let place = placeValue ? placeClause(placeValue) : undefined;
+    /** The place clause's position, should the request length send it exact below. */
+    const placeAt = clauses.length;
+    if (place) addClause('place', place.clause);
 
     if (input.published_from !== undefined || input.published_to !== undefined) {
       if (
@@ -661,6 +748,9 @@ export const searchWorksTool = tool('datacite_search_works', {
       addClause('published', yearRangeClause(input.published_from, input.published_to));
     }
 
+    const versionClause = VERSION_SCOPE_CLAUSES[input.version_scope];
+    if (versionClause) addClause('version_scope', versionClause);
+
     if (input.min_citations !== undefined) {
       filters.minCitations = input.min_citations;
       applied.min_citations = `has-citations=${input.min_citations}`;
@@ -679,33 +769,30 @@ export const searchWorksTool = tool('datacite_search_works', {
       throw ctx.fail(
         'page_ceiling',
         `page ${page} × limit ${limit} = ${page * limit} exceeds the ${num(PAGE_CEILING)}-match ceiling of ranked paging.`,
+        undefined,
+        START_CURSOR,
       );
     }
+
+    // Case forms multiply a place's length in the URL; past DataCite's limit, match it exactly.
+    if (
+      placeValue &&
+      place?.match === 'substring' &&
+      !worksSearchFits(composeQuery(clauses), filters)
+    ) {
+      place = { clause: exactPlaceClause(placeValue), match: 'exact' };
+      clauses[placeAt] = place.clause;
+      applied.place = place.clause;
+    }
+    if (place?.match === 'exact') notices.push(PLACE_EXACT_NOTICE);
 
     const effectiveQuery = composeQuery(clauses);
     const fingerprint = stableHash(JSON.stringify({ q: effectiveQuery, f: filters }));
     let cursorToken: string | undefined;
     let cursorFloor: number | undefined;
     let deliveredBefore = 0;
-    if (continuing) {
-      if (!envelope) {
-        throw ctx.fail(
-          'invalid_cursor',
-          'cursor is neither "*" nor a nextCursor this tool returned.',
-          {
-            recovery: {
-              hint: 'Pass cursor "*" to start a walk, or pass the nextCursor from the previous page unchanged.',
-            },
-          },
-        );
-      }
-      if (envelope.q !== fingerprint || (envelope.f && !funderIdentity)) {
-        throw ctx.fail('invalid_cursor', 'cursor belongs to a different query or filter set.', {
-          recovery: {
-            hint: 'Repeat the exact query and filters that produced this cursor, or start a new walk with cursor "*".',
-          },
-        });
-      }
+    if (envelope) {
+      if (envelope.q !== fingerprint || (envelope.f && !funderIdentity)) throw cursorMismatch();
       cursorToken = envelope.t;
       cursorFloor = envelope.c;
       deliveredBefore = envelope.n;
@@ -736,6 +823,8 @@ export const searchWorksTool = tool('datacite_search_works', {
       throw ctx.fail(
         'page_ceiling',
         `DataCite served page ${list.meta.page} instead of the requested page ${page}.`,
+        undefined,
+        START_CURSOR,
       );
     }
     const firstCreated = Date.parse(list.data[0]?.attributes.created ?? '');
@@ -748,6 +837,7 @@ export const searchWorksTool = tool('datacite_search_works', {
             hint: 'Start the walk again with cursor "*"; the previous position could not be resumed.',
           },
         },
+        START_CURSOR,
       );
     }
 
@@ -794,6 +884,16 @@ export const searchWorksTool = tool('datacite_search_works', {
       if (creatorIsName) {
         notices.push(
           "Name matching needs every token in one creator field; try a surname alone or the creator's ORCID iD.",
+        );
+      }
+      if (funderIsName) {
+        notices.push(
+          "Funder-name matching needs every token in one funding reference; try one distinctive word of the name, or the funder's ROR ID or Crossref Funder ID.",
+        );
+      }
+      if (place?.match === 'substring') {
+        notices.push(
+          'Place matching looks for the value inside deposited place names as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized; give a multi-word name its usual capitalization (Gulf of Mexico), or try one word of it.',
         );
       }
       if (Object.keys(applied).length >= 3) {

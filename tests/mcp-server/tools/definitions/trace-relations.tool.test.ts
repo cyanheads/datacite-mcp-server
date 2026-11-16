@@ -10,9 +10,15 @@
 
 import type { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { type FetchMockHarness, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import {
+  createMockContext,
+  type FetchMockHarness,
+  runToolContract,
+} from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { traceRelationsTool } from '@/mcp-server/tools/definitions/trace-relations.tool.js';
+import { getDataCiteService } from '@/services/datacite/datacite-service.js';
+import { traceRelations } from '@/services/datacite/relation-graph.js';
 import type {
   RawDoiAttributes,
   RawDoiList,
@@ -610,7 +616,11 @@ describe('Event Data offset continuations', () => {
   );
 
   it('keeps a root-only call actionable and preserves filters in its recipe', async () => {
-    initServices(offsetRoutes(eventList([event(ROOT, 'cites', PPAT)])));
+    initServices([
+      ...offsetRoutes(eventList([event(ROOT, 'cites', PPAT)])),
+      // Were this mode to read the records pointing at the root, it would find 150 and name the query.
+      { match: reverseRead([ROOT], ['IsCitedBy']), respond: json(doiList([], { total: 150 })) },
+    ]);
     const result = await run({
       doi: ROOT,
       event_offset: 0,
@@ -622,6 +632,41 @@ describe('Event Data offset continuations', () => {
     expect(output(result).notice).toContain('"relation_types":["Cites"]');
     expect(contentText(result)).toContain('Raise max_nodes to at least 2');
     expect(contentText(result)).not.toContain('No relations');
+    // Event-Data-only mode sends no reverse query, so it names none.
+    expect(output(result).coverage.reverseMetadata).toEqual({
+      status: 'skipped',
+      total: 0,
+      fetched: 0,
+    });
+    expect(contentText(result)).not.toContain('datacite_search_works');
+  });
+
+  it('returns no reverseQuery from an Event-Data-only trace, which sends no reverse read', async () => {
+    const query = reverseQuery([ROOT], ['IsCitedBy']);
+    const { http } = initServices([
+      ...offsetRoutes(eventList([event(ROOT, 'cites', PPAT)])),
+      { match: reverseRead([ROOT], ['IsCitedBy']), respond: json(emptyDoiList()) },
+    ]);
+    const reverseReads = () =>
+      requestUrls(http).filter((url) => url.searchParams.get('query') === query);
+    const request = {
+      root: ROOT,
+      depth: 1,
+      includeEventData: true,
+      maxNodes: 50,
+      relationTypes: ['Cites'],
+    } as const;
+    const eventOnly = await traceRelations(
+      getDataCiteService(),
+      { ...request, eventOffset: 0 },
+      createMockContext(),
+    );
+    expect(eventOnly).not.toHaveProperty('reverseQuery');
+    expect(reverseReads()).toHaveLength(0);
+    // The same trace in default mode sends the query and returns it.
+    const traced = await traceRelations(getDataCiteService(), request, createMockContext());
+    expect(traced.reverseQuery).toBe(query);
+    expect(reverseReads()).toHaveLength(1);
   });
 
   it.each([{ include_event_data: false }, { relation_types: ['HasPart'] }])(
@@ -1581,7 +1626,8 @@ describe('depth 2', () => {
       spokes: 100,
       maxNodes: 100,
       relationTypes: ['HasPart'],
-      notice: `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query ${reverseQuery(['10.5555/wide-hub'])} to datacite_search_works to list the DataCite records that point at this DOI. The first hop filled max_nodes=100, so the second hop was not expanded and the relations of 99 DataCite neighbours went untraced; ${noRoom} trace a neighbour directly to follow its relations.`,
+      // The query the reverse read sent: HasPart reads the spokes asserting IsPartOf the hub.
+      notice: `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query ${reverseQuery(['10.5555/wide-hub'], ['IsPartOf'])} to datacite_search_works to list the DataCite records that point at this DOI. The first hop filled max_nodes=100, so the second hop was not expanded and the relations of 99 DataCite neighbours went untraced; ${noRoom} trace a neighbour directly to follow its relations.`,
     },
   ])('$name', async ({ spokes, maxNodes, relationTypes, notice }) => {
     const hub = '10.5555/wide-hub';
@@ -1757,8 +1803,11 @@ describe('the node cap', () => {
     ]);
     const result = await run({ doi: hub, max_nodes: 100, relation_types: ['HasPart'] });
     const out = output(result);
-    const notice = `99 of 100 related identifiers fit max_nodes=100 (the maximum); pass query ${reverseQuery([hub])} to datacite_search_works to list the DataCite records that point at this DOI.`;
+    // The query the reverse read sent (IsPartOf), named once: the cap step points back at it.
+    const query = reverseQuery([hub], ['IsPartOf']);
+    const notice = `This call read 100 of the 101 DataCite records that point at this DOI with the requested relation_types (at most 100 per call); pass query ${query} to datacite_search_works to list them all. 99 of 100 related identifiers fit max_nodes=100 (the maximum); pass the query above to datacite_search_works to list the DataCite records that point at this DOI.`;
     expect(out).toMatchObject({ truncated: true, shown: 100, cap: 100, notice });
+    expect(out.notice?.split(query)).toHaveLength(2);
     expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total: 101, fetched: 100 });
     // The first 10 spokes list one related identifier each, so the page of 100 is read.
     const reverse = requestUrls(http).filter(
@@ -1927,9 +1976,50 @@ describe('large reverse records', () => {
       { match: eventsRead, respond: json(eventList()) },
     ]);
     const result = await run({ doi: DATASET });
-    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query ${reverseQuery([DATASET])} to datacite_search_works to list them all. DataCite records 50 citations for this DOI; 0 are shown. This call read 10 of the 9,262 DataCite records whose related identifiers name this DOI, the most one call reads of records that large.`;
+    // The counts appear once; the citation notice keeps the cut as a cause without restating them.
+    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query ${reverseQuery([DATASET])} to datacite_search_works to list them all. DataCite records 50 citations for this DOI; 0 are shown. Not every DataCite record that points at this DOI was read.`;
     expect(output(result).notice).toBe(notice);
     expect(contentText(result)).toContain(`> ${notice}`);
+  });
+
+  it('names the query the reverse read sent, relation types included, and adds no second shortfall sentence', async () => {
+    // IsSourceOf reads, from the dataset's side, the downloads asserting IsDerivedFrom it.
+    const { http } = initServices([
+      { match: rootRead(DATASET), respond: json(doiList([record(DATASET, {}, 'gbif.gbif')])) },
+      {
+        match: reverseRead([DATASET], ['IsDerivedFrom']),
+        respond: paged(downloads(DATASET, 100), 9262),
+      },
+    ]);
+    const result = await run({ doi: DATASET, relation_types: ['issourceof'] });
+    const out = output(result);
+    expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total: 9262, fetched: 10 });
+    const notice = `The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100; pass query ${reverseQuery([DATASET], ['IsDerivedFrom'])} to datacite_search_works to list them all.`;
+    expect(out.notice).toBe(notice);
+    expect(contentText(result)).toContain(`> ${notice}`);
+    expect(
+      requestUrls(http).filter(
+        (url) => url.searchParams.get('query') === reverseQuery([DATASET], ['IsDerivedFrom']),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('names no query past the 2,000-character query limit of datacite_search_works', async () => {
+    const long = `10.15468/${'m'.repeat(200)}`;
+    expect(reverseQuery([long]).length).toBeGreaterThan(2000);
+    initServices([
+      { match: rootRead(long), respond: json(doiList([record(long, {}, 'gbif.gbif')])) },
+      { match: reverseRead([long]), respond: paged(downloads(long, 100), 9262) },
+      { match: eventsRead, respond: json(eventList()) },
+      { match: idsRead, respond: byIds([]) },
+    ]);
+    const result = await run({ doi: long });
+    const notice =
+      'The DataCite records that point at this DOI are large (the first 10 list 40,000 related identifiers between them), so this call read 10 of the 9,262 rather than up to 100.';
+    expect(output(result).notice).toBe(notice);
+    const text = contentText(result);
+    expect(text).toContain(`> ${notice}`);
+    expect(text).not.toContain('pass query');
   });
 
   it('reads 10 records on the second hop too, and says so', async () => {
@@ -1975,6 +2065,177 @@ describe('large reverse records', () => {
       (url) => url.searchParams.get('query') === reverseQuery([DATASET]),
     );
     expect(reverse2.map((url) => url.searchParams.get('page[size]'))).toEqual(['10']);
+  });
+});
+
+describe('the reverse-read shortfall', () => {
+  /** A journal article DataCite holds a linking copy of: its graph is the records pointing at it. */
+  const NUMPY = '10.1038/s41586-020-2649-2';
+  const notDataCite = (doi: string) =>
+    `${doi} is not a DataCite DOI, so it has no DataCite metadata of its own; edges shown are DataCite records that point at it and, from Event Data, the DataCite works its own reference list cites.`;
+  /** `count` DataCite records asserting `relationType` on `doi`. */
+  const pointing = (doi: string, relationType: string, count: number, prefix: string) =>
+    Array.from({ length: count }, (_, i) =>
+      record(`10.5555/${prefix}-${String(i + 1).padStart(3, '0')}`, {
+        relatedIdentifiers: [
+          { relationType, relatedIdentifier: doi, relatedIdentifierType: 'DOI' },
+        ],
+      }),
+    );
+  const articleRoutes = (
+    doi: string,
+    reverse: RawDoiResource[],
+    total: number,
+    types?: string[],
+  ) => [
+    { match: rootRead(doi), respond: json(emptyDoiList()) },
+    { match: reverseRead([doi], types), respond: paged(reverse, total) },
+    { match: eventsRead, respond: json(eventList()) },
+    {
+      match: idsRead,
+      respond: byIds([linkingCopyRecord({ doi, title: 'An article', publicationYear: 2020 })]),
+    },
+  ];
+  const expectNotice = (result: ToolResultLike, notice: string) => {
+    expect(output(result).notice).toBe(notice);
+    expect(contentText(result)).toContain(`> ${notice}`);
+  };
+
+  it('names the records left unread when no cap binds, with the query the reverse read sent', async () => {
+    // 4 records assert IsSupplementTo; 96 matched on another entry and assert only References.
+    initServices(
+      articleRoutes(
+        NUMPY,
+        [
+          ...pointing(NUMPY, 'IsSupplementTo', 4, 'supplement'),
+          ...pointing(NUMPY, 'References', 96, 'referencing'),
+        ],
+        129,
+        ['IsSupplementTo'],
+      ),
+    );
+    const result = await run({ doi: NUMPY, max_nodes: 100, relation_types: ['IsSupplementedBy'] });
+    const out = output(result);
+    expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total: 129, fetched: 100 });
+    expect(out.nodes).toHaveLength(5);
+    expect(out.edges).toHaveLength(4);
+    expect(out).not.toHaveProperty('truncated');
+    expectNotice(
+      result,
+      `${notDataCite(NUMPY)} This call read 100 of the 129 DataCite records that point at this DOI with the requested relation_types (at most 100 per call); pass query ${reverseQuery([NUMPY], ['IsSupplementTo'])} to datacite_search_works to list them all.`,
+    );
+  });
+
+  it.each([
+    {
+      name: 'at max_nodes 100, naming the inverse types the reverse read sent',
+      maxNodes: 100,
+      relationTypes: ['IsSupplementedBy', 'IsCitedBy', 'IsReferencedBy'],
+      reverseTypes: ['IsSupplementTo', 'Cites', 'References'],
+      total: 411,
+      cap: '99 of 100 related identifiers fit max_nodes=100 (the maximum); narrow relation_types.',
+    },
+    {
+      name: 'below max_nodes 100, unfiltered',
+      maxNodes: 50,
+      relationTypes: undefined,
+      reverseTypes: undefined,
+      total: 419,
+      cap: '49 of 100 related identifiers fit max_nodes=50; raise max_nodes (≤ 100) or narrow relation_types.',
+    },
+  ])(
+    'sends the shortfall and the node cap in one notice $name',
+    async ({ maxNodes, relationTypes, reverseTypes, total, cap }) => {
+      initServices(
+        articleRoutes(NUMPY, pointing(NUMPY, 'Cites', 100, 'citing'), total, reverseTypes),
+      );
+      const result = await run({
+        doi: NUMPY,
+        max_nodes: maxNodes,
+        ...(relationTypes && { relation_types: relationTypes }),
+      });
+      const out = output(result);
+      expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total, fetched: 100 });
+      expect(out).toMatchObject({ truncated: true, shown: maxNodes, cap: maxNodes });
+      expectNotice(
+        result,
+        `${notDataCite(NUMPY)} This call read 100 of the ${total} DataCite records that point at this DOI${relationTypes ? ' with the requested relation_types' : ''} (at most 100 per call); pass query ${reverseQuery([NUMPY], reverseTypes)} to datacite_search_works to list them all. ${cap}`,
+      );
+    },
+  );
+
+  it('names the records left unread when no relation was found among those read', async () => {
+    initServices(
+      articleRoutes(NUMPY, pointing(NUMPY, 'References', 100, 'referencing'), 150, [
+        'IsSupplementTo',
+      ]),
+    );
+    const result = await run({ doi: NUMPY, relation_types: ['IsSupplementedBy'] });
+    expect(output(result).edges).toEqual([]);
+    expectNotice(
+      result,
+      `${notDataCite(NUMPY)} No relations of the requested relation_types were found in DataCite metadata or Event Data. Relations exist only where depositors asserted them or a citation link was harvested; this is not evidence that none exist. This call read 100 of the 150 DataCite records that point at this DOI with the requested relation_types (at most 100 per call); pass query ${reverseQuery([NUMPY], ['IsSupplementTo'])} to datacite_search_works to list them all.`,
+    );
+  });
+
+  it('keeps the counts but names no query past the 2,000-character query limit, in the cap step too', async () => {
+    const long = `10.5555/${'a'.repeat(200)}`;
+    expect(reverseQuery([long], ['Cites']).length).toBeGreaterThan(2000);
+    initServices(articleRoutes(long, pointing(long, 'Cites', 100, 'citing'), 150, ['Cites']));
+    const result = await run({ doi: long, max_nodes: 100, relation_types: ['IsCitedBy'] });
+    expect(output(result)).toMatchObject({ truncated: true, shown: 100, cap: 100 });
+    expectNotice(
+      result,
+      `${notDataCite(long)} This call read 100 of the 150 DataCite records that point at this DOI with the requested relation_types (at most 100 per call). 99 of 100 related identifiers fit max_nodes=100 (the maximum).`,
+    );
+    expect(contentText(result)).not.toContain('pass query');
+  });
+
+  it.each([
+    { name: 'names the query at exactly', suffix: 153, length: 2000, named: true },
+    { name: 'names no query 10 characters past', suffix: 154, length: 2010, named: false },
+  ])(
+    '$name the 2,000-character query limit of datacite_search_works',
+    async ({ suffix, length, named }) => {
+      const doi = `10.5555/${'a'.repeat(suffix)}`;
+      const query = reverseQuery([doi], ['HasMetadata']);
+      expect(query).toHaveLength(length);
+      // 4 records assert HasMetadata; 96 matched on another entry and assert only References.
+      initServices(
+        articleRoutes(
+          doi,
+          [
+            ...pointing(doi, 'HasMetadata', 4, 'metadata'),
+            ...pointing(doi, 'References', 96, 'referencing'),
+          ],
+          150,
+          ['HasMetadata'],
+        ),
+      );
+      const result = await run({ doi, relation_types: ['IsMetadataFor'] });
+      expect(output(result).coverage.reverseMetadata).toEqual({
+        status: 'ok',
+        total: 150,
+        fetched: 100,
+      });
+      // No citation type is requested, so Event Data is not read.
+      expectNotice(
+        result,
+        `${doi} is not a DataCite DOI, so it has no DataCite metadata of its own; edges shown are DataCite records that point at it. This call read 100 of the 150 DataCite records that point at this DOI with the requested relation_types (at most 100 per call)${named ? `; pass query ${query} to datacite_search_works to list them all` : ''}.`,
+      );
+    },
+  );
+
+  it('adds nothing when every matching record was read', async () => {
+    initServices(articleRoutes(NUMPY, pointing(NUMPY, 'Cites', 100, 'citing'), 100));
+    const result = await run({ doi: NUMPY, max_nodes: 100 });
+    expect(output(result).coverage.reverseMetadata).toEqual({
+      status: 'ok',
+      total: 100,
+      fetched: 100,
+    });
+    expect(output(result).notice).not.toContain('This call read');
+    expect(contentText(result)).not.toContain('This call read');
   });
 });
 
@@ -2380,7 +2641,7 @@ describe('the citation-count notice', () => {
     expect(contentText(result)).toContain(`> ${notice}`);
   });
 
-  it('names the reverse-query records left unread', async () => {
+  it('counts the reverse-query records left unread once and keeps them as a cause', async () => {
     // Matched upstream on a Cites attached to another identifier; none asserts a citation of CITED.
     const documenting = Array.from({ length: 100 }, (_, i) =>
       record(`10.5555/doc-${i + 1}`, {
@@ -2410,9 +2671,10 @@ describe('the citation-count notice', () => {
     const result = await run({ doi: CITED, relation_types: citationTypes });
     const out = output(result);
     expect(out.coverage.reverseMetadata).toEqual({ status: 'ok', total: 150, fetched: 100 });
-    const notice =
-      'No relations of the requested relation_types were found in DataCite metadata or Event Data. Relations exist only where depositors asserted them or a citation link was harvested; this is not evidence that none exist. DataCite records 5 citations for this DOI; 0 are shown. This call read 100 of the 150 DataCite records whose related identifiers name this DOI, the most one call reads.';
+    // Without the cause, "Every source was read in full" would claim a complete read.
+    const notice = `No relations of the requested relation_types were found in DataCite metadata or Event Data. Relations exist only where depositors asserted them or a citation link was harvested; this is not evidence that none exist. This call read 100 of the 150 DataCite records that point at this DOI with the requested relation_types (at most 100 per call); pass query ${reverseQuery([CITED], ['Cites', 'References', 'IsSupplementedBy'])} to datacite_search_works to list them all. DataCite records 5 citations for this DOI; 0 are shown. Not every DataCite record that points at this DOI was read.`;
     expect(out.notice).toBe(notice);
+    expect(out.notice?.match(/150/g)).toHaveLength(1);
     expect(contentText(result)).toContain(`> ${notice}`);
   });
 
@@ -2740,7 +3002,7 @@ describe('declared errors and input', () => {
     const error = expectToolError(result, 'rate_limited', JsonRpcErrorCode.RateLimited);
     expect(error.data).toMatchObject({ retryAfter: 30, retryable: true });
     expect(error.message).toContain('retry in 30 seconds');
-    expect(contentText(result)).toContain('(reason rate_limited · retryable)');
+    expect(contentText(result)).toContain('(reason rate_limited · retryable · retry after 30)');
     expect(http.calls).toHaveLength(1);
   });
 
