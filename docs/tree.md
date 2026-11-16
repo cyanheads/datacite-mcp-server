@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-11-01 04:51:32
+Generated on: 2026-11-16 04:39:30
 
 ```text
 datacite-mcp-server/
@@ -208,6 +208,7 @@ datacite-mcp-server/
 │   │   │   │   ├── parse-exception-repositories.json
 │   │   │   │   ├── token-mgr-error-query.json
 │   │   │   │   ├── token-mgr-error-repositories.json
+│   │   │   │   ├── too-complex-query.json
 │   │   │   │   └── transient-500-claims-400.json
 │   │   │   ├── graph/
 │   │   │   │   ├── article-events.json
@@ -290,6 +291,7 @@ datacite-mcp-server/
 ├── bun.lock
 ├── bunfig.toml
 ├── CHANGELOG.md
+├── CITATION.cff
 ├── CLAUDE.md
 ├── devcheck.config.json
 ├── Dockerfile
