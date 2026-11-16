@@ -276,30 +276,80 @@ describe('response cache', () => {
     expect(http.calls).toHaveLength(2);
   });
 
-  it('serves but never caches a body over 1,000,000 bytes, measured in UTF-8 bytes', async () => {
-    const bodies: Record<string, string> = {
-      '10.5555/at-limit': 'a'.repeat(1_000_000),
-      '10.5555/over-limit': 'a'.repeat(1_000_001),
-      '10.5555/multibyte': 'é'.repeat(500_001),
-    };
+  /**
+   * Requests per body after reading each one twice through `read`: 1 when the
+   * first answer was cached, 2 when it was served uncached.
+   */
+  async function requestsPerBody(
+    bodies: Record<string, string>,
+    route: (key: string) => (request: Request) => boolean,
+    read: (svc: DataCiteService, key: string) => Promise<unknown>,
+  ): Promise<number[]> {
     const { http, svc } = build(
-      Object.entries(bodies).map(([doi, body]) => ({
-        match: dataCite(`/dois/text/x-bibliography/${encodeURIComponent(doi)}`),
-        respond: text(body),
-      })),
+      Object.entries(bodies).map(([key, body]) => ({ match: route(key), respond: text(body) })),
     );
-    const render = (doi: string) =>
-      svc.negotiate(doi, 'text/x-bibliography', {}, createMockContext());
-    for (const doi of Object.keys(bodies)) {
-      const first = await render(doi);
-      expect(first.body).toBe(bodies[doi]);
-      await render(doi);
+    for (const key of Object.keys(bodies)) {
+      await read(svc, key);
+      await read(svc, key);
     }
-    const perDoi = Object.keys(bodies).map(
-      (doi) =>
-        http.calls.filter((call) => call.request.url.includes(encodeURIComponent(doi))).length,
+    return Object.keys(bodies).map(
+      (key) => http.calls.filter((call) => route(key)(call.request)).length,
     );
-    expect(perDoi).toEqual([1, 2, 2]);
+  }
+
+  /** A `/dois` JSON body of exactly `length` UTF-16 units: ASCII padding, then `tail`. */
+  const jsonOfLength = (length: number, tail = '') => {
+    const open = '{"data":[],"pad":"';
+    const close = '"}';
+    return `${open}${'a'.repeat(length - open.length - close.length - tail.length)}${tail}${close}`;
+  };
+  const lookupRoute = (doi: string) =>
+    dataCite('/dois', (url) => url.searchParams.get('query') === `doi:"${doi}"`);
+  const lookupBody = (svc: DataCiteService, doi: string) =>
+    svc.getRecord(doi, NODE_FIELDS, createMockContext());
+
+  it('serves but never caches a body over 1,000,000 bytes by default', async () => {
+    const perBody = await requestsPerBody(
+      {
+        '10.5555/at-limit': jsonOfLength(1_000_000),
+        '10.5555/over-limit': jsonOfLength(1_000_001),
+        '10.5555/all-latin-1': jsonOfLength(500_011, 'é'.repeat(499_991)),
+      },
+      lookupRoute,
+      lookupBody,
+    );
+    expect(perBody).toEqual([1, 2, 2]);
+  });
+
+  it('counts a body holding any non-ASCII character at two bytes per UTF-16 unit, the memory its string holds', async () => {
+    const perBody = await requestsPerBody(
+      {
+        '10.5555/two-byte-at-limit': jsonOfLength(500_000, '€'),
+        '10.5555/two-byte-over-limit': jsonOfLength(500_001, '€'),
+        '10.5555/astral-over-limit': jsonOfLength(500_002, '😀'),
+        '10.5555/latin-1-over-limit': jsonOfLength(500_001, 'é'),
+      },
+      lookupRoute,
+      lookupBody,
+    );
+    expect(perBody).toEqual([1, 2, 2, 2]);
+  });
+
+  it('caches a negotiated document up to 10,000,000 retained bytes', async () => {
+    const route = (doi: string) =>
+      dataCite(`/dois/application/vnd.datacite.datacite+json/${encodeURIComponent(doi)}`);
+    const perBody = await requestsPerBody(
+      {
+        '10.5555/at-limit': 'a'.repeat(10_000_000),
+        '10.5555/over-limit': 'a'.repeat(10_000_001),
+        '10.5555/two-byte-at-limit': `${'a'.repeat(4_999_999)}€`,
+        '10.5555/two-byte-over-limit': `${'a'.repeat(5_000_000)}€`,
+      },
+      route,
+      (svc, doi) =>
+        svc.negotiate(doi, 'application/vnd.datacite.datacite+json', {}, createMockContext()),
+    );
+    expect(perBody).toEqual([1, 2, 1, 2]);
   });
 
   it('keeps cached bodies within 50,000,000 bytes, evicting the least recently used', async () => {
@@ -319,6 +369,27 @@ describe('response cache', () => {
     expect(http.calls).toHaveLength(60);
     await render(0);
     expect(http.calls).toHaveLength(61);
+  });
+
+  it('charges the 50,000,000-byte budget two bytes per UTF-16 unit for a non-ASCII body', async () => {
+    // 1,000,000 units holding one €: 2,000,000 retained bytes, under the negotiated ceiling.
+    const body = `${'a'.repeat(999_999)}€`;
+    const { http, svc } = build([
+      {
+        match: (request) =>
+          new URL(request.url).pathname.startsWith('/dois/text/x-bibliography/10.5555'),
+        respond: () => text(body),
+      },
+    ]);
+    const render = (n: number) =>
+      svc.negotiate(`10.5555/e${n}`, 'text/x-bibliography', {}, createMockContext());
+    // 26 × 2,000,000 bytes passes 50,000,000; at one byte per unit they would fit.
+    for (let n = 0; n < 26; n++) await render(n);
+    expect(http.calls).toHaveLength(26);
+    await render(25);
+    expect(http.calls).toHaveLength(26);
+    await render(0);
+    expect(http.calls).toHaveLength(27);
   });
 
   it('never caches a response that failed to parse or a status outside the accept-list', async () => {

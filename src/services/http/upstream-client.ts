@@ -33,16 +33,24 @@ export const ATTEMPT_TIMEOUT_MS = 20_000;
  * 15.6 MB reverse-relation page, whose largest record alone is 5.9 MB.
  */
 const MAX_BODY_BYTES = 32_000_000;
-/** Responses larger than this are served but never cached. */
+/** Answers larger than this ({@link CachedResponse.bytes}) are served but not cached, unless a request sets its own ceiling. */
 const MAX_CACHED_BYTES = 1_000_000;
 /** How much of a rejected response's body is kept for {@link upstreamErrorBody}. */
 const ERROR_BODY_BYTES = 2048;
 const HTML_BODY_RE = /^\s*<(?:!DOCTYPE\s+html|html[\s>])/i;
+const NON_ASCII_RE = /[\u{80}-\u{10ffff}]/u;
 
 /** A settled upstream answer as the cache holds it. */
 export interface CachedResponse {
   body: string;
-  /** The body's size as received, in bytes (UTF-8); what it counts against the cache's byte budget. */
+  /**
+   * The memory the body string holds, in bytes; what it counts against the
+   * cache's byte budget. One per UTF-16 unit for an all-ASCII body and two for
+   * any other: Bun decodes a body holding a single non-ASCII character, Latin-1
+   * or a replacement for a malformed byte included, into a two-byte string. Node
+   * keeps a Latin-1-only body at one byte per unit, so there the count runs high,
+   * never low.
+   */
   bytes: number;
   status: number;
 }
@@ -53,6 +61,8 @@ export interface UpstreamRequest {
   acceptStatuses: readonly number[];
   /** Attempts before a transient failure surfaces. Default 3; 1 for a best-effort read. */
   attempts?: number;
+  /** The largest answer, in {@link CachedResponse.bytes}, the cache keeps. Default 1,000,000. */
+  maxCachedBytes?: number;
   /** Log label. */
   operation: string;
   /** Cancels this request alone, queued or in flight, beside the call's own signal. */
@@ -208,7 +218,7 @@ export class UpstreamClient {
             { signal: attempt.signal, maxWaitMs: attempt.remainingMs },
           );
           const parsed = parse(response);
-          if (response.bytes <= MAX_CACHED_BYTES) {
+          if (response.bytes <= (request.maxCachedBytes ?? MAX_CACHED_BYTES)) {
             cache.set(request.url, response, request.ttlMs(response.status), response.bytes);
           }
           ctx.log.debug(`${service} request`, {
@@ -291,7 +301,8 @@ export class UpstreamClient {
           `${service} answered with an HTML page instead of data; the service is likely degraded.`,
         );
       }
-      return { status: response.status, body, bytes: blob.size };
+      const bytes = NON_ASCII_RE.test(body) ? 2 * body.length : body.length;
+      return { status: response.status, body, bytes };
     } catch (error) {
       if (signal.aborted) throw error;
       if (timer.signal.aborted) {
