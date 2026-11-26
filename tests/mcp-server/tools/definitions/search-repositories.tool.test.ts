@@ -20,12 +20,14 @@ import {
   declaredSeverities,
   initServices,
   json,
+  refuseLongUrls,
   requestUrl,
   structured,
   type ToolResultLike,
   teardownServices,
   toolError,
 } from '../../../helpers/harness.js';
+import { markdownText } from '../../../helpers/markdown.js';
 
 type Input = z.input<typeof searchRepositoriesTool.input>;
 type Output = z.infer<typeof searchRepositoriesTool.output> & {
@@ -516,6 +518,107 @@ describe('row rendering', () => {
   });
 });
 
+describe('request URL length', () => {
+  /** Measured: DataCite answered an 8,201-byte URL and refused 8,202 bytes with HTTP 414. */
+  const MAX_URL_CHARS = 8201;
+  const RECOVERY =
+    'Shorten or drop the inputs this error names, largest first; each non-Latin letter takes several bytes of the request URL, so search one or two distinctive words of a repository name or description.';
+  const served = () =>
+    initServices([refuseLongUrls, { match: repositories, respond: json(page([])) }]);
+  /** The request_too_long error, its message and recovery on both surfaces. */
+  const expectTooLong = (result: ToolResultLike, message: string) => {
+    const error = expectToolError(result, 'request_too_long', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toBe(message);
+    expect(error.data?.recovery).toEqual({ hint: RECOVERY });
+    const rendered = markdownText(contentText(result));
+    expect(rendered).toContain(`Error: ${message}`);
+    expect(rendered).toContain(`Recovery: ${RECOVERY}`);
+    return error;
+  };
+
+  it.each([
+    {
+      name: 'данные × 280',
+      query: 'данные'.repeat(280),
+      message:
+        'This search would send DataCite a 10,167-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `query` (10,093 bytes).',
+      urlBytes: 10_167,
+      bytes: 10_093,
+    },
+    {
+      name: '1,990 Cyrillic letters',
+      query: 'д'.repeat(1990),
+      message:
+        'This search would send DataCite a 12,027-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `query` (11,953 bytes).',
+      urlBytes: 12_027,
+      bytes: 11_953,
+    },
+  ])(
+    'rejects a query of $name before any request, naming it and its bytes',
+    async ({ query, message, urlBytes, bytes }) => {
+      const { http } = served();
+      const result = await run({ query });
+      const error = expectTooLong(result, message);
+      expect(error.data).toMatchObject({
+        urlBytes,
+        maxUrlBytes: MAX_URL_CHARS,
+        inputs: [{ input: 'query', bytes }],
+      });
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+
+  it('names every input that adds to the URL, largest first', async () => {
+    const { http } = served();
+    const result = await run({
+      query: '中'.repeat(1000),
+      software: '中'.repeat(500),
+      field_of_science: 'earth_and_related_environmental_sciences',
+      repository_types: ['disciplinary'],
+      certificates: ['CoreTrustSeal'],
+      client_type: 'repository',
+      provider_id: 'dryad',
+    });
+    /**
+     * Dropping the query also drops its +AND+; &software= adds 10 bytes before the name;
+     * +AND+subjects.subject%3A%28%22Earth+and+related+environmental+sciences%22%29 (76);
+     * &repository-type=disciplinary (29); &certificate=CoreTrustSeal (26);
+     * &client-type=repository (23); &provider-id=dryad (18).
+     */
+    const error = expectTooLong(
+      result,
+      'This search would send DataCite a 13,769-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `query` (9,011 bytes), `software` (4,510 bytes), `field_of_science` (76 bytes), `repository_types` (29 bytes), `certificates` (26 bytes), `client_type` (23 bytes), `provider_id` (18 bytes).',
+    );
+    expect(error.data?.inputs).toEqual([
+      { input: 'query', bytes: 9011 },
+      { input: 'software', bytes: 4510 },
+      { input: 'field_of_science', bytes: 76 },
+      { input: 'repository_types', bytes: 29 },
+      { input: 'certificates', bytes: 26 },
+      { input: 'client_type', bytes: 23 },
+      { input: 'provider_id', bytes: 18 },
+    ]);
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('sends an 8,201-byte request and rejects an 8,202-byte one unsent', async () => {
+    const { http } = served();
+    // 1,352 Cyrillic letters take six URL bytes each; a Latin letter takes one.
+    const atLimit = await run({ query: `${'д'.repeat(1352)}aa` });
+    expect(atLimit.isError).toBeFalsy();
+    expect(http.calls).toHaveLength(1);
+    expect(http.calls[0]?.request.url).toHaveLength(MAX_URL_CHARS);
+
+    const pastLimit = await run({ query: `${'д'.repeat(1352)}aaa` });
+    const error = expectTooLong(
+      pastLimit,
+      'This search would send DataCite an 8,202-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `query` (8,128 bytes).',
+    );
+    expect(error.data).toMatchObject({ urlBytes: 8202, maxUrlBytes: MAX_URL_CHARS });
+    expect(http.calls).toHaveLength(1);
+  });
+});
+
 describe('declared errors', () => {
   it('reports a parse error on the caller query as invalid_query with its position', async () => {
     const { http } = initServices([
@@ -653,6 +756,7 @@ describe('declared errors', () => {
     expect(searchRepositoriesTool.errors?.map((entry) => entry.reason)).toEqual([
       'invalid_query',
       'conflicting_lookup',
+      'request_too_long',
       'rate_limited',
     ]);
   });
@@ -661,6 +765,7 @@ describe('declared errors', () => {
     expect(declaredSeverities(searchRepositoriesTool.errors)).toEqual({
       invalid_query: 'notice',
       conflicting_lookup: 'notice',
+      request_too_long: 'notice',
       rate_limited: 'error',
     });
   });

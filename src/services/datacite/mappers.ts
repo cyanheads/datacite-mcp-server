@@ -6,6 +6,7 @@
  */
 
 import { RELATION_TYPE_IDS, type RelationTypeId } from '@/services/reference/vocabularies.js';
+import { type Bbox, locationInBbox } from './bbox.js';
 import { htmlToText } from './html-text.js';
 import { doiUrl, normalizeOrcid, normalizeRor } from './normalize.js';
 import type {
@@ -14,6 +15,7 @@ import type {
   RawDoiAttributes,
   RawDoiResource,
   RawGeoLocation,
+  RawPublisher,
 } from './types.js';
 
 /** A non-blank trimmed string, else `undefined`. */
@@ -45,23 +47,35 @@ function sliceSafe(value: string, limit: number): string {
 }
 
 /** An integer year, or a string of decimal digits; anything else (blank, `n.d.`, `1e3`) is absent. */
-export const publicationYear = (attributes: RawDoiAttributes): number | undefined => {
-  const raw = attributes.publicationYear;
+const yearOf = (raw: number | string | null | undefined): number | undefined => {
   if (typeof raw === 'number') return Number.isInteger(raw) ? raw : undefined;
   const digits = raw?.trim();
   return digits && /^\d+$/.test(digits) ? Number(digits) : undefined;
 };
 
+/** The record's publication year, read as {@link yearOf} reads each related item's. */
+export const publicationYear = (attributes: RawDoiAttributes): number | undefined =>
+  yearOf(attributes.publicationYear);
+
 export const firstTitle = (attributes: RawDoiAttributes): string | undefined =>
   attributes.titles?.map((t) => plainText(t.title)).find((t) => t !== undefined);
 
+/**
+ * Deposited display text as plain text: recognized formatting tags stripped,
+ * character references decoded once, whitespace collapsed; blank afterwards is
+ * absent. Titles, names, publishers, funders, and subject terms take it;
+ * identifiers, URIs, place names (the place filter matches them exactly as
+ * deposited), and descriptions do not.
+ */
 const plainText = (value: unknown): string | undefined =>
   typeof value === 'string' ? text(htmlToText(value)) : undefined;
 
+/** A publisher name from its plain-string or object form: the record's and each related item's. */
+const publisherText = (publisher: RawPublisher | string | null | undefined): string | undefined =>
+  plainText(typeof publisher === 'string' ? publisher : publisher?.name);
+
 const publisherName = (attributes: RawDoiAttributes): string | undefined =>
-  typeof attributes.publisher === 'string'
-    ? text(attributes.publisher)
-    : text(attributes.publisher?.name);
+  publisherText(attributes.publisher);
 
 const rorFromUri = (value: string | null | undefined): string | undefined =>
   value ? normalizeRor(value) : undefined;
@@ -79,6 +93,8 @@ export interface WorkRow {
   descriptionSnippet?: string;
   doi: string;
   downloadCount?: number;
+  /** Set only when the search has a `bbox`: whether one of the work's own locations lies in or intersects it. */
+  inBbox?: boolean;
   landingUrl?: string;
   licenses: string[];
   providerId?: string;
@@ -88,6 +104,8 @@ export interface WorkRow {
   repositoryName?: string;
   resourceType?: string;
   resourceTypeGeneral?: string;
+  /** Every deposited `rightsUri`, in deposit order; absent when the record deposits none. */
+  rightsUris?: string[];
   title?: string;
   version?: string;
   versionCount?: number;
@@ -96,15 +114,23 @@ export interface WorkRow {
 
 const SNIPPET_LENGTH = 300;
 
-/** One `/dois` search hit as a compact row. */
+/** A malformed polygon has no shape to test; its row is judged by its other locations. */
+const ignoreMalformedPolygon = (): void => undefined;
+
+/**
+ * One `/dois` search hit as a compact row. With `bbox`, the row also says whether
+ * one of its own deposited locations lies in or intersects the box; each location
+ * is parsed, tested, and dropped, so none is kept on the row.
+ */
 export function mapWorkRow(
   record: RawDoiResource,
   clients: ReadonlyMap<string, RawClientResource>,
+  bbox?: Bbox,
 ): WorkRow {
   const a = record.attributes;
   const clientId = record.relationships?.client?.data?.id;
   const client = clientId ? clients.get(clientId) : undefined;
-  const creators = texts(a.creators?.map((c) => c.name));
+  const creators = (a.creators ?? []).flatMap((c) => plainText(c.name) ?? []);
   const descriptions = a.descriptions ?? [];
   const description = plainText(
     (
@@ -116,6 +142,7 @@ export function mapWorkRow(
     description && description.length > SNIPPET_LENGTH
       ? `${sliceSafe(description, SNIPPET_LENGTH).trimEnd()}…`
       : description;
+  const rightsUris = texts(a.rightsList?.map((r) => r.rightsUri));
   return {
     doi: recordDoi(record),
     ...opt('title', firstTitle(a)),
@@ -130,6 +157,7 @@ export function mapWorkRow(
     ...opt('providerId', clientProvider(client)),
     ...opt('version', text(a.version)),
     licenses: texts(a.rightsList?.map((r) => r.rightsIdentifier)),
+    ...(rightsUris.length > 0 && { rightsUris }),
     ...opt('citationCount', finite(a.citationCount)),
     ...opt('viewCount', finite(a.viewCount)),
     ...opt('downloadCount', finite(a.downloadCount)),
@@ -137,6 +165,12 @@ export function mapWorkRow(
     ...opt('created', text(a.created)),
     ...opt('landingUrl', text(a.url)),
     ...opt('descriptionSnippet', snippet),
+    ...(bbox && {
+      inBbox: (a.geoLocations ?? []).some((raw) => {
+        const location = mapGeoLocation(raw, ignoreMalformedPolygon);
+        return location !== undefined && locationInBbox(location, bbox);
+      }),
+    }),
   };
 }
 
@@ -153,9 +187,11 @@ export interface Person {
   otherIdentifiers: Array<{ identifier: string; scheme?: string }>;
 }
 
+/** A creator or contributor: its names and affiliation names as {@link plainText}, its identifiers as deposited. */
 function mapPerson(raw: RawCreator, withRole: boolean): Person | undefined {
-  const name =
-    text(raw.name) ?? [text(raw.givenName), text(raw.familyName)].filter(Boolean).join(' ');
+  const givenName = plainText(raw.givenName);
+  const familyName = plainText(raw.familyName);
+  const name = plainText(raw.name) ?? [givenName, familyName].filter(Boolean).join(' ');
   if (!name) return;
   let orcid: string | undefined;
   const otherIdentifiers: Person['otherIdentifiers'] = [];
@@ -168,7 +204,7 @@ function mapPerson(raw: RawCreator, withRole: boolean): Person | undefined {
     else otherIdentifiers.push({ identifier, ...opt('scheme', scheme) });
   }
   const affiliations = (raw.affiliation ?? []).flatMap((aff) => {
-    const affName = text(aff.name);
+    const affName = plainText(aff.name);
     if (!affName) return [];
     const rorId =
       text(aff.affiliationIdentifierScheme)?.toUpperCase() === 'ROR'
@@ -179,8 +215,8 @@ function mapPerson(raw: RawCreator, withRole: boolean): Person | undefined {
   return {
     name,
     ...opt('nameType', text(raw.nameType)),
-    ...opt('givenName', text(raw.givenName)),
-    ...opt('familyName', text(raw.familyName)),
+    ...opt('givenName', givenName),
+    ...opt('familyName', familyName),
     ...(withRole ? opt('contributorType', text(raw.contributorType)) : {}),
     ...opt('orcid', orcid),
     otherIdentifiers,
@@ -401,7 +437,7 @@ export function mapWork(
     subjects: cap(
       'subjects',
       (a.subjects ?? []).flatMap((s) => {
-        const subject = text(s.subject);
+        const subject = plainText(s.subject);
         return subject
           ? [
               {
@@ -428,7 +464,7 @@ export function mapWork(
     fundingReferences: cap(
       'fundingReferences',
       (a.fundingReferences ?? []).flatMap((f) => {
-        const funderName = text(f.funderName);
+        const funderName = plainText(f.funderName);
         return funderName
           ? [
               {
@@ -480,6 +516,8 @@ export function mapWork(
       (a.relatedItems ?? []).flatMap((item) => {
         const relationType = text(item.relationType);
         if (!relationType) return [];
+        const creators = (item.creators ?? []).flatMap((c) => mapPerson(c, false) ?? []);
+        const contributors = (item.contributors ?? []).flatMap((c) => mapPerson(c, true) ?? []);
         return [
           {
             relationType,
@@ -487,6 +525,17 @@ export function mapWork(
             ...opt('identifier', text(item.relatedItemIdentifier?.relatedItemIdentifier)),
             ...opt('identifierType', text(item.relatedItemIdentifier?.relatedItemIdentifierType)),
             ...opt('title', item.titles?.map((t) => plainText(t.title)).find(Boolean)),
+            ...opt('volume', text(item.volume)),
+            ...opt('issue', text(item.issue)),
+            ...opt('number', text(item.number)),
+            ...opt('numberType', text(item.numberType)),
+            ...opt('firstPage', text(item.firstPage)),
+            ...opt('lastPage', text(item.lastPage)),
+            ...opt('edition', text(item.edition)),
+            ...opt('publisher', publisherText(item.publisher)),
+            ...opt('publicationYear', yearOf(item.publicationYear)),
+            ...(creators.length > 0 && { creators }),
+            ...(contributors.length > 0 && { contributors }),
           },
         ];
       }),

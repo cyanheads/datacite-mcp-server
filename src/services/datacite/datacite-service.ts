@@ -118,6 +118,8 @@ export interface WorkSearchRequest {
   size: number;
   /** Upstream sort value, always sent — a cursor walk runs in `created` order whatever it says. */
   sort: string;
+  /** Adds each row's `geoLocations` to `fields[dois]`, for the `bbox` in-box test. */
+  withGeoLocations?: boolean;
 }
 
 /** A typed `/repositories` request. */
@@ -184,10 +186,12 @@ const joined = (values?: readonly string[]): string | undefined =>
   values?.length ? values.join(',') : undefined;
 
 /**
- * The longest request URL DataCite serves, measured on `/dois`: an 8,201-byte URL
- * was answered, and one of 8,202 bytes refused with HTTP 414.
+ * The longest request URL DataCite serves, measured on `/dois` and `/repositories`:
+ * an 8,201-byte URL was answered, and one of 8,202 bytes refused with HTTP 414.
+ * Every URL {@link buildUrl} composes is percent-encoded ASCII, so its length is
+ * its byte count.
  */
-const MAX_URL_CHARS = 8201;
+export const MAX_URL_CHARS = 8201;
 
 /**
  * The cursor token {@link worksSearchFits} leaves room for. DataCite builds it
@@ -223,7 +227,7 @@ function worksSearchUrl(request: Omit<WorkSearchRequest, 'callerQuery'>): string
       ? ['page[cursor]', request.page.cursor]
       : ['page[number]', request.page.number],
     ['disable-facets', request.facets ? 'false' : undefined],
-    ['fields[dois]', SEARCH_FIELDS],
+    ['fields[dois]', request.withGeoLocations ? `${SEARCH_FIELDS},geoLocations` : SEARCH_FIELDS],
     ['include', 'client'],
     ['affiliation', 'true'],
     ['publisher', 'true'],
@@ -234,10 +238,16 @@ function worksSearchUrl(request: Omit<WorkSearchRequest, 'callerQuery'>): string
  * Whether every page of a `/dois` search for `query` and `filters` fits
  * {@link MAX_URL_CHARS}: the URL is measured at the longest sort, a four-digit
  * page size (DataCite serves at most 1,000 rows), facets on, and a cursor token of
- * {@link CURSOR_TOKEN_ALLOWANCE} characters. It reads only what a work cursor
- * fingerprints, so every page of a walk gets the same answer.
+ * {@link CURSOR_TOKEN_ALLOWANCE} characters, with `geoLocations` in `fields[dois]`
+ * when `withGeoLocations` says the request carries it. It reads only what a work
+ * cursor fingerprints (the `bbox` that sets `withGeoLocations` rides in `query`),
+ * so every page of a walk gets the same answer.
  */
-export const worksSearchFits = (query: string, filters: WorkSearchFilters): boolean =>
+export const worksSearchFits = (
+  query: string,
+  filters: WorkSearchFilters,
+  withGeoLocations = false,
+): boolean =>
   worksSearchUrl({
     query,
     filters,
@@ -245,6 +255,7 @@ export const worksSearchFits = (query: string, filters: WorkSearchFilters): bool
     size: 1000,
     facets: true,
     page: { cursor: 'x'.repeat(CURSOR_TOKEN_ALLOWANCE) },
+    withGeoLocations,
   }).length <= MAX_URL_CHARS;
 
 /** A `/dois` page of the records matching a composed query, newest first. */
@@ -257,6 +268,73 @@ const queryUrl = (query: string, fields: string, size: number): string =>
     ['affiliation', 'true'],
     ['publisher', 'true'],
   ]);
+
+/** The byte length of the URL {@link DataCiteService.queryRecords} sends for these arguments. */
+export const queryUrlLength = (query: string, fields: string, size: number): number =>
+  queryUrl(query, fields, size).length;
+
+/** The byte length of the `/dois` URL {@link DataCiteService.searchWorks} sends for `request`. */
+export const worksSearchUrlLength = (request: Omit<WorkSearchRequest, 'callerQuery'>): number =>
+  worksSearchUrl(request).length;
+
+/** The `/repositories` URL of one search or id-lookup page. */
+function repositoriesSearchUrl(request: Omit<RepositorySearchRequest, 'callerQuery'>): string {
+  return buildUrl('/repositories', [
+    ['ids', joined(request.ids)],
+    ['query', request.query],
+    ['repository-type', joined(request.repositoryTypes)],
+    ['certificate', joined(request.certificates)],
+    ['software', request.software],
+    ['client-type', request.clientType],
+    ['provider-id', request.providerId],
+    ['page[size]', request.size],
+    ['page[number]', request.page],
+  ]);
+}
+
+/** The byte length of the URL {@link DataCiteService.searchRepositories} sends for `request`. */
+export const repositoriesSearchUrlLength = (
+  request: Omit<RepositorySearchRequest, 'callerQuery'>,
+): number => repositoriesSearchUrl(request).length;
+
+/** One input's share of a request URL: the bytes the URL would lose without it. */
+export interface UrlShare {
+  bytes: number;
+  input: string;
+}
+
+/** A `request_too_long` failure: its message, and the measures a caller can branch on. */
+export interface RequestTooLong {
+  data: { inputs: UrlShare[]; maxUrlBytes: number; urlBytes: number };
+  message: string;
+}
+
+const grouped = (value: number): string => value.toLocaleString('en-US');
+
+/** "an" before a numeral read aloud from a vowel (eight…, eleven, eighteen, and their thousands), else "a". */
+const article = (numeral: string): string => (/^(?:8|1[18](?:,|$))/.test(numeral) ? 'an' : 'a');
+
+/** What precedes the inputs' shares: a search's inputs can be shortened; a trace's DOI cannot. */
+const SHARES_LEAD = { search: 'Shorten', trace: 'It carries' } as const;
+
+/**
+ * The failure for a `subject` call whose request URL of `urlBytes` passes
+ * {@link MAX_URL_CHARS}: its length against the limit, then the inputs by their
+ * shares, largest first (equal shares keep the order given).
+ */
+export function requestTooLong(
+  subject: keyof typeof SHARES_LEAD,
+  urlBytes: number,
+  shares: readonly UrlShare[],
+): RequestTooLong {
+  const inputs = shares.toSorted((a, b) => b.bytes - a.bytes);
+  const size = grouped(urlBytes);
+  const named = inputs.map((share) => `\`${share.input}\` (${grouped(share.bytes)} bytes)`);
+  return {
+    message: `This ${subject} would send DataCite ${article(size)} ${size}-byte request URL; DataCite refuses URLs over ${grouped(MAX_URL_CHARS)} bytes. ${SHARES_LEAD[subject]} ${named.join(', ')}.`,
+    data: { urlBytes, maxUrlBytes: MAX_URL_CHARS, inputs },
+  };
+}
 
 /**
  * Whether an upstream 400 rejects the query string itself: a `parse_exception`,
@@ -484,19 +562,8 @@ export class DataCiteService {
 
   /** One page of repository accounts, by search or by id batch. */
   searchRepositories(request: RepositorySearchRequest, ctx: Context): Promise<RawRepositoryList> {
-    const url = buildUrl('/repositories', [
-      ['ids', joined(request.ids)],
-      ['query', request.query],
-      ['repository-type', joined(request.repositoryTypes)],
-      ['certificate', joined(request.certificates)],
-      ['software', request.software],
-      ['client-type', request.clientType],
-      ['provider-id', request.providerId],
-      ['page[size]', request.size],
-      ['page[number]', request.page],
-    ]);
     return this.search<RawRepositoryList>(
-      url,
+      repositoriesSearchUrl(request),
       'searchRepositories',
       60 * MINUTE,
       request.callerQuery,

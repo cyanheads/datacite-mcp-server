@@ -12,6 +12,7 @@ import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.too
 import {
   affiliationNameClause,
   anyPhrase,
+  bboxClause,
   composeQuery,
   doiForms,
   doiQuery,
@@ -308,6 +309,67 @@ describe('placeClause', () => {
       }
     }
   }, 0);
+});
+
+describe('bboxClause', () => {
+  /** The Colorado River basin box the clause was verified with live: 186 works with text streamflow. */
+  const COLORADO = { west: -115.5, south: 31, east: -105.5, north: 43.5 };
+  /** URL bytes a clause adds to a composed query, `+AND+` included, percent-encoded as sent. */
+  const addedBytes = (clause: string) =>
+    new URLSearchParams([['query', `x AND ${clause}`]]).toString().length -
+    new URLSearchParams([['query', 'x']]).toString().length;
+
+  it('ORs a point inside, a box intersecting, and a polygon vertex inside, with negative bounds bare', () => {
+    expect(bboxClause(COLORADO)).toBe(
+      '((geoLocations.geoLocationPoint.pointLatitude:[31 TO 43.5] AND geoLocations.geoLocationPoint.pointLongitude:[-115.5 TO -105.5])' +
+        ' OR (geoLocations.geoLocationBox.westBoundLongitude:[* TO -105.5] AND geoLocations.geoLocationBox.eastBoundLongitude:[-115.5 TO *]' +
+        ' AND geoLocations.geoLocationBox.southBoundLatitude:[* TO 43.5] AND geoLocations.geoLocationBox.northBoundLatitude:[31 TO *])' +
+        ' OR (geoLocations.geoLocationPolygon.polygonPoint.pointLatitude:[31 TO 43.5] AND geoLocations.geoLocationPolygon.polygonPoint.pointLongitude:[-115.5 TO -105.5]))',
+    );
+    expect(bboxClause(COLORADO)).not.toContain('\\');
+  });
+
+  it('splits point and vertex longitudes at ±180 and lets a box reach either half when west lies east of east', () => {
+    expect(bboxClause({ west: 175, south: -20, east: -175, north: -15 })).toBe(
+      '((geoLocations.geoLocationPoint.pointLatitude:[-20 TO -15] AND (geoLocations.geoLocationPoint.pointLongitude:[175 TO 180] OR geoLocations.geoLocationPoint.pointLongitude:[-180 TO -175]))' +
+        ' OR ((geoLocations.geoLocationBox.eastBoundLongitude:[175 TO *] OR geoLocations.geoLocationBox.westBoundLongitude:[* TO -175])' +
+        ' AND geoLocations.geoLocationBox.southBoundLatitude:[* TO -15] AND geoLocations.geoLocationBox.northBoundLatitude:[-20 TO *])' +
+        ' OR (geoLocations.geoLocationPolygon.polygonPoint.pointLatitude:[-20 TO -15] AND (geoLocations.geoLocationPolygon.polygonPoint.pointLongitude:[175 TO 180] OR geoLocations.geoLocationPolygon.polygonPoint.pointLongitude:[-180 TO -175])))',
+    );
+  });
+
+  it('keeps a box of equal sides whole, as a line or a point', () => {
+    // west equal to east is one meridian, not a box crossing ±180: the deposited-box ranges are ANDed.
+    expect(bboxClause({ west: 8, south: 46.5, east: 8, north: 46.5 })).toBe(
+      '((geoLocations.geoLocationPoint.pointLatitude:[46.5 TO 46.5] AND geoLocations.geoLocationPoint.pointLongitude:[8 TO 8])' +
+        ' OR (geoLocations.geoLocationBox.westBoundLongitude:[* TO 8] AND geoLocations.geoLocationBox.eastBoundLongitude:[8 TO *]' +
+        ' AND geoLocations.geoLocationBox.southBoundLatitude:[* TO 46.5] AND geoLocations.geoLocationBox.northBoundLatitude:[46.5 TO *])' +
+        ' OR (geoLocations.geoLocationPolygon.polygonPoint.pointLatitude:[46.5 TO 46.5] AND geoLocations.geoLocationPolygon.polygonPoint.pointLongitude:[8 TO 8]))',
+    );
+  });
+
+  it('writes a tiny bound in exponent form, which DataCite reads as the same number', () => {
+    // Live: pointLatitude:[-1e-7 TO 1e-7] and [-0.0000001 TO 0.0000001] both matched 1,205 works.
+    expect(bboxClause({ west: -1e-7, south: -1e-7, east: 1e-7, north: 1e-7 })).toContain(
+      'geoLocations.geoLocationPoint.pointLatitude:[-1e-7 TO 1e-7]',
+    );
+  });
+
+  it.each([
+    ['the Colorado box', COLORADO, 612],
+    [
+      'six-decimal coordinates',
+      { west: -179.123456, south: -89.123456, east: -178.123456, north: -88.123456 },
+      684,
+    ],
+    [
+      'six-decimal coordinates across the antimeridian',
+      { west: 179.123456, south: -89.123456, east: -179.123456, north: -88.123456 },
+      849,
+    ],
+  ])('adds %s to the URL as %i bytes', (_name, bbox, bytes) => {
+    expect(addedBytes(bboxClause(bbox))).toBe(bytes);
+  });
 });
 
 describe('reverse relation lookups', () => {

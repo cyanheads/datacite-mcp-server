@@ -1,0 +1,986 @@
+{
+  "data": [
+    {
+      "id": "10.3205/000367",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.3205/000367",
+        "identifiers": [
+          {
+            "identifier": "urn:nbn:de:0183-0003671",
+            "identifierType": "URN"
+          },
+          {
+            "identifier": "000367",
+            "identifierType": "Doc"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Klinik für Gefäß- und Endovaskularchirurgie, Universitätsklinikum Düsseldorf (UKD), Heinrich-Heine-Universität Düsseldorf (HHU), Deutschland"
+              }
+            ],
+            "givenName": "Julian-Dario",
+            "familyName": "Rembe",
+            "name": "Rembe, Julian-Dario",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Klinik und Poliklinik für Dermatologie, Venerologie und Allergologie, Universitätsklinikum Essen, Deutschland"
+              }
+            ],
+            "givenName": "Joachim",
+            "familyName": "Dissemond",
+            "name": "Dissemond, Joachim",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Hautklinik, Uniklinikum Erlangen, Deutschland"
+              }
+            ],
+            "givenName": "Cornelia",
+            "familyName": "Erfurt-Berge",
+            "name": "Erfurt-Berge, Cornelia",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Initiative Chronische Wunden (ICW) e.V., Quedlinburg, Deutschland"
+              }
+            ],
+            "givenName": "Veronika",
+            "familyName": "Gerber",
+            "name": "Gerber, Veronika",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Zentrales Wundmanagement, Evangelischen Krankenhaus Mülheim, Deutschland"
+              }
+            ],
+            "givenName": "Martin",
+            "familyName": "Motzkus",
+            "name": "Motzkus, Martin",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Stabstelle Wundmanagement, Klinikum Fürstenfeldbruck, Deutschland"
+              }
+            ],
+            "givenName": "Katja",
+            "familyName": "Teubner",
+            "name": "Teubner, Katja",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Klinik & Poliklinik für Gefäßmedizin, Universitätsklinikum Hamburg-Eppendorf, Deutschland"
+              }
+            ],
+            "givenName": "Ewa K.",
+            "familyName": "Stürmer",
+            "name": "St&#xFC;rmer, Ewa K.",
+            "nameIdentifiers": []
+          }
+        ],
+        "titles": [
+          {
+            "lang": "de",
+            "title": "Biofilm in chronischen Wunden: Ein Positionspapier der Fachgesellschaft Initiative Chronische Wunden (ICW) e.V."
+          },
+          {
+            "titleType": "TranslatedTitle",
+            "lang": "en",
+            "title": "Biofilm in chronic wounds: A position paper of the professional society Initiative Chronische Wunden (ICW) e.V."
+          }
+        ],
+        "publisher": {
+          "name": "German Medical Science GMS Publishing House"
+        },
+        "container": {
+          "volume": "24",
+          "identifier": "1612-3174",
+          "number": "Doc14",
+          "identifierType": "ISSN",
+          "type": "Series",
+          "title": "GMS German Medical Science"
+        },
+        "publicationYear": 2026,
+        "subjects": [
+          {
+            "subject": "chronic wounds",
+            "lang": "en"
+          },
+          {
+            "subject": "biofilm",
+            "lang": "en"
+          },
+          {
+            "subject": "extracellular polymeric substance",
+            "lang": "en"
+          },
+          {
+            "subject": "antiseptic",
+            "lang": "en"
+          },
+          {
+            "subject": "wound infection",
+            "lang": "en"
+          },
+          {
+            "subject": "chronische Wunden",
+            "lang": "de"
+          },
+          {
+            "subject": "Biofilm",
+            "lang": "de"
+          },
+          {
+            "subject": "extrazelluläre polymeren Substanz",
+            "lang": "de"
+          },
+          {
+            "subject": "antiseptisch",
+            "lang": "de"
+          },
+          {
+            "subject": "Wundinfektion",
+            "lang": "de"
+          },
+          {
+            "classificationCode": "610",
+            "schemeUri": "http://dewey.info/",
+            "subject": "Medicine and health",
+            "lang": "en",
+            "subjectScheme": "dewey"
+          }
+        ],
+        "contributors": [],
+        "dates": [
+          {
+            "date": "2026-11-25",
+            "dateType": "Issued"
+          }
+        ],
+        "language": "de",
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "JournalArticle",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "JOUR",
+          "resourceType": "Positionspapier"
+        },
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsPartOf",
+            "relatedIdentifier": "1612-3174",
+            "relatedIdentifierType": "ISSN"
+          }
+        ],
+        "relatedItems": [
+          {
+            "volume": "24",
+            "relationType": "IsPublishedIn",
+            "relatedItemIdentifier": {
+              "relatedItemIdentifier": "1612-3174",
+              "relatedItemIdentifierType": "ISSN"
+            },
+            "number": "Doc14",
+            "numberType": "Article",
+            "relatedItemType": "Journal",
+            "creators": [],
+            "publicationYear": "2026",
+            "titles": [
+              {
+                "title": "GMS German Medical Science"
+              },
+              {
+                "titleType": "AlternativeTitle",
+                "title": "GMS Ger Med Sci"
+              }
+            ],
+            "contributors": []
+          }
+        ],
+        "sizes": [],
+        "formats": ["text/html"],
+        "version": null,
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rightsUri": "https://creativecommons.org/licenses/by/4.0/legalcode",
+            "schemeUri": "https://spdx.org/licenses/",
+            "rights": "Creative Commons Attribution 4.0 International",
+            "lang": "de",
+            "rightsIdentifier": "cc-by-4.0"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Chronic wounds represent a relevant medical and health-economic challenge and are, in the majority of cases, colonized by microbial biofilms. Biofilms are the dominant organizational form of microorganisms in chronic wounds and substantially contribute to delayed wound healing. They are characterized by pronounced tolerance to host immune defence, antiseptics, and antibiotics, primarily owing to the protective extracellular polymeric substance (EPS) and altered metabolic states of the microorganisms.\n \n The aim of this position paper of the professional medical society Initiative Chronische Wunden (ICW) e.V. is to summarize the current state of knowledge on biofilms in chronic wounds, provide standardized definitions, and derive practice-relevant recommendations for diagnosis and treatment. In addition to presenting pathogenesis, the biofilm life cycle, and interactions with the wound microbiome, clinical indicators of biofilm presence and diagnostic approaches are discussed.\n \n From a therapeutic perspective, the paper emphasizes that antimicrobial solutions and wound dressings alone are often insufficient to achieve sustained biofilm eradication. The currently most effective strategy is considered to be repeated, indication-based sharp or surgical debridement in combination with locally effective antiseptics. In addition, emerging and future treatment options are critically evaluated.\n \n This position paper is intended to raise awareness of the clinical relevance of biofilms, improve the care of people with chronic wounds, and provide a sound basis for future research and guideline development.",
+            "lang": "en"
+          },
+          {
+            "descriptionType": "Abstract",
+            "description": "Chronische Wunden stellen eine relevante medizinische und gesundheitsökonomische Herausforderung dar und sind in der Mehrzahl der Fälle mit mikrobiellen Biofilmen besiedelt. Biofilme sind die dominante Organisationsform von Mikroorganismen in chronischen Wunden und maßgeblich an der Verzögerung der Wundheilung beteiligt. Sie zeichnen sich durch eine hohe Toleranz gegenüber Immunabwehr, Antiseptika und Antibiotika aus, die primär auf der schützenden extrazellulären polymeren Substanz (EPS) sowie auf veränderten metabolischen Zuständen der Mikroorganismen beruht.\n \n Ziel dieses Positionspapiers der medizinischen Fachgesellschaft Initiative Chronische Wunden (ICW) e.V. ist es, den aktuellen Wissensstand zu Biofilmen in chronischen Wunden zusammenzufassen, einheitliche Definitionen bereitzustellen und praxisrelevante Empfehlungen zur Diagnostik und Therapie abzuleiten. Neben der Darstellung von Pathogenese, Biofilm-Lebenszyklus und Interaktionen mit dem Wundmikrobiom werden klinische Hinweise auf das Vorliegen eines Biofilms sowie diagnostische Ansätze diskutiert.\n \n Therapeutisch wird herausgearbeitet, dass antimikrobielle Lösungen und Wundauflagen allein häufig nicht ausreichen, um Biofilme nachhaltig zu eradizieren. Als derzeit effektivste Strategie gilt ein wiederholtes, indikationsgerechtes scharfes oder chirurgisches Débridement in Kombination mit lokal wirksamen Antiseptika. Ergänzend werden neue und zukünftige Therapieoptionen kritisch bewertet.\n \n Das Positionspapier soll dazu beitragen, das Bewusstsein für die klinische Relevanz von Biofilmen zu schärfen, die Versorgung von Menschen mit chronischen Wunden zu verbessern und eine fundierte Grundlage für zukünftige Forschung und Leitlinienentwicklung zu schaffen.",
+            "lang": "de"
+          }
+        ],
+        "geoLocations": [],
+        "fundingReferences": [],
+        "url": "https://journals.publisso.de/de/journals/gms/volume24/000367",
+        "contentUrl": null,
+        "metadataVersion": 0,
+        "schemaVersion": "http://datacite.org/schema/kernel-4",
+        "source": "mds",
+        "isActive": true,
+        "state": "findable",
+        "reason": null,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "referenceCount": 0,
+        "citationCount": 0,
+        "partCount": 0,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0,
+        "created": "2026-11-25T08:14:43Z",
+        "registered": "2026-11-25T08:14:44Z",
+        "published": null,
+        "updated": "2026-11-25T08:14:44Z"
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "zbmed.gms",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.83394/978-3-913202-00-6_011",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.83394/978-3-913202-00-6_011",
+        "identifiers": [],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/04xyxjd90",
+                "schemeUri": "https://ror.org/",
+                "name": "Nottingham Trent University",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Antony",
+            "familyName": "Hoyte-West",
+            "name": "Hoyte-West, Antony",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0000-0003-4410-6520"
+              }
+            ]
+          }
+        ],
+        "titles": [
+          {
+            "lang": "en",
+            "title": "The Journalist in Han Suyin’s “A Many-Splendoured Thing”"
+          },
+          {
+            "titleType": "Subtitle",
+            "lang": "en",
+            "title": "A FASP Approach"
+          }
+        ],
+        "publisher": {
+          "name": "Freiburg University Publishing",
+          "lang": "de"
+        },
+        "container": {
+          "identifier": "10.83394/978-3-913202-00-6",
+          "identifierType": "DOI",
+          "type": "Series",
+          "title": "Journalists in Fiction"
+        },
+        "publicationYear": 2026,
+        "subjects": [],
+        "contributors": [],
+        "dates": [
+          {
+            "date": "2026-11-30",
+            "dateType": "Issued"
+          }
+        ],
+        "language": "en",
+        "types": {
+          "schemaOrg": "Chapter",
+          "resourceTypeGeneral": "BookChapter",
+          "citeproc": "chapter",
+          "bibtex": "inbook",
+          "ris": "CHAP",
+          "resourceType": "BookChapter"
+        },
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsIdenticalTo",
+            "relatedIdentifier": "https://freiup.uni-freiburg.de/freiup/de/catalog/book/978-3-913202-00-6/chapter/12",
+            "relatedIdentifierType": "URL"
+          }
+        ],
+        "relatedItems": [
+          {
+            "relationType": "IsPublishedIn",
+            "relatedItemIdentifier": {
+              "relatedItemIdentifier": "10.83394/978-3-913202-00-6",
+              "relatedItemIdentifierType": "DOI"
+            },
+            "relatedItemType": "Book",
+            "creators": [
+              {
+                "givenName": "Barbara",
+                "familyName": "Korte",
+                "name": "Korte, Barbara"
+              },
+              {
+                "givenName": "Beatriz",
+                "familyName": "Valverde",
+                "name": "Valverde, Beatriz"
+              }
+            ],
+            "publisher": "Freiburg University Publishing",
+            "publicationYear": 2026,
+            "titles": [
+              {
+                "title": "Journalists in Fiction"
+              },
+              {
+                "titleType": "Subtitle",
+                "title": "Approaches and Case Studies"
+              }
+            ]
+          }
+        ],
+        "sizes": [],
+        "formats": [],
+        "version": "1",
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rightsUri": "https://creativecommons.org/licenses/by/4.0/legalcode",
+            "schemeUri": "https://spdx.org/licenses/",
+            "rights": "Creative Commons Attribution 4.0 International",
+            "lang": "en",
+            "rightsIdentifier": "cc-by-4.0"
+          }
+        ],
+        "descriptions": [],
+        "geoLocations": [],
+        "fundingReferences": [],
+        "url": "https://freiup.uni-freiburg.de/freiup/de/catalog/book/978-3-913202-00-6/chapter/12",
+        "contentUrl": null,
+        "metadataVersion": 0,
+        "schemaVersion": null,
+        "source": "api",
+        "isActive": true,
+        "state": "findable",
+        "reason": null,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "referenceCount": 0,
+        "citationCount": 0,
+        "partCount": 0,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0,
+        "created": "2026-11-24T15:52:02Z",
+        "registered": "2026-11-24T15:52:02Z",
+        "published": null,
+        "updated": "2026-11-24T15:52:02Z"
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "qvvc.freiup",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.15162/rde.v2i2.2688",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.15162/rde.v2i2.2688",
+        "identifiers": [
+          {
+            "identifier": "17-248-2688",
+            "identifierType": "publisherId"
+          }
+        ],
+        "creators": [
+          {
+            "affiliation": [
+              {
+                "name": "Preside della Facoltà di Scienze economiche, politiche e sociali dell’Università Cattolica Nostra Signora del Buon Consiglio di Tirana"
+              }
+            ],
+            "name": "Teotonico, Vittorio",
+            "nameIdentifiers": []
+          }
+        ],
+        "titles": [
+          {
+            "title": "La partecipazione dei lavoratori dal «fiume carsico» all’«abito su misura». L’art. 46 Cost. alla prova della legge n. 76/2025"
+          },
+          {
+            "titleType": "TranslatedTitle",
+            "title": "Worker Participation from “Karst River” to “Tailor-Made Suit”: Article 46 of the Italian Constitution Put to the Test by Law No. 76/2025"
+          }
+        ],
+        "publisher": {
+          "name": "Rassegna di Diritto dell’Economia"
+        },
+        "container": {
+          "volume": "2",
+          "identifier": "3103-845X",
+          "issue": "2",
+          "firstPage": "133",
+          "lastPage": "161",
+          "identifierType": "ISSN",
+          "type": "Series",
+          "title": "Rassegna di Diritto dell’Economia"
+        },
+        "publicationYear": 2026,
+        "subjects": [
+          {
+            "subject": "Partecipazione dei lavoratori"
+          },
+          {
+            "subject": "Worker Participation"
+          },
+          {
+            "subject": "art. 46 Cost."
+          },
+          {
+            "subject": "legge n. 76/2025"
+          },
+          {
+            "subject": "Costituzione economica"
+          },
+          {
+            "subject": "Trade Union Representativeness"
+          }
+        ],
+        "contributors": [],
+        "dates": [
+          {
+            "date": "2026-11-20",
+            "dateType": "Submitted"
+          },
+          {
+            "date": "2026-11-20",
+            "dateType": "Updated"
+          },
+          {
+            "date": "2026-11-20",
+            "dateType": "Issued"
+          }
+        ],
+        "language": "it",
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "JournalArticle",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "JOUR"
+        },
+        "relatedIdentifiers": [],
+        "relatedItems": [
+          {
+            "volume": "2",
+            "relationType": "IsPublishedIn",
+            "relatedItemIdentifier": {
+              "relatedItemIdentifier": "3103-845X",
+              "relatedItemIdentifierType": "ISSN"
+            },
+            "issue": "2",
+            "lastPage": "161",
+            "firstPage": "133",
+            "relatedItemType": "Journal",
+            "creators": [],
+            "titles": [
+              {
+                "title": "Rassegna di Diritto dell’Economia"
+              }
+            ],
+            "contributors": []
+          }
+        ],
+        "sizes": [],
+        "formats": [],
+        "version": null,
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rightsUri": "https://creativecommons.org/licenses/by-nd/4.0/legalcode",
+            "schemeUri": "https://spdx.org/licenses/",
+            "rights": "Creative Commons Attribution No Derivatives 4.0 International",
+            "rightsIdentifier": "cc-by-nd-4.0"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Il contributo ricostruisce l’andamento ciclico, quasi «carsico», della questione della partecipazione dei lavoratori alla gestione delle imprese nell’ordinamento italiano: dall’esperienza dei Consigli di gestione e dalla formulazione compromissoria dell’art. 46 Cost. fino all’approvazione della legge 15 maggio 2025, n. 76, prima disciplina di carattere generale in materia. L’analisi individua nelle resistenze culturali di lungo periodo – la logica della «partecipazione conflittuale», la lettura dell’art. 46 Cost. alla luce della Costituzione materiale e del primato attribuito all’art. 39 Cost., le divisioni sindacali e la diffidenza datoriale – l’ipoteca che grava anche sulla riforma. Di quest’ultima si propone una valutazione in chiaroscuro, nella quale le ombre prevalgono sulle luci: alla tipizzazione delle forme partecipative, alla rimozione di alcune barriere di diritto societario e alla procedimentalizzazione della consultazione si contrappongono, inter alia, un impianto essenzialmente volontaristico, la doppia condizionalità della partecipazione gestionale e il carattere modesto e contingente degli incentivi. Il saggio prende le distanze tanto dalle letture più indulgenti quanto da quelle che denunciano l’inutilità o l’illegittimità costituzionale della legge e si sofferma sul nodo della legittimazione rappresentativa, anche alla luce della sentenza della Corte costituzionale n. 156/2025. Se ne conclude che il limite della riforma attiene, più che alla sua legittimità, alla sua effettività: la partecipazione andrà misurata sul passaggio dalla disponibilità di una sede all’effettivo esercizio di una funzione.\n\r\n\nThe paper traces the cyclical, almost “karstic”, course of the debate on worker participation in company management in the Italian legal system: from the experience of the post-war management councils and the compromise wording of Article 46 of the Constitution to the adoption of Law No. 76 of 15 May 2025, the first general legislation on the subject. The analysis identifies long-standing cultural resistances – the logic of “conflictual participation”, the reading of Article 46 through the lens of the material Constitution and of the primacy accorded to Article 39, trade union divisions and employers’ mistrust – as the mortgage that also weighs on the reform. The law is assessed in terms of lights and shadows, the latter prevailing: the classification of the forms of participation, the removal of certain company-law barriers and the proceduralisation of consultation are offset by, among other things, an essentially voluntary framework, the double conditionality of board-level participation and the modest and temporary nature of the incentives. The essay distances itself both from the most indulgent readings and from those claiming that the law is useless or unconstitutional, and examines the issue of representative legitimacy, also in light of Constitutional Court judgment No. 156/2025. It concludes that the reform’s limit lies in its effectiveness rather than its legitimacy: participation will have to be measured by the shift from the availability of a forum to the actual exercise of a function."
+          }
+        ],
+        "geoLocations": [],
+        "fundingReferences": [],
+        "url": "https://ojs.cimedoc.uniba.it/index.php/rassegna-di-diritto-economia/article/view/2688",
+        "contentUrl": null,
+        "metadataVersion": 0,
+        "schemaVersion": "http://datacite.org/schema/kernel-4",
+        "source": "mds",
+        "isActive": true,
+        "state": "findable",
+        "reason": null,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "referenceCount": 0,
+        "citationCount": 0,
+        "partCount": 0,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0,
+        "created": "2026-11-21T12:35:28Z",
+        "registered": "2026-11-21T12:35:29Z",
+        "published": null,
+        "updated": "2026-11-22T12:35:32Z"
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "crui.uniba",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.11588/edition.klee.klee_korr_fk_340106",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.11588/edition.klee.klee_korr_fk_340106",
+        "identifiers": [
+          {
+            "identifier": "urn:nbn:de:bsz:16-diglit-636995",
+            "identifierType": "URN"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "givenName": "Felix",
+            "familyName": "Klee",
+            "name": "Klee, Felix",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "GND",
+                "schemeUri": "https://d-nb.info/gnd/",
+                "nameIdentifier": "https://d-nb.info/gnd/119450429"
+              }
+            ],
+            "affiliation": []
+          }
+        ],
+        "titles": [
+          {
+            "title": "Familienkorrespondenz Klee: Brief von Felix Klee an Lily Klee und Paul Klee (1934)"
+          }
+        ],
+        "publisher": {
+          "name": "München: NN"
+        },
+        "container": {
+          "identifier": "urn:nbn:de:bsz:16-diglit-527578",
+          "identifierType": "URN",
+          "type": "Series"
+        },
+        "publicationYear": 2025,
+        "subjects": [],
+        "contributors": [
+          {
+            "nameType": "Personal",
+            "givenName": "Lily",
+            "familyName": "Klee",
+            "name": "Klee, Lily",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "GND",
+                "schemeUri": "https://d-nb.info/gnd/",
+                "nameIdentifier": "https://d-nb.info/gnd/133496805"
+              }
+            ],
+            "contributorType": "RelatedPerson",
+            "affiliation": []
+          },
+          {
+            "nameType": "Personal",
+            "givenName": "Paul",
+            "familyName": "Klee",
+            "name": "Klee, Paul",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "GND",
+                "schemeUri": "https://d-nb.info/gnd/",
+                "nameIdentifier": "https://d-nb.info/gnd/118562827"
+              }
+            ],
+            "contributorType": "RelatedPerson",
+            "affiliation": []
+          },
+          {
+            "affiliation": [],
+            "name": "Universitätsbibliothek Heidelberg",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "GND",
+                "schemeUri": "https://d-nb.info/gnd/",
+                "nameIdentifier": "https://d-nb.info/gnd/2002498-8"
+              }
+            ],
+            "contributorType": "HostingInstitution"
+          }
+        ],
+        "dates": [
+          {
+            "date": "1934-01-06",
+            "dateType": "Created"
+          },
+          {
+            "date": "2025-10-09",
+            "dateType": "Issued"
+          }
+        ],
+        "language": "de",
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "Text",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "RPRT",
+          "resourceType": "Digital copy"
+        },
+        "relatedIdentifiers": [
+          {
+            "relationType": "IsPartOf",
+            "relatedIdentifier": "urn:nbn:de:bsz:16-diglit-527578",
+            "relatedIdentifierType": "URN"
+          }
+        ],
+        "relatedItems": [
+          {
+            "relationType": "IsVariantFormOf",
+            "relatedItemType": "Text",
+            "creators": [
+              {
+                "nameType": "Personal",
+                "givenName": "Felix",
+                "familyName": "Klee",
+                "name": "Klee, Felix"
+              }
+            ],
+            "publicationYear": "1934",
+            "titles": [
+              {
+                "title": "Familienkorrespondenz Klee: Brief von Felix Klee an Lily Klee und Paul Klee"
+              }
+            ],
+            "contributors": [
+              {
+                "nameType": "Personal",
+                "givenName": "Lily",
+                "familyName": "Klee",
+                "name": "Klee, Lily",
+                "contributorType": "RelatedPerson"
+              },
+              {
+                "nameType": "Personal",
+                "givenName": "Paul",
+                "familyName": "Klee",
+                "name": "Klee, Paul",
+                "contributorType": "RelatedPerson"
+              }
+            ]
+          },
+          {
+            "relationType": "IsPartOf",
+            "relatedItemIdentifier": {
+              "relatedItemIdentifier": "urn:nbn:de:bsz:16-diglit-527578",
+              "relatedItemIdentifierType": "URN"
+            },
+            "relatedItemType": "Text",
+            "creators": [
+              {
+                "affiliation": [],
+                "name": ":none",
+                "nameIdentifiers": []
+              }
+            ],
+            "titles": [
+              {
+                "title": "Familienkorrespondenz Klee"
+              }
+            ],
+            "contributors": []
+          }
+        ],
+        "sizes": [],
+        "formats": ["text/html", "image/jpeg"],
+        "version": null,
+        "rightsList": [
+          {
+            "rightsUri": "",
+            "lang": "en-US",
+            "rightsIdentifier": "in copyright"
+          },
+          {
+            "rightsUri": "",
+            "lang": "de-DE",
+            "rightsIdentifier": "in copyright"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Umschlag vorhanden: nein",
+            "lang": "de-DE"
+          },
+          {
+            "descriptionType": "Abstract",
+            "description": "Umschlag vorhanden: nein",
+            "lang": "en-US"
+          }
+        ],
+        "geoLocations": [],
+        "fundingReferences": [],
+        "url": "https://digi.ub.uni-heidelberg.de/read/klee/klee_korr_FK_340106",
+        "contentUrl": null,
+        "metadataVersion": 0,
+        "schemaVersion": "http://datacite.org/schema/kernel-4",
+        "source": "mds",
+        "isActive": true,
+        "state": "findable",
+        "reason": null,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "referenceCount": 0,
+        "citationCount": 0,
+        "partCount": 0,
+        "partOfCount": 0,
+        "versionCount": 0,
+        "versionOfCount": 0,
+        "created": "2025-10-09T11:57:46Z",
+        "registered": "2025-10-09T12:06:42Z",
+        "published": null,
+        "updated": "2025-10-09T12:06:42Z"
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "gesis.ubhd",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "zbmed.gms",
+      "type": "clients",
+      "attributes": {
+        "name": "German Medical Science",
+        "symbol": "ZBMED.GMS",
+        "year": 2011,
+        "alternateName": null,
+        "description": null,
+        "language": [],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {},
+        "url": null,
+        "created": "2011-07-13T14:10:25Z",
+        "updated": "2025-02-18T11:12:11Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "kydj",
+            "type": "providers"
+          }
+        },
+        "consortium": {
+          "data": {
+            "id": "ZBMEDCO",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "qvvc.freiup",
+      "type": "clients",
+      "attributes": {
+        "name": "Freiburg University Publishing (FreiUP)",
+        "symbol": "QVVC.FREIUP",
+        "year": 2026,
+        "alternateName": null,
+        "description": null,
+        "language": ["de", "en"],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {},
+        "url": "https://freiup.uni-freiburg.de/",
+        "created": "2026-04-16T10:01:17Z",
+        "updated": "2026-11-24T11:28:55Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "qvvc",
+            "type": "providers"
+          }
+        },
+        "consortium": {
+          "data": {
+            "id": "TIBCO",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "crui.uniba",
+      "type": "clients",
+      "attributes": {
+        "name": "Università degli Studi di Bari",
+        "symbol": "CRUI.UNIBA",
+        "year": 2015,
+        "alternateName": null,
+        "description": null,
+        "language": ["it"],
+        "clientType": "repository",
+        "domains": "*.uniba.it,uniba.it",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {},
+        "url": null,
+        "created": "2015-05-21T17:52:21Z",
+        "updated": "2022-10-31T17:26:33Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "vnfj",
+            "type": "providers"
+          }
+        },
+        "consortium": {
+          "data": {
+            "id": "CRUICO",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "gesis.ubhd",
+      "type": "clients",
+      "attributes": {
+        "name": "University Library Heidelberg",
+        "symbol": "GESIS.UBHD",
+        "year": 2013,
+        "alternateName": null,
+        "description": null,
+        "language": [],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {},
+        "url": null,
+        "created": "2013-04-17T11:24:10Z",
+        "updated": "2026-11-19T09:30:12Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "vgzm",
+            "type": "providers"
+          }
+        },
+        "consortium": {
+          "data": {
+            "id": "TIBCO",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 4,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=doi:%2210.15162/rde.v2i2.2688%22%20OR%20doi:%2210.3205/000367%22%20OR%20doi:%2210.83394/978-3-913202-00-6_011%22%20OR%20doi:%2210.11588/edition.klee.klee_korr_fk_340106%22&sort=-created&include=client&affiliation=true&publisher=true&page[size]=4"
+  }
+}

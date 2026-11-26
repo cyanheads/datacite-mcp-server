@@ -6,6 +6,8 @@
  * @module services/datacite/query-builder
  */
 
+import { type Bbox, bboxHalves } from './bbox.js';
+
 /**
  * Characters OpenSearch query-string syntax reserves (escaped with a backslash),
  * minus `/`: DataCite escapes `/` itself before parsing, so a pre-escaped `\/`
@@ -141,6 +143,35 @@ export const affiliationNameClause = (name: string): string =>
 /** `publicationYear:[from TO to]`, `*` for an open bound. */
 export const yearRangeClause = (from?: number, to?: number): string =>
   `publicationYear:[${from ?? '*'} TO ${to ?? '*'}]`;
+
+const POINT_PATH = 'geoLocations.geoLocationPoint';
+const BOX_PATH = 'geoLocations.geoLocationBox';
+const VERTEX_PATH = 'geoLocations.geoLocationPolygon.polygonPoint';
+
+/**
+ * Works depositing a point inside `bbox`, a box intersecting it, or a polygon
+ * vertex inside it. The coordinate paths are numeric and take negative bounds
+ * unescaped. A `west` greater than `east` crosses the antimeridian: point and
+ * vertex longitudes match on either side of ±180, and a box matches when it
+ * reaches into either part. A record's `geoLocations` are indexed as one flat
+ * array, so each range can match a different location; `locationInBbox` checks
+ * a row's own locations.
+ */
+export function bboxClause(bbox: Bbox): string {
+  const { west, south, east, north } = bbox;
+  const longitude = (field: string) => {
+    const ranges = bboxHalves(bbox).map((half) => `${field}:[${half.west} TO ${half.east}]`);
+    return ranges.length === 1 ? ranges[0] : `(${ranges.join(' OR ')})`;
+  };
+  const vertexIn = (path: string) =>
+    `(${path}.pointLatitude:[${south} TO ${north}] AND ${longitude(`${path}.pointLongitude`)})`;
+  const boxLongitude =
+    west <= east
+      ? `${BOX_PATH}.westBoundLongitude:[* TO ${east}] AND ${BOX_PATH}.eastBoundLongitude:[${west} TO *]`
+      : `(${BOX_PATH}.eastBoundLongitude:[${west} TO *] OR ${BOX_PATH}.westBoundLongitude:[* TO ${east}])`;
+  const box = `(${boxLongitude} AND ${BOX_PATH}.southBoundLatitude:[* TO ${north}] AND ${BOX_PATH}.northBoundLatitude:[${south} TO *])`;
+  return `(${vertexIn(POINT_PATH)} OR ${box} OR ${vertexIn(VERTEX_PATH)})`;
+}
 
 /** The exact-DOI query `doi:"<doi>"`. */
 export const doiQuery = (doi: string): string => `doi:${phrase(doi)}`;

@@ -13,10 +13,11 @@ import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getWorkTool } from '@/mcp-server/tools/definitions/get-work.tool.js';
 import { RECORD_LIST_CAPS, type RecordList } from '@/services/datacite/mappers.js';
-import type { RawDoiAttributes, RawDoiResource } from '@/services/datacite/types.js';
+import type { RawDoiAttributes, RawDoiList, RawDoiResource } from '@/services/datacite/types.js';
 import {
   doiList,
   emptyDoiList,
+  fixtureJson,
   fixtureResponse,
   rateLimitResponse,
 } from '../../../helpers/fixtures.js';
@@ -1161,7 +1162,7 @@ describe('found arm', () => {
   });
 
   it.each(OTHER_LINE_BREAKS)(
-    'keeps depositor text in its slot across %s and keeps structuredContent verbatim',
+    'keeps depositor text in its slot across %s, flattening the subject like the title and keeping the description verbatim',
     async (_name, sep) => {
       const evil = (label: string) => `${label}${sep}# INJECTED ${label}${sep}- INJECTED ${label}`;
       initServices([
@@ -1177,7 +1178,7 @@ describe('found arm', () => {
       const result = await run('10.5555/hostile');
       const out = output(result);
       expect(out.titles?.[0]?.title).toBe('title # INJECTED title - INJECTED title');
-      expect(out.subjects?.[0]?.subject).toBe(evil('subject'));
+      expect(out.subjects?.[0]?.subject).toBe('subject # INJECTED subject - INJECTED subject');
       expect(out.descriptions?.[0]?.description).toBe(evil('description'));
       const text = contentText(result);
       expect(text).toContain('# title # INJECTED title - INJECTED title\n');
@@ -1188,6 +1189,455 @@ describe('found arm', () => {
       expect(text).not.toContain(sep);
     },
   );
+});
+
+describe('relatedItems', () => {
+  const RECORDED = fixtureJson<RawDoiList>('datacite/works/related-items.json');
+  /** Answers each one-DOI record query from the recorded page, as `/dois` would. */
+  const recordedRecord = (request: Request) => {
+    const query = new URL(request.url).searchParams.get('query');
+    const record = RECORDED.data.find((r) => query === `doi:"${r.id}"`);
+    if (!record) return json(emptyDoiList());
+    const client = RECORDED.included?.find((c) => c.id === record.relationships?.client?.data?.id);
+    return json({ ...doiList([record]), included: client ? [client] : [] });
+  };
+  /** The rendered HTML of `content[]`, for asserting nesting under CommonMark. */
+  const html = (result: ToolResultLike) => commonmark.render(contentText(result));
+
+  it('returns each recorded item with its citation details, publisher, year, and people on both surfaces', async () => {
+    initServices([{ match: dataCite('/dois'), respond: recordedRecord }]);
+
+    const article = await run('10.15162/rde.v2i2.2688');
+    const [journal] = output(article).relatedItems ?? [];
+    expect(journal).toEqual({
+      relationType: 'IsPublishedIn',
+      relatedItemType: 'Journal',
+      identifier: '3103-845X',
+      identifierType: 'ISSN',
+      title: 'Rassegna di Diritto dell’Economia',
+      volume: '2',
+      issue: '2',
+      firstPage: '133',
+      lastPage: '161',
+    });
+    expect(journal).not.toHaveProperty('creators');
+    expect(journal).not.toHaveProperty('contributors');
+    expect(contentText(article)).toContain(
+      '## Related items\n- IsPublishedIn: Journal; ISSN 3103-845X; "Rassegna di Diritto dell’Economia"; volume 2; issue 2; pages 133–161',
+    );
+
+    const numbered = await run('10.3205/000367');
+    expect(output(numbered).relatedItems).toEqual([
+      expect.objectContaining({
+        volume: '24',
+        number: 'Doc14',
+        numberType: 'Article',
+        publicationYear: 2026,
+      }),
+    ]);
+    expect(contentText(numbered)).toContain(
+      '- IsPublishedIn: Journal; ISSN 1612-3174; "GMS German Medical Science"; volume 24; number Doc14 (Article); year 2026',
+    );
+
+    const chapter = await run('10.83394/978-3-913202-00-6_011');
+    expect(output(chapter).relatedItems).toEqual([
+      expect.objectContaining({
+        publisher: 'Freiburg University Publishing',
+        publicationYear: 2026,
+        creators: [
+          {
+            name: 'Korte, Barbara',
+            givenName: 'Barbara',
+            familyName: 'Korte',
+            otherIdentifiers: [],
+            affiliations: [],
+          },
+          {
+            name: 'Valverde, Beatriz',
+            givenName: 'Beatriz',
+            familyName: 'Valverde',
+            otherIdentifiers: [],
+            affiliations: [],
+          },
+        ],
+      }),
+    ]);
+    // The people are a list nested inside the item's own list entry.
+    expect(html(chapter)).toContain(
+      '<li>IsPublishedIn: Book; DOI 10.83394/978-3-913202-00-6; &quot;Journalists in Fiction&quot;; publisher Freiburg University Publishing; year 2026\n<ul>\n<li>Creator: Korte, Barbara — given Barbara; family Korte</li>\n<li>Creator: Valverde, Beatriz — given Beatriz; family Valverde</li>\n</ul>\n</li>',
+    );
+
+    const letter = await run('10.11588/edition.klee.klee_korr_fk_340106');
+    expect(output(letter).relatedItems?.[0]?.contributors).toEqual([
+      expect.objectContaining({ name: 'Klee, Lily', contributorType: 'RelatedPerson' }),
+      expect.objectContaining({ name: 'Klee, Paul', contributorType: 'RelatedPerson' }),
+    ]);
+    expect(contentText(letter)).toContain(
+      [
+        '- IsVariantFormOf: Text; "Familienkorrespondenz Klee: Brief von Felix Klee an Lily Klee und Paul Klee"; year 1934',
+        '  - Creator: Klee, Felix — Personal; given Felix; family Klee',
+        '  - Contributor: Klee, Lily — role RelatedPerson; Personal; given Lily; family Klee',
+        '  - Contributor: Klee, Paul — role RelatedPerson; Personal; given Paul; family Klee',
+        '- IsPartOf: Text; URN urn:nbn:de:bsz:16-diglit-527578; "Familienkorrespondenz Klee"',
+        '  - Creator: :none',
+      ].join('\n'),
+    );
+    expect(html(letter)).toContain(
+      '<li>Contributor: Klee, Paul — role RelatedPerson; Personal; given Paul; family Klee</li>\n</ul>\n</li>\n<li>IsPartOf:',
+    );
+  });
+
+  it('renders every deposited field alone, and a person in the form of the Creators section', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/items', {
+          relatedItems: [
+            { relationType: 'IsPartOf' },
+            {
+              relationType: 'IsPublishedIn',
+              numberType: 'Article',
+              firstPage: 'e123',
+              edition: '2nd',
+              creators: [
+                {
+                  name: 'Carberry, Josiah',
+                  nameIdentifiers: [
+                    { nameIdentifier: '0000-0002-1825-0097', nameIdentifierScheme: 'ORCID' },
+                    { nameIdentifier: '0000 0001 2281 955X', nameIdentifierScheme: 'ISNI' },
+                  ],
+                  affiliation: [
+                    {
+                      name: 'Brown University',
+                      affiliationIdentifier: 'https://ror.org/05gq02987',
+                      affiliationIdentifierScheme: 'ROR',
+                    },
+                  ],
+                },
+              ],
+            },
+            { relationType: 'Cites', lastPage: '9', number: '7' },
+          ],
+        }),
+      },
+    ]);
+    const result = await run('10.5555/items');
+    expect(output(result).relatedItems).toEqual([
+      { relationType: 'IsPartOf' },
+      {
+        relationType: 'IsPublishedIn',
+        numberType: 'Article',
+        firstPage: 'e123',
+        edition: '2nd',
+        creators: [
+          {
+            name: 'Carberry, Josiah',
+            orcid: '0000-0002-1825-0097',
+            otherIdentifiers: [{ identifier: '0000 0001 2281 955X', scheme: 'ISNI' }],
+            affiliations: [{ name: 'Brown University', rorId: '05gq02987' }],
+          },
+        ],
+      },
+      { relationType: 'Cites', number: '7', lastPage: '9' },
+    ]);
+    const text = contentText(result);
+    expect(text).toContain(
+      [
+        '## Related items',
+        '- IsPartOf: no identifier',
+        '- IsPublishedIn: number type Article; first page e123; edition 2nd',
+        '  - Creator: Carberry, Josiah — ORCID 0000-0002-1825-0097; ISNI 0000 0001 2281 955X; Brown University (ROR 05gq02987)',
+        '- Cites: number 7; last page 9',
+      ].join('\n'),
+    );
+  });
+
+  it('pages the fuller entries under the unchanged cap of 25', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/series', {
+          relatedItems: Array.from({ length: 30 }, (_, i) => ({
+            relationType: 'IsPublishedIn',
+            titles: [{ title: `Volume ${i}` }],
+            volume: `${i}`,
+            publisher: `Press ${i}`,
+            creators: [{ name: `Editor ${i}` }],
+          })),
+        }),
+      },
+    ]);
+    const first = output(await run('10.5555/series'));
+    expect(first.relatedItems).toHaveLength(25);
+    expect(first.truncatedLists).toEqual([
+      { field: 'relatedItems', shown: 25, total: 30, nextOffset: 25 },
+    ]);
+    const page = await runToolContract(getWorkTool, {
+      doi: '10.5555/series',
+      list: 'relatedItems',
+      offset: 25,
+    });
+    expect(output(page).listPage).toEqual({ list: 'relatedItems', offset: 25, total: 30 });
+    expect(output(page).relatedItems).toEqual(
+      Array.from({ length: 5 }, (_, j) => ({
+        relationType: 'IsPublishedIn',
+        title: `Volume ${25 + j}`,
+        volume: `${25 + j}`,
+        publisher: `Press ${25 + j}`,
+        creators: [{ name: `Editor ${25 + j}`, otherIdentifiers: [], affiliations: [] }],
+      })),
+    );
+    expect(contentText(page)).toContain(
+      '- IsPublishedIn: "Volume 29"; volume 29; publisher Press 29\n  - Creator: Editor 29',
+    );
+  });
+
+  it('keeps depositor text in the item and person slots, nothing promoted to a block', async () => {
+    const evil = (label: string) => `${label}\n# INJECTED ${label}\r\n- INJECTED ${label}`;
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/hostile-items', {
+          relatedItems: [
+            {
+              relationType: 'IsPublishedIn',
+              publisher: evil('publisher'),
+              volume: evil('volume'),
+              creators: [{ name: evil('creator'), affiliation: [{ name: evil('affiliation') }] }],
+              contributors: [{ name: evil('contributor'), contributorType: 'Editor' }],
+            },
+          ],
+        }),
+      },
+    ]);
+    const result = await run('10.5555/hostile-items');
+    const [item] = output(result).relatedItems ?? [];
+    expect(item?.publisher).toContain('# INJECTED publisher');
+    expect(item?.creators?.[0]?.name).toContain('# INJECTED creator');
+    expect(item?.contributors?.[0]?.name).toContain('# INJECTED contributor');
+    const text = contentText(result);
+    expect(text).toContain(
+      'volume volume # INJECTED volume - INJECTED volume; publisher publisher # INJECTED publisher - INJECTED publisher',
+    );
+    expect(text).toContain(
+      '  - Creator: creator # INJECTED creator - INJECTED creator — affiliation # INJECTED affiliation - INJECTED affiliation',
+    );
+    expect(text).toContain(
+      '  - Contributor: contributor # INJECTED contributor - INJECTED contributor — role Editor',
+    );
+    expect(text).not.toMatch(/^\s*(#|-) INJECTED/m);
+    const tokens = commonmark.parse(text, {});
+    const headings = tokens.flatMap((token, i) =>
+      token.type === 'heading_open' ? [tokens[i + 1]?.content] : [],
+    );
+    expect(headings).toEqual(['10.5555/hostile-items', 'Rights', 'Related items']);
+  });
+});
+
+describe('sections', () => {
+  /** The record groups `sections` names, in the order it echoes them. */
+  const SECTIONS = [
+    'creators',
+    'contributors',
+    'dates',
+    'subjects',
+    'descriptions',
+    'fundingReferences',
+    'geoLocations',
+    'rights',
+    'sizes',
+    'formats',
+    'alternateIdentifiers',
+    'relatedIdentifiers',
+    'relatedItems',
+  ] as const;
+  const fieldsOf = (section: string) =>
+    section === 'relatedIdentifiers' ? [section, 'relatedIdentifierCounts'] : [section];
+  /** `out` without the output fields of every group not in `kept`. */
+  const withGroups = (out: Output, kept: readonly string[]) => {
+    const hidden = new Set(SECTIONS.filter((s) => !kept.includes(s)).flatMap(fieldsOf));
+    return Object.fromEntries(Object.entries(out).filter(([field]) => !hidden.has(field)));
+  };
+  const call = (input: Record<string, unknown>) =>
+    runToolContract(getWorkTool, input as z.input<typeof getWorkTool.input>);
+
+  it.each(SECTIONS)(
+    'returns %s beside every always-returned field, read from the cached record',
+    async (section) => {
+      const { http } = initServices([DRYAD_234]);
+      const full = output(await run('10.5061/dryad.234'));
+      const result = await call({ doi: '10.5061/dryad.234', sections: [section] });
+      expect(output(result)).toEqual({ ...withGroups(full, [section]), sections: [section] });
+      expect(contentText(result)).toContain(`**Sections:** ${section}\n`);
+      expect(http.calls).toHaveLength(1);
+    },
+  );
+
+  it('returns creators alone with the identity fields, on both surfaces, and one upstream request', async () => {
+    const { http } = initServices([DRYAD_234]);
+    const result = await call({ doi: '10.5061/dryad.234', sections: ['creators'] });
+    const out = output(result);
+    expect(out.sections).toEqual(['creators']);
+    expect(out.creators).toHaveLength(10);
+    expect(out).toMatchObject({
+      found: true,
+      titles: [{ title: 'Data from: Towards a worldwide wood economics spectrum' }],
+      publisher: { name: 'Dryad', rorId: '00x6h5n95' },
+      publicationYear: 2009,
+      metadataLicense: 'CC0-1.0',
+      repository: { repositoryId: 'dryad.dryad' },
+      counts: { citationCount: 264 },
+    });
+    for (const absent of [
+      'descriptions',
+      'rights',
+      'relatedIdentifiers',
+      'relatedIdentifierCounts',
+    ]) {
+      expect(out).not.toHaveProperty(absent);
+    }
+    const text = contentText(result);
+    expect(text).toContain(
+      '**DOI:** 10.5061/dryad.234 · **Found:** true\n**Sections:** creators\n',
+    );
+    expect(text).toContain('## Creators\n- Zanne, Amy E.');
+    // The metadata license always returns; the work's own rights are marked as left out, not undeclared.
+    expect(text).toContain('## Rights\n- Work rights: left out by sections\n- Metadata: CC0-1.0');
+    for (const absent of [
+      '## Descriptions',
+      '## Related identifiers',
+      'none declared',
+      '## Dates',
+    ]) {
+      expect(text).not.toContain(absent);
+    }
+    // The full record afterwards is served from the same cached response.
+    const full = await run('10.5061/dryad.234');
+    expect(output(full)).not.toHaveProperty('sections');
+    expect(output(full).descriptions).toHaveLength(2);
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('answers an omitted, empty, or blank sections with the full record and no echo', async () => {
+    initServices([DRYAD_234]);
+    const full = await run('10.5061/dryad.234');
+    for (const sections of [undefined, [], [' '], ['', '  ']]) {
+      const result = await call({ doi: '10.5061/dryad.234', sections });
+      expect(result.structuredContent).toEqual(full.structuredContent);
+      expect(contentText(result)).toBe(contentText(full));
+    }
+    expect(output(full)).not.toHaveProperty('sections');
+    expect(contentText(full)).not.toContain('**Sections:**');
+  });
+
+  it('adds the list and relation_types groups, resolves any spelling once, in canonical order', async () => {
+    initServices([DRYAD_234]);
+    const listed = await call({ doi: '10.5061/dryad.234', sections: ['rights'], list: 'creators' });
+    expect(output(listed)).toMatchObject({
+      sections: ['creators', 'rights'],
+      listPage: { list: 'creators', offset: 0, total: 10 },
+      rights: [expect.objectContaining({ rightsIdentifier: 'cc0-1.0' })],
+    });
+    expect(output(listed).creators).toHaveLength(10);
+    expect(output(listed)).not.toHaveProperty('subjects');
+    expect(contentText(listed)).toContain('**Sections:** creators, rights\n');
+
+    const past = await call({
+      doi: '10.5061/dryad.234',
+      sections: ['rights'],
+      list: 'creators',
+      offset: 10,
+    });
+    expect(output(past)).toMatchObject({
+      sections: ['creators', 'rights'],
+      creators: [],
+      listPage: { list: 'creators', offset: 10, total: 10 },
+    });
+    expect(contentText(past)).toContain('creators · offset 10 · total 10 · end of list');
+
+    const typed = output(
+      await call({
+        doi: '10.5061/dryad.234',
+        sections: ['subjects'],
+        relation_types: ['IsCitedBy'],
+      }),
+    );
+    expect(typed.sections).toEqual(['subjects', 'relatedIdentifiers']);
+    expect(typed.relatedIdentifierCounts).toEqual({ IsCitedBy: 1 });
+    expect(typed.listPage).toMatchObject({ list: 'relatedIdentifiers', total: 1 });
+
+    const spelled = output(
+      await call({
+        doi: '10.5061/dryad.234',
+        sections: ['related_items', 'CREATORS', 'creators', 'Funding References', ' '],
+      }),
+    );
+    expect(spelled.sections).toEqual(['creators', 'fundingReferences', 'relatedItems']);
+  });
+
+  it('discloses only the capped lists and omitted polygons of the returned groups', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.5555/capped', {
+          creators: Array.from({ length: 101 }, (_, i) => ({ name: `Creator ${i}` })),
+          subjects: Array.from({ length: 101 }, (_, i) => ({ subject: `Subject ${i}` })),
+          geoLocations: [
+            { geoLocationPolygon: [{ polygonPoint: { pointLatitude: 'bad', pointLongitude: 1 } }] },
+            { geoLocationPlace: 'Alps' },
+          ],
+        }),
+      },
+    ]);
+    const capped = (field: string) => ({ field, shown: 100, total: 101, nextOffset: 100 });
+    const notice =
+      '1 malformed geographic polygon(s) omitted because they contain incomplete or invalid coordinates; other valid geographic fields are retained.';
+
+    const full = output(await run('10.5555/capped'));
+    expect(full.truncatedLists).toEqual([capped('creators'), capped('subjects')]);
+    expect(full).toHaveProperty('notice', notice);
+
+    const subjects = await call({ doi: '10.5555/capped', sections: ['subjects'] });
+    expect(output(subjects).truncatedLists).toEqual([capped('subjects')]);
+    expect(output(subjects)).not.toHaveProperty('notice');
+    expect(contentText(subjects)).toContain('subjects: 100 of 101');
+    expect(contentText(subjects)).not.toContain('creators: 100 of 101');
+    expect(contentText(subjects)).not.toContain('malformed');
+
+    const places = await call({ doi: '10.5555/capped', sections: ['geoLocations'] });
+    expect(output(places)).not.toHaveProperty('truncatedLists');
+    expect(output(places)).toHaveProperty('notice', notice);
+    expect(contentText(places)).toContain('1 malformed geographic polygon(s) omitted');
+
+    const both = await call({ doi: '10.5555/capped', sections: ['geoLocations', 'creators'] });
+    expect(output(both).truncatedLists).toEqual([capped('creators')]);
+    expect(output(both)).toHaveProperty('notice', notice);
+    expect(contentText(both)).toContain('creators: 100 of 101');
+    expect(contentText(both)).toContain('1 malformed geographic polygon(s) omitted');
+  });
+
+  it('rejects a name outside the groups before any request', async () => {
+    const { http } = initServices([DRYAD_234]);
+    for (const sections of [['titles'], ['creators', 'bogus'], 'creators']) {
+      const result = await call({ doi: '10.5061/dryad.234', sections });
+      expect(toolError(result).code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(contentText(result)).toContain('sections');
+    }
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('leaves the miss arm unchanged', async () => {
+    const doi = '10.1038/nature12373';
+    initServices([
+      { match: dataCite('/dois'), respond: json(emptyDoiList()) },
+      { match: doiRa(doi), respond: fixtureResponse('doi-ra/crossref.json') },
+    ]);
+    const plain = await run(doi);
+    const selected = await call({ doi, sections: ['creators'] });
+    expect(selected.structuredContent).toEqual(plain.structuredContent);
+    expect(contentText(selected)).toBe(contentText(plain));
+    expect(output(selected)).toMatchObject({ found: false, missReason: 'other_agency' });
+  });
 });
 
 describe('miss arm', () => {
@@ -1460,5 +1910,66 @@ describe('rate limiting', () => {
       invalid_doi: 'notice',
       rate_limited: 'error',
     });
+  });
+});
+
+describe('names, publishers, funders, and subject terms as plain text', () => {
+  it('decodes references in subjects, the publisher, people, affiliations, funders, and related items on both surfaces', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: recordPage('10.58151/nhb005um5', {
+          subjects: [{ subject: 'Individual Sample' }, { subject: 'Igneous&gt;Rock' }],
+          publisher: { name: 'Taylor &amp; Francis' },
+          creators: [
+            {
+              name: 'Str&ouml;m, <i>&Aring;sa</i>',
+              givenName: '&Aring;sa',
+              familyName: 'Str&ouml;m',
+              affiliation: [{ name: 'Texas A&amp;M University' }],
+            },
+          ],
+          fundingReferences: [{ funderName: 'Bill &amp; Melinda Gates Foundation' }],
+          relatedItems: [
+            {
+              relationType: 'IsPublishedIn',
+              relatedItemType: 'Book',
+              publisher: 'Kipp &amp; Zonen',
+              creators: [{ name: 'Editor &amp; Co' }],
+            },
+          ],
+        }),
+      },
+    ]);
+    const result = await run('10.58151/nhb005um5');
+    const out = output(result);
+    expect(out.subjects).toEqual([{ subject: 'Individual Sample' }, { subject: 'Igneous>Rock' }]);
+    expect(out.publisher).toEqual({ name: 'Taylor & Francis' });
+    expect(out.creators).toEqual([
+      {
+        name: 'Ström, Åsa',
+        givenName: 'Åsa',
+        familyName: 'Ström',
+        otherIdentifiers: [],
+        affiliations: [{ name: 'Texas A&M University' }],
+      },
+    ]);
+    expect(out.fundingReferences).toEqual([{ funderName: 'Bill & Melinda Gates Foundation' }]);
+    expect(out.relatedItems?.[0]).toMatchObject({
+      publisher: 'Kipp & Zonen',
+      creators: [expect.objectContaining({ name: 'Editor & Co' })],
+    });
+    const text = contentText(result);
+    expect(text).toContain('## Subjects\n- Individual Sample\n- Igneous>Rock\n');
+    expect(text).toContain('**Publisher:** Taylor & Francis\n');
+    expect(text).toContain(
+      '## Creators\n- Ström, Åsa — given Åsa; family Ström; Texas A&M University\n',
+    );
+    expect(text).toContain('## Funding\n- Bill & Melinda Gates Foundation\n');
+    expect(text).toContain(
+      '- IsPublishedIn: Book; publisher Kipp & Zonen\n  - Creator: Editor & Co',
+    );
+    expect(markdownText(text)).toContain('Igneous>Rock');
+    expect(text).not.toMatch(/&(amp|gt|ouml|Aring);/);
   });
 });

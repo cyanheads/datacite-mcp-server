@@ -180,7 +180,8 @@ export function getReferenceTopic(topic: ReferenceTopic): ReferenceContent {
         title: 'License ids',
         entries: LICENSES.map(({ value, label }) => ({ value, label })),
         notes: [
-          "DataCite stores a work's license as a lowercase rightsIdentifier; the licenses filter of datacite_search_works matches it exactly, including internal spaces (cc0 1.0 and cc0-1.0 are distinct).",
+          "DataCite stores a work's license id as a lowercase rightsIdentifier; the licenses filter and the licenses facet of datacite_search_works read that id only, and the filter matches it exactly, including internal spaces (cc0 1.0 and cc0-1.0 are distinct).",
+          'Many works deposit a license only as a URI, with no id: their search rows carry it in rightsUris, and query rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* reaches them (case-sensitive; the wildcard covers http and https, deed and legalcode forms).',
           'This list holds common ids and is not exhaustive; reuse returned licenses facet ids verbatim. Inputs are trimmed and lowercased, and commas and control characters are not allowed within one id.',
           'notspecified and pdm are DataCite values, not SPDX ids.',
         ],

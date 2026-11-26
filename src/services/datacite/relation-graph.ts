@@ -24,8 +24,10 @@ import {
 } from '@/services/reference/vocabularies.js';
 import {
   type DataCiteService,
+  MAX_URL_CHARS,
   NODE_FIELDS,
   NODE_WITH_RELATIONS_FIELDS,
+  queryUrlLength,
   REVERSE_FIELDS,
   ROOT_FIELDS,
 } from './datacite-service.js';
@@ -130,7 +132,7 @@ export interface RelationGraph {
 export interface TraceResult {
   /** Distinct related identifiers found before the node cap (root excluded). */
   available: number;
-  /** DataCite depth-1 nodes a second hop that ran left unexpanded, past the frontier limit. */
+  /** DataCite depth-1 nodes a second hop left unexpanded past its {@link TraceResult.frontier}. */
   beyondFrontier: number;
   /** Whether `maxNodes` left found identifiers out, or left no room for a requested second hop. */
   capBound: boolean;
@@ -138,6 +140,13 @@ export interface TraceResult {
   edgesFound: number;
   /** Every edge found, including those the cap dropped with an endpoint it left out. */
   foundEdges: GraphEdge[];
+  /**
+   * DataCite depth-1 nodes a second hop expands, or would were there room: the first in
+   * node order, at most {@link MAX_FRONTIER}, and only as many as one reverse read's URL
+   * holds within DataCite's limit. 0 at depth 1, in Event-Data-only mode, with no DataCite
+   * neighbour, or when the lookup for the first neighbour alone passes the limit.
+   */
+  frontier: number;
   graph: RelationGraph;
   /**
    * Per hop, the related identifiers a reverse query's first page listed when their
@@ -160,7 +169,7 @@ export interface TraceResult {
   unhydrated: number;
 }
 
-/** Frontier nodes a second hop expands: the first DataCite depth-1 nodes in node order. */
+/** Frontier nodes a second hop expands at most: the first DataCite depth-1 nodes in node order. */
 export const MAX_FRONTIER = 10;
 
 /**
@@ -212,6 +221,41 @@ interface Target {
 
 /** Nodes waiting for the budget, keyed by id, in admission order, with any record already in hand. */
 type CandidatePool = Map<string, { idType: string; record?: RawDoiResource }>;
+
+/**
+ * `relationTypes`, which name relations as the traced node sees them, as the asserting
+ * side of a reverse match records them: their inverses. Absent when nothing narrows.
+ */
+const reverseTypesOf = (relationTypes?: readonly string[]): string[] | undefined =>
+  relationTypes?.length ? [...new Set(relationTypes.map(inverseRelationType))] : undefined;
+
+/** The reverse query a trace of `root` sends: the records asserting a relation to it within `relationTypes`. */
+export const rootReverseQuery = (root: string, relationTypes?: readonly string[]): string =>
+  reverseRelationQuery([root], reverseTypesOf(relationTypes));
+
+/**
+ * The byte length of the longest URL a reverse read of `query` sends, its
+ * {@link REVERSE_PAGE_SIZE}-record page. The first page's URL is one byte shorter and of
+ * even length (each DOI is written ten times, each relation type twice, and the fixed
+ * parameters total an even count), so never exactly the odd {@link MAX_URL_CHARS}: a read
+ * whose full page passes the limit is one whose first page DataCite refuses too.
+ */
+export const reverseReadUrlLength = (query: string): number =>
+  queryUrlLength(query, REVERSE_FIELDS, REVERSE_PAGE_SIZE);
+
+/**
+ * The neighbours a second hop expands: the first of `neighbours` in node order, at most
+ * {@link MAX_FRONTIER}, and only as many as one reverse read's URL holds within the limit.
+ */
+function fillFrontier(neighbours: readonly string[], reverseTypes?: readonly string[]): string[] {
+  const frontier: string[] = [];
+  for (const id of neighbours.slice(0, MAX_FRONTIER)) {
+    const query = reverseRelationQuery([...frontier, id], reverseTypes);
+    if (reverseReadUrlLength(query) > MAX_URL_CHARS) break;
+    frontier.push(id);
+  }
+  return frontier;
+}
 
 /**
  * The node a related identifier names. A DOI-typed value, and a doi.org URL
@@ -281,8 +325,7 @@ export async function traceRelations(
   const filter = relationTypes?.length ? new Set<string>(relationTypes) : undefined;
   const allowedOut = (type: string) => !filter || filter.has(type);
   const allowedIn = (type: string) => !filter || filter.has(inverseRelationType(type));
-  /** What the asserting side of a reverse match records. */
-  const reverseTypes = filter && [...new Set([...filter].map(inverseRelationType))];
+  const reverseTypes = reverseTypesOf(relationTypes);
 
   const edges = new Map<string, GraphEdge>();
   const addEdge = (
@@ -327,7 +370,7 @@ export async function traceRelations(
   const eventTypes = CITATION_RELATION_TYPES.filter(
     (type) => allowedOut(type) || (rootRecord !== undefined && allowedIn(type)),
   );
-  const reverseQuery = eventOnly ? undefined : reverseRelationQuery([root], reverseTypes);
+  const reverseQuery = eventOnly ? undefined : rootReverseQuery(root, relationTypes);
   const [reverse, events] = await Promise.all([
     reverseQuery === undefined
       ? Promise.resolve<ReverseRecords>({ read: { total: 0, fetched: 0 }, records: [] })
@@ -456,6 +499,7 @@ export async function traceRelations(
   let capBound = !admit(1, candidates) || eventCapBound;
   let unexpanded = 0;
   let beyondFrontier = 0;
+  let frontierSize = 0;
   let secondHop: ReverseRecords | undefined;
 
   /**
@@ -479,11 +523,12 @@ export async function traceRelations(
     const neighbours = [...nodes.values()]
       .filter((n) => n.depth === 1 && n.isDataCiteDoi === true)
       .map((n) => n.id);
+    const frontier = fillFrontier(neighbours, reverseTypes);
+    frontierSize = frontier.length;
     if (neighbours.length > 0 && nodes.size >= maxNodes) {
       capBound = true;
       unexpanded = neighbours.length;
-    } else if (neighbours.length > 0) {
-      const frontier = neighbours.slice(0, MAX_FRONTIER);
+    } else if (frontier.length > 0) {
       beyondFrontier = neighbours.length - frontier.length;
       const frontierSet = new Set(frontier);
       const [own, reverse2] = await Promise.all([
@@ -516,6 +561,9 @@ export async function traceRelations(
       }
       available += second.size;
       capBound = !admit(2, second);
+    } else {
+      // No DataCite neighbour, or the lookup for the first one alone passes the URL limit.
+      beyondFrontier = neighbours.length;
     }
   }
 
@@ -579,6 +627,7 @@ export async function traceRelations(
     capBound,
     edgesFound: keptEdges.length,
     foundEdges,
+    frontier: frontierSize,
     largeReverse: {
       ...(reverse.listed !== undefined && { root: reverse.listed }),
       ...(secondHop?.listed !== undefined && { secondHop: secondHop.listed }),

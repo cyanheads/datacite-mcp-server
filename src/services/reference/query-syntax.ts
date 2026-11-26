@@ -5,6 +5,38 @@
  * @module services/reference/query-syntax
  */
 
+/** The deposited-coordinate paths, each verified live as a numeric range field: what each holds, and a range on it. */
+const COORDINATE_FIELDS = [
+  ['geoLocations.geoLocationPoint.pointLatitude', 'Point latitude', '[-20 TO -15]'],
+  ['geoLocations.geoLocationPoint.pointLongitude', 'Point longitude', '[-115.5 TO -105.5]'],
+  [
+    'geoLocations.geoLocationBox.westBoundLongitude',
+    'Box western edge, a longitude',
+    '[* TO -105.5]',
+  ],
+  [
+    'geoLocations.geoLocationBox.eastBoundLongitude',
+    'Box eastern edge, a longitude',
+    '[-115.5 TO *]',
+  ],
+  ['geoLocations.geoLocationBox.southBoundLatitude', 'Box southern edge, a latitude', '[* TO -15]'],
+  ['geoLocations.geoLocationBox.northBoundLatitude', 'Box northern edge, a latitude', '[-20 TO *]'],
+  [
+    'geoLocations.geoLocationPolygon.polygonPoint.pointLatitude',
+    'Polygon vertex latitude',
+    '[-20 TO -15]',
+  ],
+  [
+    'geoLocations.geoLocationPolygon.polygonPoint.pointLongitude',
+    'Polygon vertex longitude',
+    '[-115.5 TO -105.5]',
+  ],
+] as const;
+
+/** Why coordinate clauses ANDed together can match across locations: `geoLocations` is not a nested field upstream. */
+const FLAT_ARRAY_CAVEAT =
+  "A work's locations are indexed as one flat list, so clauses ANDed on two coordinate paths can each match a different location or polygon vertex; datacite_search_works bbox flags such works with inBbox false.";
+
 /** Field paths verified live against `/dois`, with what each matches. */
 export const VERIFIED_QUERY_FIELDS: ReadonlyArray<{ description: string; value: string }> = [
   { value: 'titles.title', description: 'Title text (analyzed).' },
@@ -21,10 +53,19 @@ export const VERIFIED_QUERY_FIELDS: ReadonlyArray<{ description: string; value: 
   { value: 'fundingReferences.funderName', description: 'Funder name.' },
   { value: 'fundingReferences.awardNumber', description: 'Grant or award number.' },
   {
+    value: 'rightsList.rightsUri',
+    description:
+      'License or rights URI exactly as deposited, case-sensitive; the licenses filter reads only rightsIdentifier. Wildcards match a substring, so one path covers http and https, deed and legalcode forms (rightsList.rightsUri:*creativecommons.org/licenses/by/4.0*).',
+  },
+  {
     value: 'geoLocations.geoLocationPlace',
     description:
       'Place name exactly as deposited, case-sensitive: "Svalbard" matches neither "svalbard" nor "Svalbard, Norway". Wildcards match a substring, with spaces escaped (geoLocations.geoLocationPlace:*Gulf\\ of\\ Mexico*).',
   },
+  ...COORDINATE_FIELDS.map(([value, what, range]) => ({
+    value,
+    description: `${what} in decimal degrees, numeric: ranges take negative bounds unescaped (${value}:${range}). ${FLAT_ARRAY_CAVEAT}`,
+  })),
   { value: 'language', description: 'ISO 639-1 language code.' },
   { value: 'publicationYear', description: 'Year; ranges as publicationYear:[2020 TO 2022].' },
   {
@@ -55,6 +96,8 @@ export const VERIFIED_QUERY_FIELDS: ReadonlyArray<{ description: string; value: 
 /** Field paths recognized when deciding whether a zero-hit query named a nonexistent field. */
 export const KNOWN_QUERY_FIELDS = new Set([
   ...VERIFIED_QUERY_FIELDS.map((field) => field.value),
+  // OpenSearch's field-existence query, _exists_:<field path>.
+  '_exists_',
   'contributors.affiliation.name',
   'contributors.contributorType',
   'contributors.nameIdentifiers.nameIdentifier',
@@ -71,6 +114,9 @@ export const KNOWN_QUERY_FIELDS = new Set([
   'identifiers.identifier',
   'identifiers.identifierType',
   'relatedIdentifiers.relatedIdentifierType',
+  // The related-item paths datacite_trace_relations queries for reverse relations.
+  'relatedItems.relatedItemIdentifier.relatedItemIdentifier',
+  'relatedItems.relationType',
   'rightsList.rights',
   'rightsList.rightsIdentifier',
   'sizes',

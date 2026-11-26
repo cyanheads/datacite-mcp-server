@@ -4,7 +4,7 @@ description: Use with datacite_* tools to attribute research outputs, find datas
 license: Apache-2.0
 metadata:
   author: "cyanheads"
-  version: "1.0"
+  version: "1.1"
 ---
 
 ## Scope
@@ -20,12 +20,15 @@ Use DataCite for deposited metadata about datasets, software, and other research
 
 ## Gates
 
-- Before attributing a result to a person or funder, inspect its creators or funding references with `datacite_get_work`. Name searches match inside one creator or one funding reference, so they do not join tokens from two co-authors, but a different person or funder with the same name still matches; a search hit alone does not establish identity. Prefer a verified identifier when available.
+- Before attributing a result to a person or funder, inspect its creators or funding references with `datacite_get_work`, passing `sections` (`creators`, `fundingReferences`) to skip long descriptions. Name searches match inside one creator or one funding reference, so they do not join tokens from two co-authors, but a different person or funder with the same name still matches; a search hit alone does not establish identity. Prefer a verified identifier when available.
 - Before reporting a work absent, distinguish an empty search from a DOI lookup's miss classification. A nonpublic record, another agency's DOI, and an unanswered agency lookup do not establish nonexistence.
-- Before calling a relation inventory complete, inspect coverage, hydration state, and notices. Reverse metadata, Event Data, node counts, and edges can each be incomplete; increasing the node allowance does not remove every source limit. When reverse records go unread, the notice names the `datacite_search_works` query that lists them all, unless that query is over 2,000 characters; run it to read the rest.
+- Before calling a relation inventory complete, inspect coverage, hydration state, and notices. Reverse metadata, Event Data, node counts, and edges can each be incomplete; increasing the node allowance does not remove every source limit. When reverse records go unread, the notice names the `datacite_search_works` query that lists them all, unless that query is over 2,000 characters or its search would pass DataCite's URL limit; run it to read the rest.
 - Read each edge as an assertion by its `from` node. Metadata and reverse-metadata sources can be two routes to the same assertion, not independent corroboration.
 - Before treating a zero-hit syntax query as evidence of absence, check its field paths with `datacite_list_reference`. Unknown fields can return zero without an error; use literal text search when field syntax is unnecessary.
 - Before claiming an output is reusable, inspect its deposited rights. The metadata's CC0 status does not license the described data or software.
+- Before reporting that no works carry a license, remember the `licenses` filter and facet read deposited license ids only. A work that deposits a license only as a URI is missed; its search row lists it in `rightsUris`, and a `query` on `rightsList.rightsUri` reaches such works (case-sensitive). A work that gives only a rights statement appears in `datacite_get_work` rights.
+- Before counting a work as inside a `bbox`, check its `inBbox`. False means it matched only by pairing coordinates from different deposited locations or polygon vertices, and `totalCount` includes such works. A `bbox` reaches deposited coordinates only, so works that name a place without coordinates need `place`.
+- To read one part of a heavy record, pass `sections` to `datacite_get_work`; the groups it leaves out are left out of the response, not undeposited.
 
 ## Core chain
 

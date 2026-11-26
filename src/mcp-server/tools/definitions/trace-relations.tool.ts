@@ -7,7 +7,12 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { getDataCiteService } from '@/services/datacite/datacite-service.js';
+import {
+  getDataCiteService,
+  MAX_URL_CHARS,
+  requestTooLong,
+  worksSearchFits,
+} from '@/services/datacite/datacite-service.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
 import {
   type GraphEdge,
@@ -16,6 +21,8 @@ import {
   REVERSE_PAGE_SIZE,
   type RelationGraph,
   type ReverseRead,
+  reverseReadUrlLength,
+  rootReverseQuery,
   traceRelations,
 } from '@/services/datacite/relation-graph.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
@@ -36,6 +43,24 @@ const MAX_NODES = 100;
 /** Joins next steps as "a", "a or b", or "a, b, or c". */
 const orList = (steps: readonly string[]): string =>
   steps.length <= 2 ? steps.join(' or ') : `${steps.slice(0, -1).join(', ')}, or ${steps.at(-1)}`;
+
+/**
+ * The `request_too_long` failure of a root whose reverse lookup URL runs `urlBytes`:
+ * each input's share is the bytes the lookup sheds without it.
+ */
+const rootLookupTooLong = (
+  root: string,
+  relationTypes: readonly string[] | undefined,
+  urlBytes: number,
+) =>
+  requestTooLong(
+    'trace',
+    urlBytes,
+    [
+      { input: 'doi', bytes: urlBytes - reverseReadUrlLength(rootReverseQuery('', relationTypes)) },
+      { input: 'relation_types', bytes: urlBytes - reverseReadUrlLength(rootReverseQuery(root)) },
+    ].filter((share) => share.bytes > 0),
+  );
 
 /** Distinct works the edges record as citing `root`. */
 function citingWorks(edges: readonly GraphEdge[], root: string): Set<string> {
@@ -144,6 +169,14 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         'Pass the root as a DOI such as 10.5061/dryad.234 (bare, doi:, or a doi.org URL); find one with datacite_search_works.',
     },
     {
+      reason: 'request_too_long',
+      code: JsonRpcErrorCode.ValidationError,
+      when: `The lookup of DataCite records that point at the root would need a request URL over the ${num(MAX_URL_CHARS)} bytes DataCite accepts (checked before any request), as a DOI with a long non-Latin or punctuation-heavy suffix can; event_offset calls send no such lookup.`,
+      severity: 'notice',
+      recovery:
+        "A DOI cannot be shortened: drop or narrow relation_types when the error names them, read the DOI's own relations with datacite_get_work, or trace only its Event Data citations with event_offset 0.",
+    },
+    {
       reason: 'rate_limited',
       code: JsonRpcErrorCode.RateLimited,
       when: "This deployment's shared DataCite request budget is spent: its request queue could not start a request before the call's deadline, or DataCite answered HTTP 429.",
@@ -159,7 +192,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       "The root DOI — any agency's, e.g. a DataCite dataset 10.5061/dryad.234 or a journal article's DOI. Bare, doi:, or a doi.org URL; case-insensitive.",
     ),
     depth: blankAsUnset(z.number().int().min(1).max(2).default(1)).describe(
-      'Hops from the root: 1 (default) or 2. Depth 2 expands at most 10 DataCite neighbours through their own and reverse metadata, and runs only while max_nodes has room after the first hop.',
+      `Hops from the root: 1 (default) or 2. Depth 2 expands at most 10 DataCite neighbours, fewer when one reverse-lookup URL for them would pass DataCite's ${num(MAX_URL_CHARS)}-byte limit, through their own and reverse metadata, and runs only while max_nodes has room after the first hop.`,
     ),
     relation_types: optionalArray(
       enumish(RELATION_TYPE_IDS, resolveRelationType),
@@ -401,6 +434,14 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       );
     }
     const relationTypes = input.relation_types && [...new Set(input.relation_types)];
+    // Every call but an Event-Data-only one sends the root's reverse lookup.
+    if (input.event_offset === undefined) {
+      const urlBytes = reverseReadUrlLength(rootReverseQuery(root, relationTypes));
+      if (urlBytes > MAX_URL_CHARS) {
+        const { message, data } = rootLookupTooLong(root, relationTypes, urlBytes);
+        throw ctx.fail('request_too_long', message, data);
+      }
+    }
     const {
       graph,
       available,
@@ -408,6 +449,7 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
       capBound,
       edgesFound,
       foundEdges,
+      frontier,
       largeReverse,
       reverseQuery,
       unconfirmedEvents,
@@ -508,9 +550,14 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
     /** A reverse read the first page's related identifiers stopped at that page. */
     const largeRecords = (pointedAt: string, reader: string, listed: number, read: ReverseRead) =>
       `The DataCite records that point at ${pointedAt} are large (the first ${num(read.fetched)} list ${num(listed)} related identifiers between them), so ${reader} read ${num(read.fetched)} of the ${num(read.total)} rather than up to ${REVERSE_PAGE_SIZE}`;
-    /** The query the root's reverse read sent, when the query input of datacite_search_works takes it. */
+    /**
+     * The query the root's reverse read sent, when the query input of datacite_search_works
+     * takes it and every page of that search fits DataCite's URL limit.
+     */
     const searchQuery =
-      reverseQuery !== undefined && reverseQuery.length <= MAX_CHARS.query
+      reverseQuery !== undefined &&
+      reverseQuery.length <= MAX_CHARS.query &&
+      worksSearchFits(`(${reverseQuery})`, {})
         ? reverseQuery
         : undefined;
     const listAll = searchQuery
@@ -568,23 +615,35 @@ export const traceRelationsTool = tool('datacite_trace_relations', {
         `${num(shown)} of ${num(available)} related identifiers fit max_nodes=${maxNodes}${atMax ? ' (the maximum)' : ''}${steps.length > 0 ? `; ${orList(steps)}` : ''}.`,
       );
     }
+    /** Why a second hop can expand no neighbour at all. */
+    const firstTooLong = `looking up the records that point at the first one alone would take a request URL over DataCite's ${num(MAX_URL_CHARS)}-byte limit`;
     if (unexpanded > 0) {
-      const them = unexpanded > MAX_FRONTIER ? `the first ${MAX_FRONTIER} of them` : 'them';
+      const them = unexpanded > frontier ? `the first ${num(frontier)} of them` : 'them';
       // The second hop runs only when the root and every first-hop identifier leave a node free.
       const room = available + 2;
       const next =
-        room < MAX_NODES
-          ? `raise max_nodes to at least ${room} (≤ ${MAX_NODES}) to trace ${them}`
-          : room === MAX_NODES
-            ? `raise max_nodes to ${MAX_NODES} to trace ${them}`
-            : `no max_nodes value leaves the second hop room, so ${orList([...narrow, 'trace a neighbour directly to follow its relations'])}`;
+        frontier === 0
+          ? `no max_nodes value lets the second hop expand them, since ${firstTooLong}; datacite_get_work lists a neighbour's own relations`
+          : room < MAX_NODES
+            ? `raise max_nodes to at least ${room} (≤ ${MAX_NODES}) to trace ${them}`
+            : room === MAX_NODES
+              ? `raise max_nodes to ${MAX_NODES} to trace ${them}`
+              : `no max_nodes value leaves the second hop room, so ${orList([...narrow, 'trace a neighbour directly to follow its relations'])}`;
       notices.push(
         `The first hop filled max_nodes=${maxNodes}, so the second hop was not expanded and the relations of ${num(unexpanded)} DataCite neighbour${unexpanded === 1 ? '' : 's'} went untraced; ${next}.`,
       );
     }
     if (beyondFrontier > 0) {
+      const neighbours = frontier + beyondFrontier;
+      // A frontier short of MAX_FRONTIER with neighbours left over stopped at the URL limit.
+      const urlBound =
+        frontier < MAX_FRONTIER
+          ? `, and only as many as fit in one request URL under DataCite's ${num(MAX_URL_CHARS)}-byte limit`
+          : '';
       notices.push(
-        `The second hop expanded the first ${MAX_FRONTIER} of ${num(MAX_FRONTIER + beyondFrontier)} DataCite neighbours in node order (at most ${MAX_FRONTIER} per call), so the relations of the other ${num(beyondFrontier)} went untraced; trace one directly to follow its relations.`,
+        frontier === 0
+          ? `The second hop expanded no DataCite neighbour: ${firstTooLong}, so ${neighbours === 1 ? 'its relations' : `the relations of all ${num(neighbours)} neighbours`} went untraced; datacite_get_work lists a neighbour's own relations.`
+          : `The second hop expanded the first ${num(frontier)} of ${num(neighbours)} DataCite neighbours in node order (at most ${MAX_FRONTIER} per call${urlBound}), so the relations of the other ${num(beyondFrontier)} went untraced; trace one directly to follow its relations.`,
       );
     }
     const edgeCapBound = edgesFound > graph.edges.length;

@@ -7,7 +7,14 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { getDataCiteService } from '@/services/datacite/datacite-service.js';
+import {
+  getDataCiteService,
+  MAX_URL_CHARS,
+  type RepositorySearchRequest,
+  repositoriesSearchUrlLength,
+  requestTooLong,
+  type UrlShare,
+} from '@/services/datacite/datacite-service.js';
 import { mapRepository } from '@/services/datacite/mappers.js';
 import { anyPhrase, composeQuery, singleLine } from '@/services/datacite/query-builder.js';
 import {
@@ -49,6 +56,49 @@ const AppliedFiltersSchema = z
 
 type AppliedFilters = z.infer<typeof AppliedFiltersSchema>;
 
+/** The input, by its appliedFilters key, that sets each `/repositories` parameter. */
+const PARAM_INPUTS = {
+  certificates: 'certificates',
+  clientType: 'client_type',
+  ids: 'repository_ids',
+  providerId: 'provider_id',
+  repositoryTypes: 'repository_types',
+  software: 'software',
+} as const satisfies Record<
+  Exclude<keyof RepositorySearchRequest, 'callerQuery' | 'page' | 'query' | 'size'>,
+  keyof AppliedFilters
+>;
+
+/**
+ * Each input's share of a repository search's request URL: the bytes the URL would
+ * lose without it. An input `echoed` as one of the query's `clauses` loses that
+ * clause (the whole query parameter with the last one); a parameter input loses its
+ * parameter.
+ */
+function repositoryUrlShares(
+  request: RepositorySearchRequest,
+  clauses: readonly string[],
+  echoed: Readonly<Record<string, string | undefined>>,
+): UrlShare[] {
+  const urlBytes = repositoriesSearchUrlLength(request);
+  const { query: _, ...unqueried } = request;
+  const shares: UrlShare[] = [];
+  for (const [input, sent] of Object.entries(echoed)) {
+    const at = sent === undefined ? -1 : clauses.indexOf(sent);
+    if (at < 0) continue;
+    const rest = clauses.toSpliced(at, 1);
+    const without = rest.length > 0 ? { ...unqueried, query: composeQuery(rest) } : unqueried;
+    shares.push({ input, bytes: urlBytes - repositoriesSearchUrlLength(without) });
+  }
+  for (const [param, input] of Object.entries(PARAM_INPUTS)) {
+    if (!(param in request)) continue;
+    const without = { ...request };
+    delete without[param as keyof typeof PARAM_INPUTS];
+    shares.push({ input, bytes: urlBytes - repositoriesSearchUrlLength(without) });
+  }
+  return shares;
+}
+
 export const searchRepositoriesTool = tool('datacite_search_repositories', {
   title: 'Search DataCite repositories',
   description:
@@ -72,6 +122,14 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
       severity: 'notice',
       recovery:
         'Look up known ids with repository_ids alone, or search with query and filters alone; an id lookup ignores filters.',
+    },
+    {
+      reason: 'request_too_long',
+      code: JsonRpcErrorCode.ValidationError,
+      when: `The request URL would be longer than the ${num(MAX_URL_CHARS)} bytes DataCite accepts, checked before any request: each non-Latin letter in query or software takes several bytes.`,
+      severity: 'notice',
+      recovery:
+        'Shorten or drop the inputs this error names, largest first; each non-Latin letter takes several bytes of the request URL, so search one or two distinctive words of a repository name or description.',
     },
     {
       reason: 'rate_limited',
@@ -255,21 +313,26 @@ export const searchRepositoriesTool = tool('datacite_search_repositories', {
 
     // An id batch returns every requested id on one page, whatever limit says.
     const size = ids ? Math.max(limit, ids.length) : limit;
-    const list = await getDataCiteService().searchRepositories(
-      {
-        callerQuery: query !== undefined,
-        page: input.page,
-        size,
-        ...(ids && { ids }),
-        ...(clauses.length > 0 && { query: effectiveQuery }),
-        ...(repositoryTypes && { repositoryTypes }),
-        ...(certificates && { certificates }),
-        ...(software && { software }),
-        ...(input.client_type && { clientType: input.client_type }),
-        ...(providerId && { providerId }),
-      },
-      ctx,
-    );
+    const request: RepositorySearchRequest = {
+      callerQuery: query !== undefined,
+      page: input.page,
+      size,
+      ...(ids && { ids }),
+      ...(clauses.length > 0 && { query: effectiveQuery }),
+      ...(repositoryTypes && { repositoryTypes }),
+      ...(certificates && { certificates }),
+      ...(software && { software }),
+      ...(input.client_type && { clientType: input.client_type }),
+      ...(providerId && { providerId }),
+    };
+    const urlBytes = repositoriesSearchUrlLength(request);
+    if (urlBytes > MAX_URL_CHARS) {
+      const echoed = { ...(query !== undefined && { query: `(${query})` }), ...applied };
+      const shares = repositoryUrlShares(request, clauses, echoed);
+      const { message, data } = requestTooLong('search', urlBytes, shares);
+      throw ctx.fail('request_too_long', message, data);
+    }
+    const list = await getDataCiteService().searchRepositories(request, ctx);
     const total = list.meta.total ?? 0;
     ctx.enrich.total(total);
 

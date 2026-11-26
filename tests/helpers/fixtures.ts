@@ -31,7 +31,12 @@ import { json } from './harness.js';
  *   `total` 135809087), `page-ceiling-clamped.json` (page 101 requested,
  *   `meta.page` 100, total 61388), `page-last-reachable.json` (page 100 × 100),
  *   `cursor-first.json` / `cursor-garbage-restart.json` / `cursor-sort-ignored.json`
- *   (identical rows and `links.next` token), `record-dryad-234.json` (full record).
+ *   (identical rows and `links.next` token), `record-dryad-234.json` (full record),
+ *   `polygon-1223849.json` (10.15121/1223849, one polygon-only location),
+ *   `related-items.json` (4 records whose 5 `relatedItems` carry volume, issue,
+ *   number, pages, publisher, creators, and contributors), `bbox-cross-paired.json`
+ *   (6 rows matched by a `bbox` clause: 3 with a location in the box, 3 matched
+ *   only by pairing coordinates of different locations; the IGSN row is sparse).
  * - `datacite/graph/` — `root-dryad-8515.json`, `reverse-ppat-1000446.json` (the
  *   dryad.8515 record asserting `IsCitedBy` ppat.1000446), `events-dryad-8515.json`
  *   (3 `datacite-crossref` events to ppat.1000446), `hydrate-linking-copies.json`

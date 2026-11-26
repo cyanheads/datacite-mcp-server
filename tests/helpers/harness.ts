@@ -80,6 +80,16 @@ export function text(body: string, init: ResponseInit = {}): Response {
   return new Response(body, { status: init.status ?? 200, headers });
 }
 
+/** DataCite's front server: a request URL over 8,201 bytes is refused with HTTP 414 before the API sees it, as measured live. */
+export const refuseLongUrls = {
+  match: (request: Request) => request.url.length > 8201,
+  respond: () =>
+    text('<html><head><title>414 Request-URI Too Large</title></head></html>', {
+      status: 414,
+      headers: { 'content-type': 'text/html' },
+    }),
+} satisfies FetchMockRoute;
+
 /** A route that answers once, then falls through to later routes. */
 export const once = (match: FetchMockRoute['match'], respond: FetchMockRoute['respond']) =>
   ({ match, respond, once: true }) satisfies FetchMockRoute;

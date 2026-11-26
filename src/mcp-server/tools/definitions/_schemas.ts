@@ -15,12 +15,14 @@ const isBlank = (value: unknown): boolean => typeof value === 'string' && value.
 
 /**
  * Length ceilings for string inputs, checked on the trimmed value and advertised
- * as `maxLength`. Each sits well past any real value; together they bound the
- * text a handler scans and the URL it sends upstream, whatever the transport's
- * body limit.
+ * as `maxLength`. Each sits well past any real value and bounds the text a
+ * handler scans, whatever the transport's body limit. They count characters, not
+ * URL bytes: a character outside ASCII takes 6 to 9 bytes of a request URL once
+ * percent-encoded, so the search tools check the composed URL against DataCite's
+ * limit instead (`request_too_long`).
  */
 export const MAX_CHARS = {
-  /** `text` and `query`: keeps the percent-encoded query inside an upstream URL. */
+  /** `text` and `query`: about 2,000 URL bytes in Latin letters, six times that in Cyrillic. */
   query: 2000,
   /** Names and phrases: creator, affiliation, funder, subject, place, software. */
   phrase: 500,

@@ -1,6 +1,6 @@
 # datacite-mcp-server - Directory Structure
 
-Generated on: 2026-11-16 04:39:30
+Generated on: 2026-11-26 02:11:23
 
 ```text
 datacite-mcp-server/
@@ -157,6 +157,7 @@ datacite-mcp-server/
 │   │           └── trace-relations.tool.ts
 │   ├── services/
 │   │   ├── datacite/
+│   │   │   ├── bbox.ts
 │   │   │   ├── citation.ts
 │   │   │   ├── cursor.ts
 │   │   │   ├── datacite-service.ts
@@ -224,6 +225,7 @@ datacite-mcp-server/
 │   │   │   │   ├── ids-ethz-wgms-dryad.json
 │   │   │   │   └── query-glacier.json
 │   │   │   └── works/
+│   │   │       ├── bbox-cross-paired.json
 │   │   │       ├── cursor-first.json
 │   │   │       ├── cursor-garbage-restart.json
 │   │   │       ├── cursor-sort-ignored.json
@@ -232,6 +234,7 @@ datacite-mcp-server/
 │   │   │       ├── page-last-reachable.json
 │   │   │       ├── polygon-1223849.json
 │   │   │       ├── record-dryad-234.json
+│   │   │       ├── related-items.json
 │   │   │       └── search-glacier.json
 │   │   └── doi-ra/
 │   │       ├── crossref.json
@@ -263,6 +266,7 @@ datacite-mcp-server/
 │   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   ├── datacite/
+│   │   │   ├── bbox.test.ts
 │   │   │   ├── citation.test.ts
 │   │   │   ├── cursor.test.ts
 │   │   │   ├── datacite-service.test.ts

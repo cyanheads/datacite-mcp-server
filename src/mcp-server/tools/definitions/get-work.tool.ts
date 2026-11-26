@@ -11,6 +11,7 @@ import { getDataCiteService } from '@/services/datacite/datacite-service.js';
 import { mapWork } from '@/services/datacite/mappers.js';
 import { normalizeDoi } from '@/services/datacite/normalize.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
+import { buildResolver } from '@/services/reference/lookup.js';
 import { RELATION_TYPE_IDS, resolveRelationType } from '@/services/reference/vocabularies.js';
 import { missFields, missGuidance } from './_miss.js';
 import { blankAsUnset, doiString, enumish, optionalArray } from './_schemas.js';
@@ -18,10 +19,14 @@ import { descriptionQuote, flattenInline, num, orNA, urlLink } from './_text.js'
 
 const PersonSchema = z
   .object({
-    name: z.string().describe('Name as deposited, usually "Family, Given" for a person.'),
+    name: z
+      .string()
+      .describe(
+        'Plain-text name, with formatting tags removed and entities decoded once; usually "Family, Given" for a person.',
+      ),
     nameType: z.string().optional().describe('Personal or Organizational, when deposited.'),
-    givenName: z.string().optional().describe('Given name, when deposited.'),
-    familyName: z.string().optional().describe('Family name, when deposited.'),
+    givenName: z.string().optional().describe('Plain-text given name, when deposited.'),
+    familyName: z.string().optional().describe('Plain-text family name, when deposited.'),
     contributorType: z
       .string()
       .optional()
@@ -46,7 +51,7 @@ const PersonSchema = z
       .array(
         z
           .object({
-            name: z.string().describe('Affiliation name.'),
+            name: z.string().describe('Plain-text affiliation name.'),
             rorId: z.string().optional().describe('ROR ID (bare), when deposited.'),
           })
           .describe('One affiliation.'),
@@ -54,6 +59,26 @@ const PersonSchema = z
       .describe('Affiliations.'),
   })
   .describe('A creator or contributor.');
+
+/** A person as the Creators section prints one: name, then role, type, names, identifiers, and affiliations. */
+function personLine(p: z.infer<typeof PersonSchema>): string {
+  const parts = [
+    p.contributorType && `role ${p.contributorType}`,
+    p.nameType,
+    p.givenName && `given ${p.givenName}`,
+    p.familyName && `family ${p.familyName}`,
+    p.orcid && `ORCID ${p.orcid}`,
+    ...p.otherIdentifiers.map((i) => `${i.scheme ?? 'id'} ${i.identifier}`),
+    ...p.affiliations.map((a) => `${a.name}${a.rorId ? ` (ROR ${a.rorId})` : ''}`),
+  ].filter(Boolean);
+  return `${flattenInline(p.name)}${parts.length ? ` — ${flattenInline(parts.join('; '))}` : ''}`;
+}
+
+/** A related item's page span, or whichever end was deposited. */
+function pageSpan(first: string | undefined, last: string | undefined): string | undefined {
+  if (first && last) return `pages ${first}–${last}`;
+  return first ? `first page ${first}` : last && `last page ${last}`;
+}
 
 const found = (description: string) => `${description} Found arm only.`;
 /** A relation_types value as the input takes it back: vocabulary ids only, so nothing to escape. */
@@ -68,10 +93,45 @@ const recordLists = [
   'geoLocations',
 ] as const;
 
+/** The record groups `sections` selects, each named for the output field it gates, in echo order. */
+const recordSections = [
+  'creators',
+  'contributors',
+  'dates',
+  'subjects',
+  'descriptions',
+  'fundingReferences',
+  'geoLocations',
+  'rights',
+  'sizes',
+  'formats',
+  'alternateIdentifiers',
+  'relatedIdentifiers',
+  'relatedItems',
+] as const;
+type RecordSection = (typeof recordSections)[number];
+const resolveSection = buildResolver(recordSections.map((id) => ({ id })));
+
+/** The group each gated output field belongs to; a field outside the map always returns. */
+const SECTION_OF_FIELD = new Map<string, RecordSection>([
+  ...recordSections.map((section) => [section, section] as const),
+  ['relatedIdentifierCounts', 'relatedIdentifiers'],
+]);
+
+/** The mapped record without the fields of the groups `kept` leaves out. Filtering is local: the upstream request and its cache entry are the full record's. */
+function withSections<T extends object>(work: T, kept: ReadonlySet<string>): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(work).filter(([field]) => {
+      const section = SECTION_OF_FIELD.get(field);
+      return section === undefined || kept.has(section);
+    }),
+  ) as Partial<T>;
+}
+
 export const getWorkTool = tool('datacite_get_work', {
   title: 'Get DataCite work',
   description:
-    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with exact list/offset continuation recipes; select a list to retrieve later entries without losing the other metadata, or relation_types to page only the related identifiers of chosen relation types. datacite_trace_relations maps a bounded graph (at most 100 nodes and 1,000 edges). A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
+    'Fetch the full deposited DataCite metadata for one DOI: titles, creators and contributors with ORCID iDs and ROR affiliations, publisher, dates, version, subjects, descriptions, funding, geolocations, rights, sizes and formats, related identifiers with their relation types, related items (the journal or book it appears in, with volume, issue, pages, and its own creators), repository and provider, and citation, reference, version, part, view, and download counts. Long lists are capped with exact list/offset continuation recipes; select a list to retrieve later entries without losing the other metadata, or relation_types to page only the related identifiers of chosen relation types. sections returns only the named record groups, such as creators or fundingReferences, beside the identity fields, skipping long descriptions. datacite_trace_relations maps a bounded graph (at most 100 nodes and 1,000 edges). A DOI DataCite does not hold returns found: false naming the registration agency that does, or saying the DOI does not exist.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
@@ -126,6 +186,12 @@ export const getWorkTool = tool('datacite_get_work', {
     doi: doiString().describe(
       'The DOI, e.g. 10.5061/dryad.234: 10., a 4–9 digit registrant, a slash, and a suffix. Accepted bare, with doi: or info:doi/ prefixes, as a doi.org / dx.doi.org URL, or %2F-encoded; case-insensitive.',
     ),
+    sections: optionalArray(
+      enumish(recordSections, resolveSection),
+      recordSections.length,
+    ).describe(
+      'Return only these record groups, any case: creators, contributors, dates, subjects, descriptions, fundingReferences, geoLocations, rights, sizes, formats, alternateIdentifiers, relatedIdentifiers (with relatedIdentifierCounts), relatedItems. Titles, publisher, year, types, version, language, URLs, repository, counts, metadataLicense, and record timestamps always return; list and relation_types add their own group. Omit for the full record.',
+    ),
   }),
 
   output: z.object({
@@ -148,6 +214,14 @@ export const getWorkTool = tool('datacite_get_work', {
       .optional()
       .describe(
         found('Paging metadata for the selected list, including empty and past-end pages.'),
+      ),
+    sections: z
+      .array(z.enum(recordSections))
+      .optional()
+      .describe(
+        found(
+          'The record groups returned when sections is set, including any list or relation_types added; a group not listed is left out of this response, not undeposited.',
+        ),
       ),
     found: z.boolean().describe('True when DataCite holds a public record for the DOI.'),
     doi: z.string().describe('The DOI, normalized to lowercase bare form.'),
@@ -199,7 +273,11 @@ export const getWorkTool = tool('datacite_get_work', {
       ),
     publisher: z
       .object({
-        name: z.string().describe('Publisher name.'),
+        name: z
+          .string()
+          .describe(
+            'Plain-text publisher name, with formatting tags removed and entities decoded once.',
+          ),
         rorId: z.string().optional().describe('Publisher ROR ID, when deposited.'),
       })
       .optional()
@@ -238,7 +316,11 @@ export const getWorkTool = tool('datacite_get_work', {
       .array(
         z
           .object({
-            subject: z.string().describe('Subject term.'),
+            subject: z
+              .string()
+              .describe(
+                'Plain-text subject term, with formatting tags removed and entities decoded once.',
+              ),
             scheme: z
               .string()
               .optional()
@@ -272,7 +354,11 @@ export const getWorkTool = tool('datacite_get_work', {
       .array(
         z
           .object({
-            funderName: z.string().describe('Funder name.'),
+            funderName: z
+              .string()
+              .describe(
+                'Plain-text funder name, with formatting tags removed and entities decoded once.',
+              ),
             funderIdentifier: z
               .string()
               .optional()
@@ -430,8 +516,37 @@ export const getWorkTool = tool('datacite_get_work', {
               .string()
               .optional()
               .describe('Plain-text related item title, normalized once.'),
+            volume: z.string().optional().describe('Volume, as deposited.'),
+            issue: z.string().optional().describe('Issue, as deposited.'),
+            number: z
+              .string()
+              .optional()
+              .describe('Number within the related item, e.g. an article number such as Doc14.'),
+            numberType: z
+              .string()
+              .optional()
+              .describe('What number counts: Article, Chapter, Report, or Other.'),
+            firstPage: z
+              .string()
+              .optional()
+              .describe('First page, as deposited free text (e.g. 133 or 0:i).'),
+            lastPage: z.string().optional().describe('Last page, as deposited free text.'),
+            edition: z.string().optional().describe('Edition, as deposited.'),
+            publisher: z
+              .string()
+              .optional()
+              .describe("The related item's plain-text publisher name."),
+            publicationYear: z.number().optional().describe("The related item's publication year."),
+            creators: z
+              .array(PersonSchema)
+              .optional()
+              .describe("The related item's own creators, such as a book's editors."),
+            contributors: z
+              .array(PersonSchema)
+              .optional()
+              .describe("The related item's own contributors, with their roles."),
           })
-          .describe('One related item.'),
+          .describe('One related item; every field but relationType is absent when not deposited.'),
       )
       .optional()
       .describe(
@@ -558,12 +673,23 @@ export const getWorkTool = tool('datacite_get_work', {
         ? { list, offset: input.offset ?? 0, ...(relationTypes && { relationTypes }) }
         : undefined,
     );
-    if (truncatedLists.length > 0) ctx.enrich({ truncatedLists });
-    if (omittedGeoLocationPolygons > 0)
+    // A selected list (relation_types selects relatedIdentifiers) adds its group to the requested ones.
+    const requested = input.sections;
+    const sections = requested && recordSections.filter((s) => s === list || requested.includes(s));
+    const kept = sections && new Set<string>(sections);
+    const shownLists = kept ? truncatedLists.filter((t) => kept.has(t.field)) : truncatedLists;
+    if (shownLists.length > 0) ctx.enrich({ truncatedLists: shownLists });
+    if (omittedGeoLocationPolygons > 0 && (!kept || kept.has('geoLocations')))
       ctx.enrich.notice(
         `${omittedGeoLocationPolygons} malformed geographic polygon(s) omitted because they contain incomplete or invalid coordinates; other valid geographic fields are retained.`,
       );
-    return { found: true, doi, ...work, ...(listPage && { listPage }) };
+    return {
+      found: true,
+      doi,
+      ...(kept ? withSections(work, kept) : work),
+      ...(listPage && { listPage }),
+      ...(sections && { sections }),
+    };
   },
 
   format: (result) => {
@@ -575,6 +701,7 @@ export const getWorkTool = tool('datacite_get_work', {
       `**DOI:** ${flattenInline(result.doi)} · **Found:** ${result.found}`,
     ];
     if (result.missReason) lines.push(`**Miss reason:** ${result.missReason}`);
+    if (result.sections) lines.push(`**Sections:** ${result.sections.join(', ')}`);
     if (result.listPage) {
       const p = result.listPage;
       const types = p.relationTypes && typesArg(p.relationTypes);
@@ -629,20 +756,7 @@ export const getWorkTool = tool('datacite_get_work', {
     const people = (heading: string, list: typeof result.creators) => {
       if (!list?.length) return;
       lines.push('', `## ${heading}`);
-      for (const p of list) {
-        const parts = [
-          p.contributorType && `role ${p.contributorType}`,
-          p.nameType,
-          p.givenName && `given ${p.givenName}`,
-          p.familyName && `family ${p.familyName}`,
-          p.orcid && `ORCID ${p.orcid}`,
-          ...p.otherIdentifiers.map((i) => `${i.scheme ?? 'id'} ${i.identifier}`),
-          ...p.affiliations.map((a) => `${a.name}${a.rorId ? ` (ROR ${a.rorId})` : ''}`),
-        ].filter(Boolean);
-        lines.push(
-          `- ${flattenInline(p.name)}${parts.length ? ` — ${flattenInline(parts.join('; '))}` : ''}`,
-        );
-      }
+      for (const p of list) lines.push(`- ${personLine(p)}`);
     };
     people('Creators', result.creators);
     people('Contributors', result.contributors);
@@ -710,6 +824,8 @@ export const getWorkTool = tool('datacite_get_work', {
         }
       } else if (result.rights) {
         lines.push('- Work rights: none declared');
+      } else if (result.sections) {
+        lines.push('- Work rights: left out by sections');
       }
       if (result.metadataLicense) lines.push(`- Metadata: ${urlLink(result.metadataLicense)}`);
     }
@@ -737,10 +853,20 @@ export const getWorkTool = tool('datacite_get_work', {
           item.relatedItemType,
           item.identifier && `${item.identifierType ?? 'id'} ${item.identifier}`,
           item.title && `"${item.title}"`,
+          item.volume && `volume ${item.volume}`,
+          item.issue && `issue ${item.issue}`,
+          item.number && `number ${item.number}${item.numberType ? ` (${item.numberType})` : ''}`,
+          !item.number && item.numberType && `number type ${item.numberType}`,
+          pageSpan(item.firstPage, item.lastPage),
+          item.edition && `edition ${item.edition}`,
+          item.publisher && `publisher ${item.publisher}`,
+          item.publicationYear !== undefined && `year ${item.publicationYear}`,
         ].filter(Boolean);
         lines.push(
           `- ${flattenInline(item.relationType)}: ${flattenInline(parts.join('; ') || 'no identifier')}`,
         );
+        for (const p of item.creators ?? []) lines.push(`  - Creator: ${personLine(p)}`);
+        for (const p of item.contributors ?? []) lines.push(`  - Contributor: ${personLine(p)}`);
       }
     }
     if (result.alternateIdentifiers?.length) {

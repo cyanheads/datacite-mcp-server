@@ -46,7 +46,20 @@ export interface RawRelatedIdentifier {
   resourceTypeGeneral?: string | null;
 }
 
+/** A relatedItem; its page, volume, and number fields are free text (`"firstPage": "0:i"`). */
 export interface RawRelatedItem {
+  contributors?: RawCreator[] | null;
+  creators?: RawCreator[] | null;
+  edition?: string | null;
+  firstPage?: string | null;
+  issue?: string | null;
+  lastPage?: string | null;
+  number?: string | null;
+  numberType?: string | null;
+  /** A number or a digit string, as deposited. */
+  publicationYear?: number | string | null;
+  /** A plain string, even when the record's own publisher arrives as an object. */
+  publisher?: string | null;
   relatedItemIdentifier?: {
     relatedItemIdentifier?: string | null;
     relatedItemIdentifierType?: string | null;
@@ -54,6 +67,7 @@ export interface RawRelatedItem {
   relatedItemType?: string | null;
   relationType?: string | null;
   titles?: RawTitle[] | null;
+  volume?: string | null;
 }
 
 export interface RawRights {

@@ -1,0 +1,1306 @@
+{
+  "data": [
+    {
+      "id": "10.5281/zenodo.23569793",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5281/zenodo.23569793",
+        "titles": [
+          {
+            "title": "Atlas of Pacific Salmon: The First Map-Based Status Assessment of Salmon in the North Pacific"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "givenName": "Xanthippe",
+            "familyName": "Augerot",
+            "name": "Augerot, Xanthippe",
+            "nameIdentifiers": [],
+            "affiliation": []
+          },
+          {
+            "nameType": "Organizational",
+            "familyName": "the State of the Salmon Consortium",
+            "name": "the State of the Salmon Consortium",
+            "nameIdentifiers": [],
+            "affiliation": []
+          }
+        ],
+        "publicationYear": 2005,
+        "types": {
+          "schemaOrg": "Report",
+          "resourceTypeGeneral": "Report",
+          "citeproc": "report",
+          "bibtex": "misc",
+          "ris": "RRPT",
+          "resourceType": ""
+        },
+        "publisher": {
+          "name": "Zenodo"
+        },
+        "version": null,
+        "rightsList": [
+          {
+            "rights": "Use and access constraints (from the FGDC record; no license is granted)"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Pacific salmon inhabit a vast ecosystem that encompasses the rivers within and the ocean between coastal countries. From steep, cold snowmelt streams to major tributaries, from estuaries to the deep ocean, the range of Pacific salmon includes the Tachia River in Taiwan, the permafrost zone of Chukotka that flows to the Chukchi Sea, the vast expanse of the Pacific Ocean between Japan and California, the streams and rivers of the Yukon Territory and British Columbia, and the myriad waterways in Washington, Oregon, Idaho, and California, as far south as Rio Santo Domingo in Baja California. The North Pacific Rim nations--the United States, Canada, Russia, Japan, China, and the Koreas--enjoy vastly different economic, ecological, and cultural relationships with salmon and, until now, the types of data available to assess the abundance and biodiversity of these fish were almost as varied as the scientists who collect them. Atlas of Pacific Salmon is the first book to apply a common, newly calibrated yardstick to measure, across this broad ecosystem, the state of Pacific salmon, which have suffered precipitous declines in abundance and diversity in recent decades. The only map-based assessment of distribution and risk of extinction for seven species of Pacific salmon at one consistent scale, under one authorship, the Atlas is the result of five years' work by Xanthippe Augerot and other foremost experts in the field. Using state-of-the-art GIS mapping tools, this book offers a multidimensional view of Pacific salmon populations from a watershed perspective, through the natural boundaries in which the fish migrate, spawn, and mature. More than three dozen stunning full-page maps overlay the human, climatic, geological, and environmental impacts on salmon populations. To create a full picture of Pacific salmon within their ecological, economic, and cultural context, analysis of distribution and risk of extinction data were made for seven anadromous Oncorhynchus species: chinook (O. tshawytscha) , coho (O. kisutch) , masu (O. masou) , pink ( O. gorbuscha) , sockeye (O. nerka) , and steelhead (O. mykiss) . [Reference: Augerot, Xanthippe. 2005 Atlas of Pacific Salmon: The First Map-Based Status Assessment of Salmon in the North Pacific. University of California Press, Portland, Oregon.] State of the Salmon website - http:/www.stateofthesalmon.org.\n\nDeposited content: descriptive metadata only; underlying research data are not included."
+          },
+          {
+            "descriptionType": "Other",
+            "description": "Purpose: To address the need for a broad North Pacific perspective on the status of salmon."
+          },
+          {
+            "descriptionType": "TechnicalInfo",
+            "description": "Status: Complete; maintenance and update frequency: None Planned\nCatalogue record: FGDC metadata Content Standards for Digital Geospatial Metadata (FGDC-STD-001-1998) dated 2005-05-11, PICES GeoNetwork catalogue identifier FGDC-4011. Publication date taken from the citation."
+          }
+        ],
+        "url": "https://zenodo.org/doi/10.5281/zenodo.23569793",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 1,
+        "created": "2026-10-22T15:45:11Z",
+        "geoLocations": [
+          {
+            "geoLocationBox": {
+              "northBoundLatitude": 75.0,
+              "southBoundLatitude": 22.0,
+              "eastBoundLongitude": 180.0,
+              "westBoundLongitude": 100.0
+            }
+          },
+          {
+            "geoLocationBox": {
+              "northBoundLatitude": 75.0,
+              "southBoundLatitude": 22.0,
+              "eastBoundLongitude": -100.0,
+              "westBoundLongitude": -180.0
+            }
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "cern.zenodo",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.58052/iejel01cg",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.58052/iejel01cg",
+        "titles": [
+          {
+            "title": "TN131_000148_0250A Core Section Sediment Siliciclastic sediment"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "givenName": "Joseph Lane",
+            "familyName": "Lane",
+            "name": "Lane, Joseph Lane",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0009-0008-5590-4556"
+              }
+            ],
+            "affiliation": []
+          }
+        ],
+        "publicationYear": 2026,
+        "types": {
+          "schemaOrg": "CreativeWork",
+          "resourceTypeGeneral": "PhysicalObject",
+          "citeproc": "article",
+          "bibtex": "misc",
+          "ris": "GEN",
+          "resourceType": "Core Section"
+        },
+        "publisher": {
+          "name": "SESAR"
+        },
+        "version": null,
+        "rightsList": [],
+        "descriptions": [],
+        "url": "https://app.geosamples.org/sample/igsn/10.58052/IEJEL01CG",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 0,
+        "created": "2026-07-17T06:43:12Z",
+        "geoLocations": [
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 36.309299,
+              "pointLongitude": -89.05354
+            },
+            "geoLocationPlace": "United States TN"
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "cul.gkrgct",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.5281/zenodo.19169636",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5281/zenodo.19169636",
+        "titles": [
+          {
+            "title": "Phytomyza aesculi Eiseman & Lonsdale"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "276 Old Wendell Rd., Northfield, MA 01360, U. S. A. ceiseman @ gmail. com; https: // orcid. org / 0000 - 0001 - 5496 - 9114"
+              }
+            ],
+            "givenName": "Charles S.",
+            "familyName": "Eiseman",
+            "name": "Eiseman, Charles S.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0001-5496-9114"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Agriculture and Agri-Food Canada, 960 Carling Avenue, Ottawa, ON, Canada K 1 A 0 C 6."
+              }
+            ],
+            "givenName": "Owen",
+            "familyName": "Lonsdale",
+            "name": "Lonsdale, Owen",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0001-7034-3330"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "5306 Pelham Road, Durham, NC 27713, U. S. A. tracysfeldman @ yahoo. com; https: // orcid. org / 0000 - 0001 - 5939 - 6810"
+              }
+            ],
+            "givenName": "Tracy S.",
+            "familyName": "Feldman",
+            "name": "Feldman, Tracy S.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0001-5939-6810"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "1815 Whitetail Rd., Decorah, IA 52101, U. S. A. johnbvdl @ gmail. com; https: // orcid. org / 0000 - 0003 - 2651 - 0634"
+              }
+            ],
+            "givenName": "John Van Der",
+            "familyName": "Linden",
+            "name": "Linden, John Van Der",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "nameIdentifier": "0000-0003-2651-0634"
+              }
+            ]
+          }
+        ],
+        "publicationYear": 2026,
+        "types": {
+          "schemaOrg": "ScholarlyArticle",
+          "resourceTypeGeneral": "Text",
+          "citeproc": "article-journal",
+          "bibtex": "article",
+          "ris": "RPRT",
+          "resourceType": "Taxonomic treatment"
+        },
+        "publisher": {
+          "name": "Zenodo"
+        },
+        "version": null,
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rightsUri": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+            "schemeUri": "https://spdx.org/licenses/",
+            "rights": "Creative Commons Zero v1.0 Universal",
+            "rightsIdentifier": "cc0-1.0"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Phytomyza aesculi Eiseman & Lonsdale\nMaterial examined. NORTH CAROLINA: Durham Co., Durham, Penny’s Bend on the Eno, 21.iii.2020, em. ~ 7.iii.2021, T.S. Feldman, ex Aesculus sylvatica, #CSE6729, CNC1905469 (1♂); Madison Co., Hot Springs, Bluff. Mt., 4.v.2020, em. 14.iii.2021, J. Petranka, ex Aesculus flava, #CSE6732, CNC1905548 (1♂); Mars Hill, 601 Terry’s Fork Rd., 5.v.2020, em. 20.iii.2021, J. Petranka, ex Aesculus flava, #CSE6748, CNC1905549 (1♀).\nPhotographed mines. ILLINOIS: Cook Co., Chicago, 41.98939, −87.72625, 9.v.2021, rgraveolens, empty mine on Aesculus glabra (iNat 78173200); INDIANA: Hamilton Co., Carmel, 39.975226, −86.171882, 9.vi.2021, J. Waidner, empty mine on Aesculus glabra (iNat 82338916); KENTUCKY: Mercer Co., 37.81785, −84.75932, 4.v.2023, S. Penner, empty mines on Aesculus (iNat 159893425); LOUISIANA: West Feliciana Parish, 30.812246, −91.375102, 10.iv.2022, K. Hashagen, empty mine on Aesculus pavia (iNat 111020912); MISSISSIPPI: Oktibbeha Co., Mississippi State, 33.453473, −88.784053, 19.iii.2024, D. Parish, occupied mine on Aesculus × bushii (iNat 203169032); NEBRASKA: Sarpy Co., 41.166008, −95.896394, 31.v.2025, ghostwheel, mine on Aesculus glabra (iNat 285735727); NEW YORK: Kings Co., New York City, Prospect Park, 40.670010, −73.966876, 7.v.2024, jfmantis, empty mine on Aesculus (iNat 221573145); TENNESSEE: Washington Co., Johnson City, 36.31677, −82.32038, 3.v.2021, shortia, empty mines on Aesculus (iNat 77149489); TEXAS: Marion Co., 11.iii.2024, cosmiccat, empty mine on Aesculus pavia (iNat 202107329); WEST VIRGINIA: Greenbrier Co., Greenbrier River Trail, 13.v.2024, T. Murray, empty mine on Aesculus flava (iNat 216894766); WISCONSIN: Dane Co., Madison, Olbrich Botanical Gardens, 43.092895, −89.333655, 20.vi.2023, E.O. Erickson, empty mine on Aesculus (iNat 168744253); MANITOBA: Winnipeg, 49.878730, −97.113564, 19.x.2024, S. Poudrier, empty mine on Aesculus glabra (iNat 248127612).\nHosts. Sapindaceae: [Aesculus × bushii C.K.Schneid.], A. *flava Sol., A. glabra Willd., [A. pavia L.], A. *sylvatica W.Bartram (Eiseman et al. 2021).\nLeaf mine. (Eiseman & Lonsdale 2018: Fig. 173; Eiseman et al. 2021: Fig. 81) Upper-surface; in some cases entirely linear, gradually widening to 2–3 mm, and in others rather quickly widening to an elongate or irregular blotch. The blackish frass particles are typically at first in closely spaced grains along the sides and later scattered at random. There are often multiple mines per leaflet.\nPuparium. Yellowish-brown to reddish-brown; normally formed outside the mine, sometimes formed in the exit slit or adhering to the upper leaf surface nearby (Eiseman et al. 2021). The new female specimen emerged from a puparium that was formed entirely within the mine, without an exit slit.\nPhenology and voltinism. This species is strictly univoltine, with larvae feeding in spring and adults emerging the following spring. Larvae have been found in North Carolina from mid-March to early May, and in Ohio from early to mid-May (Eiseman & Lonsdale 2018).\nDistribution. USA: [AL, AR, GA, IA, IL, IN, KS, KY, LA, MN, MO, MS], *NC, [NE, NY], OH, [PA, SC, TN, TX, VA, WI, WV; Canada: MB, ON] (Eiseman et al. 2021).\nComments. The new reared specimens confirm that the variable leaf mine morphology noted by Eiseman et al. (2021) is within the range of variation in Phytomyza aesculi and does not indicate that a second species is present on this host. These North Carolina specimens have darker heads as with the Virginia females discussed by Eiseman et al. (2021), but the apices of the mid and hind femora are yellow as with the type series from Ohio."
+          },
+          {
+            "descriptionType": "Other",
+            "description": "Published as part of Eiseman, Charles S., Lonsdale, Owen, Feldman, Tracy S. & Linden, John Van Der, 2026, Thirty-three new species of Agromyzidae (Diptera) from the United States and Canada, with new host and distribution records for 154 additional species, pp. 1-265 in Zootaxa 5745 (1) on pages 153-154, DOI: 10.11646/zootaxa.5745.1.1, http://zenodo.org/record/19166946"
+          }
+        ],
+        "url": "https://zenodo.org/doi/10.5281/zenodo.19169636",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 2,
+        "created": "2026-03-22T21:16:40Z",
+        "geoLocations": [
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 41.98939,
+              "pointLongitude": -87.72625
+            },
+            "geoLocationPlace": "Chicago"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 39.975227,
+              "pointLongitude": -86.17188
+            },
+            "geoLocationPlace": "Carmel"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 37.81785,
+              "pointLongitude": -84.75932
+            },
+            "geoLocationPlace": "Mercer Co."
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 30.812246,
+              "pointLongitude": -91.3751
+            },
+            "geoLocationPlace": "West Feliciana Parish"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 33.453472,
+              "pointLongitude": -88.78405
+            },
+            "geoLocationPlace": "Mississippi State"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 41.166008,
+              "pointLongitude": -95.89639
+            },
+            "geoLocationPlace": "Sarpy Co."
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 40.67001,
+              "pointLongitude": -73.96687
+            },
+            "geoLocationPlace": "Prospect Park"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 36.31677,
+              "pointLongitude": -82.32038
+            },
+            "geoLocationPlace": "Johnson City"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 43.092896,
+              "pointLongitude": -89.33366
+            },
+            "geoLocationPlace": "Olbrich Botanical Gardens"
+          },
+          {
+            "geoLocationPoint": {
+              "pointLatitude": 49.87873,
+              "pointLongitude": -97.11356
+            },
+            "geoLocationPlace": "Winnipeg"
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "cern.zenodo",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.15485/3018019",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.15485/3018019",
+        "titles": [
+          {
+            "title": "Nitrogen Stocks and Fluxes Across Four FACE Experiments, 1996-2004"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Boston University"
+              }
+            ],
+            "givenName": "Adrien C.",
+            "familyName": "Finzi",
+            "name": "Finzi, Adrien C.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0003-2220-4533"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Oak Ridge National Laboratory (ORNL), Oak Ridge, TN (United States)"
+              }
+            ],
+            "givenName": "Richard J.",
+            "familyName": "Norby",
+            "name": "Norby, Richard J.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0002-0238-9828"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Tuscia"
+              }
+            ],
+            "givenName": "Carlo",
+            "familyName": "Calfapietra",
+            "name": "Calfapietra, Carlo",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0009-0006-6220-887X"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Boston University"
+              }
+            ],
+            "givenName": "Anne",
+            "familyName": "Gallet-Budynek",
+            "name": "Gallet-Budynek, Anne",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0002-8465-7311"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Antwerp"
+              }
+            ],
+            "givenName": "Birgit",
+            "familyName": "Gielen",
+            "name": "Gielen, Birgit",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Michigan"
+              }
+            ],
+            "givenName": "William E.",
+            "familyName": "Holmes",
+            "name": "Holmes, William E.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Wageningen University"
+              }
+            ],
+            "givenName": "Marcel R.",
+            "familyName": "Hoosbeek",
+            "name": "Hoosbeek, Marcel R.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0003-0617-0089"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Univ. of Tennessee, Knoxville, TN (United States)"
+              }
+            ],
+            "givenName": "Colleen M.",
+            "familyName": "Iversen",
+            "name": "Iversen, Colleen M.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0001-8293-3450"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Duke University"
+              }
+            ],
+            "givenName": "Robert B.",
+            "familyName": "Jackson",
+            "name": "Jackson, Robert B.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Duke University"
+              }
+            ],
+            "givenName": "Mark E.",
+            "familyName": "Kubiske",
+            "name": "Kubiske, Mark E.",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Oak Ridge National Laboratory (ORNL), Oak Ridge, TN (United States)"
+              }
+            ],
+            "givenName": "Joanne",
+            "familyName": "Ledford",
+            "name": "Ledford, Joanne",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Antwerp"
+              }
+            ],
+            "givenName": "Marion",
+            "familyName": "Liberloo",
+            "name": "Liberloo, Marion",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Duke University"
+              }
+            ],
+            "givenName": "Ram",
+            "familyName": "Oren",
+            "name": "Oren, Ram",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Gottingen"
+              }
+            ],
+            "givenName": "Andrea",
+            "familyName": "Polle",
+            "name": "Polle, Andrea",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0001-8697-6394"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "College of Charleston"
+              }
+            ],
+            "givenName": "Seth",
+            "familyName": "Pritchard",
+            "name": "Pritchard, Seth",
+            "nameIdentifiers": []
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Michigan"
+              }
+            ],
+            "givenName": "Donald R.",
+            "familyName": "Zak",
+            "name": "Zak, Donald R.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0002-9730-7337"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "Boston University"
+              }
+            ],
+            "givenName": "William H.",
+            "familyName": "Schlesinger",
+            "name": "Schlesinger, William H.",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0002-1391-0885"
+              }
+            ]
+          },
+          {
+            "nameType": "Personal",
+            "affiliation": [
+              {
+                "name": "University of Antwerp"
+              }
+            ],
+            "givenName": "Reinhart",
+            "familyName": "Ceulemans",
+            "name": "Ceulemans, Reinhart",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org/",
+                "nameIdentifier": "https://orcid.org/0000-0003-4773-9358"
+              }
+            ]
+          }
+        ],
+        "publicationYear": 2007,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset"
+        },
+        "publisher": {
+          "name": "ORNL FACE Experiment"
+        },
+        "version": null,
+        "rightsList": [],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "This dataset contains measurements of nitrogen stocks and fluxes from four Free-Air Carbon Dioxide Enrichment (FACE) Experiments from 1996-2004. The four FACE sites are the Oak Ridge National Laboratory FACE Experiment located in Oak Ridge, TN; the ASPEN (Rhinelander) FACE site located in Rhinelander, Wisconsin; the Duke Forest FACE (FACTS-1) site located near Chapel Hill, North Carolina; and the POP-EUROFACE site located in Tuscania, Italy. Measurements include biomass, nitrogen (N) concentration, productivity for wood, canopy, and fine root, leaf litter, and fine root mortality pools. Additionally, nitrogen uptake, nitrogen use efficiency, net primary production, maximum N content, mean residence time, and N requirement, retranslocation, and return are provided. These data were used to evaluate the responses of N use and cycling in plants and soils exposed to elevated carbon dioxide (CO2). Finzi et al. (2007) used these data to analyze patterns in nitrogen uptake and nitrogen use efficiency under elevated CO2. This dataset contains one data file in comma separate (.csv) format. Additional metadata are provided: one data dictionary and a file-level metadata file in comma separate (.csv) format."
+          }
+        ],
+        "url": "https://www.osti.gov/servlets/purl/3018019",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 0,
+        "created": "2026-02-25T00:10:17Z",
+        "geoLocations": [
+          {
+            "geoLocationPolygon": [
+              {
+                "polygonPoint": {
+                  "pointLatitude": 35.9,
+                  "pointLongitude": -84.3
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 35.9,
+                  "pointLongitude": -84.3
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 35.9,
+                  "pointLongitude": -84.3
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 35.9,
+                  "pointLongitude": -84.3
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 35.9,
+                  "pointLongitude": -84.3
+                }
+              }
+            ],
+            "geoLocationPlace": "The Oak Ridge National Laboratory FACE Experiment was located on the Oak Ridge National Environmental Research Park in eastern Tennessee on an old terrace of the Clinch River."
+          },
+          {
+            "geoLocationPolygon": [
+              {
+                "polygonPoint": {
+                  "pointLatitude": 45.6,
+                  "pointLongitude": -89.5
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 45.6,
+                  "pointLongitude": -89.5
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 45.6,
+                  "pointLongitude": -89.5
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 45.6,
+                  "pointLongitude": -89.5
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 45.6,
+                  "pointLongitude": -89.5
+                }
+              }
+            ],
+            "geoLocationPlace": "ASPEN (Rhinelander) FACE Experiment site located in Rhinelander, Wisconsin, USA"
+          },
+          {
+            "geoLocationPolygon": [
+              {
+                "polygonPoint": {
+                  "pointLatitude": 36.0,
+                  "pointLongitude": -79.1
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 36.0,
+                  "pointLongitude": -79.1
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 36.0,
+                  "pointLongitude": -79.1
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 36.0,
+                  "pointLongitude": -79.1
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 36.0,
+                  "pointLongitude": -79.1
+                }
+              }
+            ],
+            "geoLocationPlace": "Duke Forest FACE (FACTS-1) Experiment site located near Chapel Hill, in Orange County, North Carolina"
+          },
+          {
+            "geoLocationPolygon": [
+              {
+                "polygonPoint": {
+                  "pointLatitude": 42.4,
+                  "pointLongitude": 11.8
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 42.4,
+                  "pointLongitude": 11.8
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 42.4,
+                  "pointLongitude": 11.8
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 42.4,
+                  "pointLongitude": 11.8
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": 42.4,
+                  "pointLongitude": 11.8
+                }
+              }
+            ],
+            "geoLocationPlace": "POP-EUROFACE Experiment Site in Tuscania, Italy"
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "doe.lbnl",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.1594/pangaea.983386",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.1594/pangaea.983386",
+        "titles": [
+          {
+            "title": "Fractional abundances of branched glycerol dialkyl glycerol tetraethers (brGDGT) from the Arid Central Asian Data Base (ACADB) for surface brGDGT samples"
+          }
+        ],
+        "creators": [
+          {
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/051escj72",
+                "name": "Université de Montpellier",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Lucas",
+            "familyName": "Dugerdil",
+            "name": "Dugerdil, Lucas",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0000-0003-0266-564X"
+              }
+            ]
+          },
+          {
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/051escj72",
+                "name": "Université de Montpellier",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Sébastien",
+            "familyName": "Joannin",
+            "name": "Joannin, Sébastien",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0000-0001-8345-9252"
+              }
+            ]
+          },
+          {
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/051escj72",
+                "name": "Université de Montpellier",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Odile",
+            "familyName": "Peyron",
+            "name": "Peyron, Odile",
+            "nameIdentifiers": []
+          },
+          {
+            "givenName": "Shafag",
+            "familyName": "Bayramova",
+            "name": "Bayramova, Shafag",
+            "affiliation": [],
+            "nameIdentifiers": []
+          },
+          {
+            "givenName": "Xiaozhong",
+            "familyName": "Huang",
+            "name": "Huang, Xiaozhong",
+            "affiliation": [],
+            "nameIdentifiers": []
+          },
+          {
+            "affiliation": [
+              {
+                "name": "Institute of Fundamental and Applied Research, National Research university TIIAME"
+              }
+            ],
+            "givenName": "Dilfuza",
+            "familyName": "Egamberdieva",
+            "name": "Egamberdieva, Dilfuza",
+            "nameIdentifiers": []
+          },
+          {
+            "givenName": "Jakhongir",
+            "familyName": "Alimov",
+            "name": "Alimov, Jakhongir",
+            "affiliation": [],
+            "nameIdentifiers": []
+          },
+          {
+            "givenName": "Bazartseren",
+            "familyName": "Boldgiv",
+            "name": "Boldgiv, Bazartseren",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0000-0003-0015-8142"
+              }
+            ],
+            "affiliation": []
+          },
+          {
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/04mczx267",
+                "name": "National Academy of Sciences of Armenia",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Lilit",
+            "familyName": "Sahakyan",
+            "name": "Sahakyan, Lilit",
+            "nameIdentifiers": []
+          },
+          {
+            "affiliation": [
+              {
+                "affiliationIdentifier": "https://ror.org/04zmssz18",
+                "name": "École Normale Supérieure de Lyon",
+                "affiliationIdentifierScheme": "ROR"
+              }
+            ],
+            "givenName": "Guillemette",
+            "familyName": "Ménot",
+            "name": "Ménot, Guillemette",
+            "nameIdentifiers": [
+              {
+                "nameIdentifierScheme": "ORCID",
+                "schemeUri": "https://orcid.org",
+                "nameIdentifier": "https://orcid.org/0000-0003-2423-8294"
+              }
+            ]
+          }
+        ],
+        "publicationYear": 2025,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset"
+        },
+        "publisher": {
+          "name": "PANGAEA"
+        },
+        "version": null,
+        "rightsList": [
+          {
+            "rightsIdentifierScheme": "SPDX",
+            "rights": "Licensing unknown: Please contact principal investigator/authors to gain access and request licensing terms",
+            "rightsIdentifier": "unknown"
+          },
+          {
+            "rights": "Data access is restricted (moratorium, sensitive data, license constraints)"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "TechnicalInfo",
+            "description": "This file contains the fractional abundances of the 21 available branched glycerol dialkyl glycerol tetraethers (brGDGT) including the 5-, 6- and 7-methyl isomers. The fractional abundances are given in percentages. For the name of the compounds, the Roman numerals refer to the nomenclature given in De Jonge et al. (2014a). The 5-, 6- and 7-methyl isomer are given with _5Me, _6Me and _7Me respectively."
+          }
+        ],
+        "url": "https://doi.pangaea.de/10.1594/PANGAEA.983386",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 0,
+        "created": "2025-10-13T06:26:11Z",
+        "geoLocations": [
+          {
+            "geoLocationBox": {
+              "northBoundLatitude": 79.2,
+              "southBoundLatitude": -54.9,
+              "eastBoundLongitude": 172.15,
+              "westBoundLongitude": -177.4
+            }
+          },
+          {
+            "geoLocationPlace": "Central Asia"
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "pangaea.repository",
+            "type": "clients"
+          }
+        }
+      }
+    },
+    {
+      "id": "10.21233/h02q-c571",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.21233/h02q-c571",
+        "titles": [
+          {
+            "lang": "en-us",
+            "title": "Reelfoot Lake, Upper Blue Basin ostracode surface sample dataset"
+          }
+        ],
+        "creators": [
+          {
+            "nameType": "Personal",
+            "affiliation": [],
+            "givenName": "B. Brandon",
+            "familyName": "Curry",
+            "name": "Curry, B. Brandon",
+            "nameIdentifiers": []
+          }
+        ],
+        "publicationYear": 2019,
+        "types": {
+          "schemaOrg": "Dataset",
+          "resourceTypeGeneral": "Dataset",
+          "citeproc": "dataset",
+          "bibtex": "misc",
+          "ris": "DATA",
+          "resourceType": "Dataset/Paleoecological Sample Data"
+        },
+        "publisher": {
+          "name": "Neotoma Paleoecological Database"
+        },
+        "version": "1.0",
+        "rightsList": [
+          {
+            "rightsUri": "http://creativecommons.org/licenses/by/4.0/deed.en_US",
+            "rights": "CC-BY4"
+          }
+        ],
+        "descriptions": [
+          {
+            "descriptionType": "Abstract",
+            "description": "Raw data for the Reelfoot Lake, Upper Blue Basin ostracode surface sample dataset obtained from the Neotoma Paleoecology Database.",
+            "lang": "EN"
+          }
+        ],
+        "url": "https://data.neotomadb.org/13081",
+        "citationCount": 0,
+        "viewCount": 0,
+        "downloadCount": 0,
+        "versionCount": 0,
+        "created": "2019-08-20T23:09:35Z",
+        "geoLocations": [
+          {
+            "geoLocationPolygon": [
+              {
+                "polygonPoint": {
+                  "pointLatitude": "36.45148",
+                  "pointLongitude": "-89.36118"
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": "36.45148",
+                  "pointLongitude": "-89.3193"
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": "36.48014",
+                  "pointLongitude": "-89.3193"
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": "36.48014",
+                  "pointLongitude": "-89.36118"
+                }
+              },
+              {
+                "polygonPoint": {
+                  "pointLatitude": "36.45148",
+                  "pointLongitude": "-89.36118"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "relationships": {
+        "client": {
+          "data": {
+            "id": "wisc.neotoma",
+            "type": "clients"
+          }
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "cern.zenodo",
+      "type": "clients",
+      "attributes": {
+        "name": "Zenodo",
+        "symbol": "CERN.ZENODO",
+        "year": 2013,
+        "alternateName": "Research. Shared",
+        "description": "ZENODO builds and operates a simple and innovative service that enables researchers, scientists, EU projects and institutions to share and showcase multidisciplinary research results (data and publications) that are not part of the existing institutional or subject-based repositories of the research communities.\r\nZENODO enables researchers, scientists, EU projects and institutions to:\r\neasily share the long tail of small research results in a wide variety of formats including text, spreadsheets, audio, video, and images across all fields of science.\r\ndisplay their research results and get credited by making the research results citable and integrate them into existing reporting lines to funding agencies like the European Commission.\r\neasily access and reuse shared research results.",
+        "language": ["en"],
+        "clientType": "repository",
+        "domains": "openaire.cern.ch,zenodo.org",
+        "re3data": "https://doi.org/10.17616/R3QP53",
+        "opendoar": null,
+        "issn": {},
+        "url": "https://zenodo.org/",
+        "created": "2013-01-28T12:07:48Z",
+        "updated": "2020-06-26T12:22:29Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "cern",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "cul.gkrgct",
+      "type": "clients",
+      "attributes": {
+        "name": "System for Earth Sample Registration (SESAR)",
+        "symbol": "CUL.GKRGCT",
+        "year": 2023,
+        "alternateName": "SESAR",
+        "description": "SESAR IGSN ID Repository.",
+        "language": [],
+        "clientType": "igsnCatalog",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {
+          "print": null,
+          "electronic": null,
+          "issnl": null
+        },
+        "url": null,
+        "created": "2023-01-17T19:38:46Z",
+        "updated": "2026-09-20T23:25:04Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "xaqp",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "doe.lbnl",
+      "type": "clients",
+      "attributes": {
+        "name": "DOE Lawrence Berkeley National Laboratory (LBNL) Repository",
+        "symbol": "DOE.LBNL",
+        "year": 2020,
+        "alternateName": null,
+        "description": null,
+        "language": [],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": {},
+        "url": null,
+        "created": "2020-04-20T08:29:31Z",
+        "updated": "2023-11-23T11:17:13Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "doe",
+            "type": "providers"
+          }
+        },
+        "consortium": {
+          "data": {
+            "id": "OSTICO",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "pangaea.repository",
+      "type": "clients",
+      "attributes": {
+        "name": "PANGAEA",
+        "symbol": "PANGAEA.REPOSITORY",
+        "year": 2020,
+        "alternateName": "Data Publisher for Earth and Environmental Science",
+        "description": "PANGAEA is a data publisher for earth and environmental sciences. PANGAEA currently keeps billions of data items comprised in hundred of thousands trans-disciplinary data sets from all over the world. Since more than 25 years, PANGAEA is one of the leading data centers for data curation, long-term data archiving and publication. In contrast to generic data repositories, data curation at PANGAEA includes editing of deposited data for accuracy by well-trained data editors from the geological and biological domains. Since more than 10 years PANGAEA assigns Digital Object Identifiers (DOI) to datasets. The PANGAEA team support the further development of services for cross-linking data and paper publications as well as evaluating the FAIR-ness of repositories according to the FAIR principles.",
+        "language": ["en"],
+        "clientType": "repository",
+        "domains": "pangaea.de,doi.pangaea.de",
+        "re3data": "https://doi.org/10.17616/R3XS37",
+        "opendoar": null,
+        "issn": {},
+        "url": "https://www.pangaea.de/",
+        "created": "2020-03-11T13:58:41Z",
+        "updated": "2023-04-24T19:21:25Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "pangaea",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    },
+    {
+      "id": "wisc.neotoma",
+      "type": "clients",
+      "attributes": {
+        "name": "Neotoma Paleoecological Database",
+        "symbol": "WISC.NEOTOMA",
+        "year": 2018,
+        "alternateName": null,
+        "description": null,
+        "language": [],
+        "clientType": "repository",
+        "domains": "*",
+        "re3data": null,
+        "opendoar": null,
+        "issn": null,
+        "url": null,
+        "created": "2018-08-16T16:07:58Z",
+        "updated": "2019-03-29T17:25:35Z",
+        "isActive": true
+      },
+      "relationships": {
+        "provider": {
+          "data": {
+            "id": "wisc",
+            "type": "providers"
+          }
+        },
+        "prefixes": {
+          "data": []
+        }
+      }
+    }
+  ],
+  "meta": {
+    "total": 6,
+    "totalPages": 1,
+    "page": 1
+  },
+  "links": {
+    "self": "https://api.datacite.org/dois?query=%28doi%3A%28%2210.58052%2Fiejel01cg%22+OR+%2210.5281%2Fzenodo.19169636%22+OR+%2210.1594%2Fpangaea.983386%22+OR+%2210.5281%2Fzenodo.23569793%22+OR+%2210.15485%2F3018019%22+OR+%2210.21233%2Fh02q-c571%22%29%29+AND+%28%28geoLocations.geoLocationPoint.pointLatitude%3A%5B36+TO+37%5D+AND+geoLocations.geoLocationPoint.pointLongitude%3A%5B-90+TO+-89%5D%29+OR+%28geoLocations.geoLocationBox.westBoundLongitude%3A%5B*+TO+-89%5D+AND+geoLocations.geoLocationBox.eastBoundLongitude%3A%5B-90+TO+*%5D+AND+geoLocations.geoLocationBox.southBoundLatitude%3A%5B*+TO+37%5D+AND+geoLocations.geoLocationBox.northBoundLatitude%3A%5B36+TO+*%5D%29+OR+%28geoLocations.geoLocationPolygon.polygonPoint.pointLatitude%3A%5B36+TO+37%5D+AND+geoLocations.geoLocationPolygon.polygonPoint.pointLongitude%3A%5B-90+TO+-89%5D%29%29&sort=-created&page%5Bsize%5D=10&page%5Bnumber%5D=1&fields%5Bdois%5D=doi%2Ctitles%2Ccreators%2CpublicationYear%2Ctypes%2Cpublisher%2Cversion%2CrightsList%2Cdescriptions%2Curl%2CcitationCount%2CviewCount%2CdownloadCount%2CversionCount%2Ccreated%2Cclient%2CgeoLocations&include=client&affiliation=true&publisher=true"
+  }
+}

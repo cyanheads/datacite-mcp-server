@@ -25,6 +25,7 @@ import type {
   RawDoiResource,
   RawEventList,
 } from '@/services/datacite/types.js';
+import { RELATION_TYPE_IDS } from '@/services/reference/vocabularies.js';
 import {
   doiList,
   dryad8515Part,
@@ -45,6 +46,7 @@ import {
   initServices,
   json,
   param,
+  refuseLongUrls,
   requestUrls,
   structured,
   type ToolResultLike,
@@ -2192,6 +2194,36 @@ describe('the reverse-read shortfall', () => {
   });
 
   it.each([
+    { letters: 110, named: true },
+    { letters: 115, named: false },
+  ])(
+    'names a query of $letters-letter Cyrillic DOIs only if every page of its datacite_search_works search fits the URL limit: $named',
+    async ({ letters, named }) => {
+      const doi = `10.5555/${'д'.repeat(letters)}`;
+      const query = reverseQuery([doi], ['HasMetadata']);
+      // Under the 2,000-character query bound either way: the URL limit alone decides.
+      expect(query.length).toBeLessThan(2000);
+      initServices(
+        articleRoutes(
+          doi,
+          [
+            ...pointing(doi, 'HasMetadata', 4, 'metadata'),
+            ...pointing(doi, 'References', 96, 'referencing'),
+          ],
+          150,
+          ['HasMetadata'],
+        ),
+      );
+      const result = await run({ doi, relation_types: ['IsMetadataFor'] });
+      expect(output(result).coverage.reverseMetadata).toMatchObject({ total: 150, fetched: 100 });
+      expectNotice(
+        result,
+        `${doi} is not a DataCite DOI, so it has no DataCite metadata of its own; edges shown are DataCite records that point at it. This call read 100 of the 150 DataCite records that point at this DOI with the requested relation_types (at most 100 per call)${named ? `; pass query ${query} to datacite_search_works to list them all` : ''}.`,
+      );
+    },
+  );
+
+  it.each([
     { name: 'names the query at exactly', suffix: 153, length: 2000, named: true },
     { name: 'names no query 10 characters past', suffix: 154, length: 2010, named: false },
   ])(
@@ -3036,10 +3068,11 @@ describe('declared errors and input', () => {
     },
   );
 
-  it('logs invalid_doi at notice and a spent budget at error', () => {
+  it('logs invalid_doi and request_too_long at notice and a spent budget at error', () => {
     expect(declaredSeverities(traceRelationsTool.errors)).toEqual({
       invalid_doi: 'notice',
       rate_limited: 'error',
+      request_too_long: 'notice',
     });
   });
 
@@ -3078,5 +3111,343 @@ describe('declared errors and input', () => {
     const error = expectToolError(result, 'invalid_arguments', JsonRpcErrorCode.InvalidParams);
     expect(error.message).toContain(Object.keys(input).at(-1) as string);
     expect(http.calls).toHaveLength(0);
+  });
+});
+
+describe("DataCite's request URL limit", () => {
+  const cyrillic = (count: number) => 'д'.repeat(count);
+  const isReverseLookup = (url: URL) =>
+    (url.searchParams.get('query') ?? '').startsWith('((relatedIdentifiers.relatedIdentifier:(');
+  /** A reverse lookup naming `doi` among its targets, whatever relation types narrow it. */
+  const reverseNaming = (doi: string) =>
+    dataCite(
+      '/dois',
+      (url) => isReverseLookup(url) && (url.searchParams.get('query') ?? '').includes(`"${doi}"`),
+    );
+  const reverseLookups = (http: FetchMockHarness) => requestUrls(http).filter(isReverseLookup);
+  const recovery =
+    "Recovery: A DOI cannot be shortened: drop or narrow relation_types when the error names them, read the DOI's own relations with datacite_get_work, or trace only its Event Data citations with event_offset 0.";
+
+  describe('the root lookup', () => {
+    it('rejects a root whose reverse lookup would pass 8,201 bytes as request_too_long before any request', async () => {
+      const doi = `10.1234/${cyrillic(125)}`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(doi), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const result = await run({ doi });
+      const error = expectToolError(result, 'request_too_long', JsonRpcErrorCode.ValidationError);
+      const message =
+        'This trace would send DataCite an 8,257-byte request URL; DataCite refuses URLs over 8,201 bytes. It carries `doi` (7,600 bytes).';
+      expect(error.message).toBe(message);
+      expect(error.data).toMatchObject({
+        urlBytes: 8257,
+        maxUrlBytes: 8201,
+        inputs: [{ input: 'doi', bytes: 7600 }],
+      });
+      // content[] escapes the backticks as Markdown, so they render as written.
+      const text = markdownText(contentText(result));
+      expect(text).toContain(message);
+      expect(text).toContain(recovery);
+      expect(http.calls).toHaveLength(0);
+    });
+
+    it('names relation_types after doi when they lengthen the lookup, and the same DOI unnarrowed runs', async () => {
+      const doi = `10.1234/${cyrillic(115)}`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(doi), respond: json(emptyDoiList()) },
+        { match: reverseNaming(doi), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const rejected = await run({ doi, relation_types: [...RELATION_TYPE_IDS] });
+      const error = expectToolError(rejected, 'request_too_long', JsonRpcErrorCode.ValidationError);
+      const message =
+        'This trace would send DataCite an 8,933-byte request URL; DataCite refuses URLs over 8,201 bytes. It carries `doi` (7,000 bytes), `relation_types` (1,276 bytes).';
+      expect(error.message).toBe(message);
+      expect(error.data).toMatchObject({
+        urlBytes: 8933,
+        inputs: [
+          { input: 'doi', bytes: 7000 },
+          { input: 'relation_types', bytes: 1276 },
+        ],
+      });
+      expect(markdownText(contentText(rejected))).toContain(message);
+      expect(http.calls).toHaveLength(0);
+
+      const ran = await run({ doi });
+      expect(ran.isError).toBeFalsy();
+      expect(reverseLookups(http).map((url) => url.href.length)).toEqual([7656]);
+    });
+
+    it('sends the reverse lookup of a 500-character DOI with every relation type (6,952 bytes)', async () => {
+      const doi = `10.1234/${'a'.repeat(492)}`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(doi), respond: json(emptyDoiList()) },
+        { match: reverseNaming(doi), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const result = await run({ doi, relation_types: [...RELATION_TYPE_IDS] });
+      expect(result.isError).toBeFalsy();
+      expect(output(result).coverage.reverseMetadata).toEqual({
+        status: 'ok',
+        total: 0,
+        fetched: 0,
+      });
+      expect(reverseLookups(http).map((url) => url.href.length)).toEqual([6952]);
+    });
+
+    it('sends a lookup whose 100-record page is 8,201 bytes, and rejects the next longer one unsent', async () => {
+      // relation_types IsCitedBy reads records asserting Cites: 8,200 bytes at 10 records, 8,201 at 100.
+      const fits = `10.1234/${cyrillic(122)}aaa`;
+      // IsCitedBy and IsPartOf: 8,202 bytes at 10 records, 8,203 at 100.
+      const over = `10.1234/${cyrillic(122)}a`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(fits), respond: json(emptyDoiList()) },
+        // 11 match, so the 10-record page is followed by the 100-record one.
+        { match: reverseNaming(fits), respond: paged([], 11) },
+        { match: rootRead(over), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const sent = await run({ doi: fits, relation_types: ['IsCitedBy'] });
+      expect(sent.isError).toBeFalsy();
+      expect(output(sent).coverage.reverseMetadata).toEqual({
+        status: 'ok',
+        total: 11,
+        fetched: 0,
+      });
+      const lookups = reverseLookups(http);
+      expect(lookups.map((url) => url.searchParams.get('page[size]'))).toEqual(['10', '100']);
+      expect(lookups.map((url) => url.href.length)).toEqual([8200, 8201]);
+
+      const calls = http.calls.length;
+      const rejected = await run({ doi: over, relation_types: ['IsCitedBy', 'IsPartOf'] });
+      const error = expectToolError(rejected, 'request_too_long', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toContain(
+        'This trace would send DataCite an 8,203-byte request URL; DataCite refuses URLs over 8,201 bytes. It carries `doi`',
+      );
+      expect(http.calls).toHaveLength(calls);
+    });
+
+    it('reads a URL length that starts with a consonant sound with "a"', async () => {
+      const doi = `10.1234/${cyrillic(140)}`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(doi), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const result = await run({ doi });
+      const error = expectToolError(result, 'request_too_long', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe(
+        'This trace would send DataCite a 9,157-byte request URL; DataCite refuses URLs over 8,201 bytes. It carries `doi` (8,500 bytes).',
+      );
+      expect(http.calls).toHaveLength(0);
+    });
+
+    it('never checks an event-only call, which sends no reverse lookup', async () => {
+      const doi = `10.1234/${cyrillic(125)}`;
+      const { http } = initServices([
+        refuseLongUrls,
+        { match: rootRead(doi), respond: json(emptyDoiList()) },
+        { match: eventsRead, respond: json(eventList()) },
+      ]);
+      const result = await run({ doi, event_offset: 0 });
+      expect(result.isError).toBeFalsy();
+      expect(output(result).coverage.reverseMetadata).toEqual({
+        status: 'skipped',
+        total: 0,
+        fetched: 0,
+      });
+      expect(http.calls.length).toBeGreaterThan(0);
+      expect(reverseLookups(http)).toEqual([]);
+      expect(requestUrls(http).every((url) => url.href.length <= 8201)).toBe(true);
+    });
+  });
+
+  describe('the second-hop frontier', () => {
+    const HUB = '10.5555/hub';
+    /** `count` spokes with 49-character DOIs, as 4TU.ResearchData's uuid DOIs run, each IsPartOf the hub. */
+    const uuidSpokes = (count: number) =>
+      Array.from({ length: count }, (_, i) =>
+        record(`10.4121/uuid:${String(i + 1).padStart(8, '0')}-aa39-454d-a0fa-656f36bf72d1`, {
+          relatedIdentifiers: [
+            { relationType: 'IsPartOf', relatedIdentifier: HUB, relatedIdentifierType: 'DOI' },
+          ],
+        }),
+      );
+    const ids = (records: RawDoiResource[]) => records.map((r) => r.id);
+    /** The `ids=` batch the second hop reads the frontier's own metadata with. */
+    const frontierRead = (http: FetchMockHarness) =>
+      requestUrls(http).find(
+        (url) =>
+          url.searchParams.has('ids') &&
+          url.searchParams.get('fields[dois]') === NODE_WITH_RELATIONS_FIELDS,
+      );
+    const hubRoutes = (spokes: RawDoiResource[], reverseTotal = spokes.length) => [
+      refuseLongUrls,
+      { match: rootRead(HUB), respond: json(doiList([record(HUB)])) },
+      { match: reverseNaming(HUB), respond: paged(spokes, reverseTotal) },
+      { match: eventsRead, respond: json(eventList()) },
+      { match: idsRead, respond: byIds(spokes) },
+    ];
+    /** A spoke whose DOI alone takes the frontier lookup past the limit. */
+    const longSpoke = record(`10.5555/${cyrillic(125)}`, {
+      relatedIdentifiers: [
+        { relationType: 'IsPartOf', relatedIdentifier: HUB, relatedIdentifierType: 'DOI' },
+      ],
+    });
+    /** A DataCite record citing the hub, as a trace narrowed to IsCitedBy reads it. */
+    const citingHub = (doi: string) =>
+      record(doi, {
+        relatedIdentifiers: [
+          { relationType: 'Cites', relatedIdentifier: HUB, relatedIdentifierType: 'DOI' },
+        ],
+      });
+
+    it('fills the frontier only while its reverse lookup fits, and names the real frontier', async () => {
+      const spokes = uuidSpokes(12);
+      const first9 = ids(spokes.slice(0, 9));
+      const { http } = initServices([
+        ...hubRoutes(spokes, 150),
+        // 11 match the frontier, so its lookup reads the 100-record page too.
+        { match: reverseNaming(first9[0] as string), respond: paged([], 11) },
+      ]);
+      const result = await run({ doi: HUB, depth: 2 });
+      expect(result.isError).toBeFalsy();
+      const out = output(result);
+      // Two conditions fire together: the root's reverse-read shortfall and the URL-bound frontier.
+      const notice = `This call read 12 of the 150 DataCite records that point at this DOI (at most 100 per call); pass query ${reverseQuery([HUB])} to datacite_search_works to list them all. The second hop expanded the first 9 of 12 DataCite neighbours in node order (at most 10 per call, and only as many as fit in one request URL under DataCite's 8,201-byte limit), so the relations of the other 3 went untraced; trace one directly to follow its relations.`;
+      expect(out.notice).toBe(notice);
+      expect(contentText(result)).toContain(`> ${notice}`);
+      expect(out.coverage.reverseMetadata.secondHop).toEqual({ total: 11, fetched: 0 });
+      expect(contentText(result)).toContain('second hop fetched 0 of 11 records');
+
+      expect(frontierRead(http)?.searchParams.get('ids')).toBe(first9.join(','));
+      const frontierLookups = reverseLookups(http).filter(
+        (url) => !(url.searchParams.get('query') ?? '').includes(`"${HUB}"`),
+      );
+      expect(frontierLookups.map((url) => url.searchParams.get('page[size]'))).toEqual([
+        '10',
+        '100',
+      ]);
+      expect(frontierLookups.map((url) => url.href.length)).toEqual([7826, 7827]);
+      const query = frontierLookups[0]?.searchParams.get('query') ?? '';
+      expect(query).toBe(reverseQuery(first9));
+      expect(requestUrls(http).every((url) => url.href.length <= 8201)).toBe(true);
+    });
+
+    it('measures the frontier lookup with the relation types it is narrowed to', async () => {
+      const spokes = uuidSpokes(12);
+      const first7 = ids(spokes.slice(0, 7));
+      const { http } = initServices([
+        ...hubRoutes(spokes),
+        { match: reverseNaming(first7[0] as string), respond: json(emptyDoiList()) },
+      ]);
+      const result = await run({ doi: HUB, depth: 2, relation_types: [...RELATION_TYPE_IDS] });
+      expect(result.isError).toBeFalsy();
+      const notice =
+        "The second hop expanded the first 7 of 12 DataCite neighbours in node order (at most 10 per call, and only as many as fit in one request URL under DataCite's 8,201-byte limit), so the relations of the other 5 went untraced; trace one directly to follow its relations.";
+      expect(output(result).notice).toBe(notice);
+      expect(contentText(result)).toContain(`> ${notice}`);
+      expect(frontierRead(http)?.searchParams.get('ids')).toBe(first7.join(','));
+      const frontierLookup = reverseLookups(http).find(
+        (url) => !(url.searchParams.get('query') ?? '').includes(`"${HUB}"`),
+      );
+      expect(frontierLookup?.href.length).toBe(7442);
+      expect(requestUrls(http).every((url) => url.href.length <= 8201)).toBe(true);
+    });
+
+    it('expands a neighbour whose frontier lookup takes an 8,201-byte 100-record page, and not one a letter longer', async () => {
+      // relation_types IsCitedBy reads records asserting Cites: 8,200 bytes at 10 records, 8,201 at 100.
+      const fits = citingHub(`10.1234/${cyrillic(122)}aaa`);
+      const { http } = initServices([
+        ...hubRoutes([fits]),
+        // 11 match the frontier, so its lookup reads the 100-record page too.
+        { match: reverseNaming(fits.id), respond: paged([], 11) },
+      ]);
+      const result = await run({ doi: HUB, depth: 2, relation_types: ['IsCitedBy'] });
+      expect(result.isError).toBeFalsy();
+      expect(output(result).coverage.reverseMetadata.secondHop).toEqual({ total: 11, fetched: 0 });
+      expect(frontierRead(http)?.searchParams.get('ids')).toBe(fits.id);
+      const frontierLookups = reverseLookups(http).filter(
+        (url) => !(url.searchParams.get('query') ?? '').includes(`"${HUB}"`),
+      );
+      expect(frontierLookups.map((url) => url.searchParams.get('page[size]'))).toEqual([
+        '10',
+        '100',
+      ]);
+      expect(frontierLookups.map((url) => url.href.length)).toEqual([8200, 8201]);
+
+      // One letter longer: 8,211 bytes at 100 records, so the second hop expands nothing.
+      const over = citingHub(`10.1234/${cyrillic(122)}aaaa`);
+      const second = initServices(hubRoutes([over]));
+      const skipped = await run({ doi: HUB, depth: 2, relation_types: ['IsCitedBy'] });
+      expect(skipped.isError).toBeFalsy();
+      expect(output(skipped).coverage.reverseMetadata).not.toHaveProperty('secondHop');
+      expect(frontierRead(second.http)).toBeUndefined();
+      expect(
+        reverseLookups(second.http).filter(
+          (url) => !(url.searchParams.get('query') ?? '').includes(`"${HUB}"`),
+        ),
+      ).toEqual([]);
+    });
+
+    it.each([
+      ['its only neighbour', [longSpoke], 'its relations'],
+      ['one of two neighbours', [longSpoke, ...uuidSpokes(1)], 'the relations of all 2 neighbours'],
+    ])(
+      'expands no neighbour when the lookup of the first alone would pass the limit, %s',
+      async (_name, spokes, untraced) => {
+        const { http } = initServices(hubRoutes(spokes));
+        const result = await run({ doi: HUB, depth: 2 });
+        expect(result.isError).toBeFalsy();
+        const out = output(result);
+        const notice = `The second hop expanded no DataCite neighbour: looking up the records that point at the first one alone would take a request URL over DataCite's 8,201-byte limit, so ${untraced} went untraced; datacite_get_work lists a neighbour's own relations.`;
+        expect(out.notice).toBe(notice);
+        expect(contentText(result)).toContain(`> ${notice}`);
+        expect(out.nodes.map(({ id, depth }) => [id, depth])).toEqual([
+          [HUB, 0],
+          ...spokes.map((spoke) => [spoke.id, 1]),
+        ]);
+        expect(out.coverage.reverseMetadata).not.toHaveProperty('secondHop');
+        expect(out).not.toHaveProperty('truncated');
+        // root, reverse ∥ events — no frontier read and no second lookup.
+        expect(http.calls).toHaveLength(3);
+        expect(frontierRead(http)).toBeUndefined();
+      },
+    );
+
+    it.each([
+      // 10 neighbours tell the frontier the URL holds (9) from the per-call ceiling (10).
+      [10, 11, 12],
+      [12, 13, 14],
+    ])(
+      'promises the real frontier when a filled first hop of %i neighbours at max_nodes %i leaves the second hop unexpanded',
+      async (count, maxNodes, room) => {
+        initServices(hubRoutes(uuidSpokes(count)));
+        const result = await run({ doi: HUB, depth: 2, max_nodes: maxNodes });
+        const notice = `The first hop filled max_nodes=${maxNodes}, so the second hop was not expanded and the relations of ${count} DataCite neighbours went untraced; raise max_nodes to at least ${room} (≤ 100) to trace the first 9 of them.`;
+        expect(output(result)).toMatchObject({
+          truncated: true,
+          shown: maxNodes,
+          cap: maxNodes,
+          notice,
+        });
+        expect(contentText(result)).toContain(`> ${notice}`);
+      },
+    );
+
+    it('offers no max_nodes value when the lookup of the first unexpanded neighbour alone would pass the limit', async () => {
+      const { http } = initServices(hubRoutes([longSpoke, ...uuidSpokes(1)]));
+      const result = await run({ doi: HUB, depth: 2, max_nodes: 3 });
+      const notice =
+        "The first hop filled max_nodes=3, so the second hop was not expanded and the relations of 2 DataCite neighbours went untraced; no max_nodes value lets the second hop expand them, since looking up the records that point at the first one alone would take a request URL over DataCite's 8,201-byte limit; datacite_get_work lists a neighbour's own relations.";
+      expect(output(result)).toMatchObject({ truncated: true, shown: 3, cap: 3, notice });
+      expect(contentText(result)).toContain(`> ${notice}`);
+      expect(http.calls).toHaveLength(3);
+    });
   });
 });

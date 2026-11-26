@@ -562,6 +562,191 @@ describe('mapWork', () => {
     expect(work.formats).toEqual(['text/csv']);
   });
 
+  describe('relatedItems', () => {
+    const recorded = fixtureJson<RawDoiList>('datacite/works/related-items.json');
+    const itemsOf = (doi: string) => {
+      const raw = recorded.data.find((r) => r.id === doi);
+      if (!raw) throw new Error(`No recorded record for ${doi}.`);
+      return mapWork(raw, undefined).work.relatedItems;
+    };
+    /** A recorded related person: given and family names, no identifiers or affiliations. */
+    const person = (familyName: string, givenName: string, extra: Record<string, string> = {}) => ({
+      name: `${familyName}, ${givenName}`,
+      ...extra,
+      givenName,
+      familyName,
+      otherIdentifiers: [],
+      affiliations: [],
+    });
+
+    it('carries the recorded volume, issue, number, pages, publisher, year, and people', () => {
+      expect(itemsOf('10.15162/rde.v2i2.2688')).toStrictEqual([
+        {
+          relationType: 'IsPublishedIn',
+          relatedItemType: 'Journal',
+          identifier: '3103-845X',
+          identifierType: 'ISSN',
+          title: 'Rassegna di Diritto dell’Economia',
+          volume: '2',
+          issue: '2',
+          firstPage: '133',
+          lastPage: '161',
+        },
+      ]);
+      expect(itemsOf('10.3205/000367')).toStrictEqual([
+        {
+          relationType: 'IsPublishedIn',
+          relatedItemType: 'Journal',
+          identifier: '1612-3174',
+          identifierType: 'ISSN',
+          title: 'GMS German Medical Science',
+          volume: '24',
+          number: 'Doc14',
+          numberType: 'Article',
+          publicationYear: 2026,
+        },
+      ]);
+      expect(itemsOf('10.83394/978-3-913202-00-6_011')).toStrictEqual([
+        {
+          relationType: 'IsPublishedIn',
+          relatedItemType: 'Book',
+          identifier: '10.83394/978-3-913202-00-6',
+          identifierType: 'DOI',
+          title: 'Journalists in Fiction',
+          publisher: 'Freiburg University Publishing',
+          publicationYear: 2026,
+          creators: [person('Korte', 'Barbara'), person('Valverde', 'Beatriz')],
+        },
+      ]);
+      expect(itemsOf('10.11588/edition.klee.klee_korr_fk_340106')).toStrictEqual([
+        {
+          relationType: 'IsVariantFormOf',
+          relatedItemType: 'Text',
+          title: 'Familienkorrespondenz Klee: Brief von Felix Klee an Lily Klee und Paul Klee',
+          publicationYear: 1934,
+          creators: [person('Klee', 'Felix', { nameType: 'Personal' })],
+          contributors: [
+            person('Klee', 'Lily', { nameType: 'Personal', contributorType: 'RelatedPerson' }),
+            person('Klee', 'Paul', { nameType: 'Personal', contributorType: 'RelatedPerson' }),
+          ],
+        },
+        {
+          relationType: 'IsPartOf',
+          relatedItemType: 'Text',
+          identifier: 'urn:nbn:de:bsz:16-diglit-527578',
+          identifierType: 'URN',
+          title: 'Familienkorrespondenz Klee',
+          creators: [{ name: ':none', otherIdentifiers: [], affiliations: [] }],
+        },
+      ]);
+    });
+
+    it.each([
+      [2026, 2026],
+      ['2026', 2026],
+      [' 1934 ', 1934],
+      [2026.5, undefined],
+      ['2026a', undefined],
+      ['n.d.', undefined],
+      ['1e3', undefined],
+      ['', undefined],
+      [null, undefined],
+      [Number.NaN, undefined],
+      [Number.POSITIVE_INFINITY, undefined],
+    ])('reads a related item publicationYear of %j as %j', (value, expected) => {
+      const { work } = mapWork(
+        record({ relatedItems: [{ relationType: 'IsPartOf', publicationYear: value }] }),
+        undefined,
+      );
+      expect(work.relatedItems).toStrictEqual([
+        { relationType: 'IsPartOf', ...(expected !== undefined && { publicationYear: expected }) },
+      ]);
+    });
+
+    it('maps related people as record people and leaves undeposited fields absent', () => {
+      const { work } = mapWork(
+        record({
+          relatedItems: [
+            {
+              relationType: 'IsPublishedIn',
+              creators: [],
+              contributors: [{ name: ' ' }],
+              publisher: ' ',
+              volume: '',
+              titles: [],
+            },
+            {
+              relationType: 'IsPartOf',
+              volume: ' 12 ',
+              number: '0',
+              firstPage: '0:i',
+              lastPage: '0:xviii',
+              edition: '2nd',
+              creators: [
+                {
+                  name: 'Carberry, Josiah',
+                  nameType: 'Personal',
+                  contributorType: 'Editor',
+                  nameIdentifiers: [
+                    {
+                      nameIdentifier: 'https://orcid.org/0000-0002-1825-0097',
+                      nameIdentifierScheme: 'ORCID',
+                    },
+                    { nameIdentifier: '0000 0001 2281 955X', nameIdentifierScheme: 'ISNI' },
+                  ],
+                  affiliation: [
+                    {
+                      name: 'Brown University',
+                      affiliationIdentifier: 'https://ror.org/05gq02987',
+                      affiliationIdentifierScheme: 'ROR',
+                    },
+                  ],
+                },
+                { name: '' },
+              ],
+              contributors: [
+                { givenName: 'Lily', familyName: 'Klee', contributorType: 'RelatedPerson' },
+                { name: 'Anon' },
+              ],
+            },
+          ],
+        }),
+        undefined,
+      );
+      expect(work.relatedItems).toStrictEqual([
+        { relationType: 'IsPublishedIn' },
+        {
+          relationType: 'IsPartOf',
+          volume: '12',
+          number: '0',
+          firstPage: '0:i',
+          lastPage: '0:xviii',
+          edition: '2nd',
+          creators: [
+            {
+              name: 'Carberry, Josiah',
+              nameType: 'Personal',
+              orcid: '0000-0002-1825-0097',
+              otherIdentifiers: [{ identifier: '0000 0001 2281 955X', scheme: 'ISNI' }],
+              affiliations: [{ name: 'Brown University', rorId: '05gq02987' }],
+            },
+          ],
+          contributors: [
+            {
+              name: 'Lily Klee',
+              givenName: 'Lily',
+              familyName: 'Klee',
+              contributorType: 'RelatedPerson',
+              otherIdentifiers: [],
+              affiliations: [],
+            },
+            { name: 'Anon', otherIdentifiers: [], affiliations: [] },
+          ],
+        },
+      ]);
+    });
+  });
+
   it('counts a relation type named like an Object.prototype member as its own key', () => {
     const types = ['constructor', '__proto__', 'toString', 'constructor'];
     const { work } = mapWork(
@@ -681,4 +866,220 @@ describe('mapRepository', () => {
       language: [],
     });
   });
+});
+
+describe('names, publishers, funders, and subject terms as plain text', () => {
+  /** A recognized tag, named and numeric references, a reference encoded twice, and a line break: what the title conversion strips, decodes once, and collapses. */
+  const RAW = ' <i>Kipp</i> &amp;\nZonen &#8211; &beta;-ray &amp;gt;1 ';
+  const PLAIN = 'Kipp & Zonen – β-ray &gt;1';
+
+  it('converts every name, publisher, funder, and subject field of a full record the way titles are converted', () => {
+    const { work } = mapWork(
+      record({
+        subjects: [{ subject: RAW }, { subject: '<br/>' }],
+        publisher: { name: RAW },
+        creators: [
+          { name: RAW, givenName: RAW, familyName: RAW, affiliation: [{ name: RAW }] },
+          { name: '<span></span>' },
+          { name: '<span></span>', givenName: 'Josiah', familyName: 'Carberry' },
+        ],
+        contributors: [{ name: RAW, contributorType: 'Editor', affiliation: [{ name: RAW }] }],
+        fundingReferences: [{ funderName: RAW }],
+        relatedItems: [
+          {
+            relationType: 'IsPublishedIn',
+            publisher: RAW,
+            creators: [{ name: RAW, affiliation: [{ name: RAW }] }],
+            contributors: [{ givenName: RAW, familyName: 'Str&ouml;m', contributorType: 'Editor' }],
+          },
+        ],
+      }),
+      undefined,
+    );
+    const [creator, composed] = work.creators;
+    const [item] = work.relatedItems;
+    expect({
+      subjects: work.subjects,
+      publisher: work.publisher,
+      creatorCount: work.creators.length,
+      creatorName: creator?.name,
+      composedCreatorName: composed?.name,
+      creatorGivenName: creator?.givenName,
+      creatorFamilyName: creator?.familyName,
+      creatorAffiliations: creator?.affiliations,
+      contributorName: work.contributors[0]?.name,
+      contributorAffiliations: work.contributors[0]?.affiliations,
+      funderName: work.fundingReferences[0]?.funderName,
+      itemPublisher: item?.publisher,
+      itemCreatorName: item?.creators?.[0]?.name,
+      itemCreatorAffiliations: item?.creators?.[0]?.affiliations,
+      itemContributor: item?.contributors?.[0],
+    }).toStrictEqual({
+      subjects: [{ subject: PLAIN }],
+      publisher: { name: PLAIN },
+      // A name that converts to nothing is dropped, or composed from given and family names.
+      creatorCount: 2,
+      creatorName: PLAIN,
+      composedCreatorName: 'Josiah Carberry',
+      creatorGivenName: PLAIN,
+      creatorFamilyName: PLAIN,
+      creatorAffiliations: [{ name: PLAIN }],
+      contributorName: PLAIN,
+      contributorAffiliations: [{ name: PLAIN }],
+      funderName: PLAIN,
+      itemPublisher: PLAIN,
+      itemCreatorName: PLAIN,
+      itemCreatorAffiliations: [{ name: PLAIN }],
+      itemContributor: {
+        name: `${PLAIN} Ström`,
+        givenName: PLAIN,
+        familyName: 'Ström',
+        contributorType: 'Editor',
+        otherIdentifiers: [],
+        affiliations: [],
+      },
+    });
+  });
+
+  it('converts search-row creator names and the plain-string publisher, dropping a name that converts to nothing', () => {
+    const row = mapWorkRow(
+      record({
+        creators: [{ name: RAW }, { name: '<br>' }, { name: 'Smith, J&ouml;rg' }],
+        publisher: 'Taylor &amp; Francis',
+      }),
+      new Map(),
+    );
+    expect(row).toMatchObject({
+      creators: [PLAIN, 'Smith, Jörg'],
+      creatorCount: 2,
+      publisher: 'Taylor & Francis',
+    });
+  });
+
+  it.each([
+    ['Igneous&gt;Rock', 'Igneous>Rock'],
+    ['Taylor &amp; Francis', 'Taylor & Francis'],
+    ['Igneous&amp;gt;Rock', 'Igneous&gt;Rock'],
+    ['&bogus; and &beta without a semicolon', '&bogus; and &beta without a semicolon'],
+    ['pH < 7 and <Unknown> markup', 'pH < 7 and <Unknown> markup'],
+  ])(
+    'reads the deposited subject %j as %j: one decoding pass, unknown references and tags kept',
+    (deposited, expected) => {
+      const { work } = mapWork(record({ subjects: [{ subject: deposited }] }), undefined);
+      expect(work.subjects).toEqual([{ subject: expected }]);
+    },
+  );
+
+  it('leaves identifiers, URIs, schemes, codes, places, award fields, rights, and descriptions as deposited', () => {
+    const ENC = 'A &amp; B&gt;C';
+    const { work } = mapWork(
+      record({
+        subjects: [{ subject: 'Geology', subjectScheme: ENC, classificationCode: ENC }],
+        creators: [
+          {
+            name: 'Carberry, Josiah',
+            nameIdentifiers: [{ nameIdentifier: ENC, nameIdentifierScheme: 'ISNI' }],
+          },
+        ],
+        fundingReferences: [
+          {
+            funderName: 'NSF',
+            funderIdentifier: ENC,
+            awardNumber: ENC,
+            awardTitle: ENC,
+            awardUri: ENC,
+          },
+        ],
+        geoLocations: [{ geoLocationPlace: ENC }],
+        rightsList: [{ rights: ENC, rightsUri: ENC, rightsIdentifier: ENC }],
+        descriptions: [{ description: ENC }],
+        relatedItems: [
+          {
+            relationType: 'IsPartOf',
+            relatedItemIdentifier: { relatedItemIdentifier: ENC, relatedItemIdentifierType: 'DOI' },
+          },
+        ],
+      }),
+      undefined,
+    );
+    expect(work.subjects).toEqual([{ subject: 'Geology', scheme: ENC, classificationCode: ENC }]);
+    expect(work.creators[0]?.otherIdentifiers).toEqual([{ identifier: ENC, scheme: 'ISNI' }]);
+    expect(work.fundingReferences).toEqual([
+      {
+        funderName: 'NSF',
+        funderIdentifier: ENC,
+        awardNumber: ENC,
+        awardTitle: ENC,
+        awardUri: ENC,
+      },
+    ]);
+    expect(work.geoLocations).toEqual([{ place: ENC }]);
+    expect(work.rights).toEqual([{ rights: ENC, rightsUri: ENC, rightsIdentifier: ENC }]);
+    expect(work.descriptions).toEqual([{ description: ENC }]);
+    expect(work.relatedItems).toEqual([
+      { relationType: 'IsPartOf', identifier: ENC, identifierType: 'DOI' },
+    ]);
+  });
+});
+
+describe('mapWorkRow rightsUris', () => {
+  it('carries a license deposited only as a rightsUri, deriving no id from it', () => {
+    const row = mapWorkRow(
+      record({
+        rightsList: [
+          {
+            rights: 'Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)',
+            rightsUri: 'https://creativecommons.org/licenses/by-nc/4.0/',
+          },
+        ],
+      }),
+      new Map(),
+    );
+    expect(row.licenses).toEqual([]);
+    expect(row.rightsUris).toEqual(['https://creativecommons.org/licenses/by-nc/4.0/']);
+  });
+
+  it('keeps every deposited rightsUri in deposit order beside the ids, trimmed, blanks dropped, none decoded', () => {
+    const row = mapWorkRow(
+      record({
+        rightsList: [
+          {
+            rightsIdentifier: 'cc-by-4.0',
+            rightsUri: ' https://creativecommons.org/licenses/by/4.0/legalcode ',
+          },
+          { rightsUri: '  ' },
+          { rights: 'Statement only' },
+          { rightsUri: 'https://example.org/terms?a=1&amp;b=2' },
+          { rightsIdentifier: 'cc-by-4.0', rightsUri: 'info:eu-repo/semantics/openAccess' },
+        ],
+      }),
+      new Map(),
+    );
+    expect(row.licenses).toEqual(['cc-by-4.0', 'cc-by-4.0']);
+    expect(row.rightsUris).toEqual([
+      'https://creativecommons.org/licenses/by/4.0/legalcode',
+      'https://example.org/terms?a=1&amp;b=2',
+      'info:eu-repo/semantics/openAccess',
+    ]);
+  });
+
+  it.each([
+    ['no rightsList', {}],
+    ['a null rightsList', { rightsList: null }],
+    ['an empty rightsList', { rightsList: [] }],
+    [
+      'statements and ids without a URI',
+      {
+        rightsList: [
+          { rights: 'All rights reserved' },
+          { rightsIdentifier: 'mit', rightsUri: null },
+        ],
+      },
+    ],
+  ] satisfies Array<[string, RawDoiAttributes]>)(
+    'leaves rightsUris absent, never [], with %s',
+    (_name, attributes) => {
+      expect(mapWorkRow(record(attributes), new Map())).not.toHaveProperty('rightsUris');
+    },
+  );
 });

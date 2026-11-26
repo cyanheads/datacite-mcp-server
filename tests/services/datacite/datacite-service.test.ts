@@ -13,8 +13,12 @@ import {
   DataCiteService,
   getDataCiteService,
   NODE_FIELDS,
+  type RepositorySearchRequest,
+  repositoriesSearchUrlLength,
+  requestTooLong,
   shutdownDataCiteServices,
   type WorkSearchRequest,
+  worksSearchUrlLength,
 } from '@/services/datacite/datacite-service.js';
 import type { RawDoiList } from '@/services/datacite/types.js';
 import { getRegistrationAgencyService } from '@/services/doi-ra/doi-ra-service.js';
@@ -268,6 +272,114 @@ describe('/dois requests', () => {
     const found = await svc.getWork('10.5061/dryad.234', createMockContext());
     expect(found?.record.id).toBe('10.5061/dryad.234');
     expect(found).not.toHaveProperty('client');
+  });
+});
+
+describe('request URL length', () => {
+  it('measures exactly the /dois URL each work search sends', async () => {
+    const { http, svc } = build([{ match: dataCite('/dois'), respond: json(emptyDoiList()) }]);
+    const requests: WorkSearchRequest[] = [
+      { ...SEARCH, query: '*', callerQuery: false, sort: '-created' },
+      {
+        ...SEARCH,
+        query: `(${'д'.repeat(40)})`,
+        page: { cursor: 'T'.repeat(57) },
+        facets: true,
+        size: 1000,
+        sort: '-download-count',
+      },
+      {
+        ...SEARCH,
+        query: '(glacier) AND subjects.subject:"Ice sheets"',
+        withGeoLocations: true,
+        filters: {
+          affiliationCountry: 'CH',
+          affiliationId: '05gq02987',
+          clientIds: ['ethz.wgms', 'cern.zenodo'],
+          fundedBy: '021nxhr62',
+          includeFunderChildOrganizations: true,
+          licenses: ['cc by 4.0'],
+          minCitations: 3,
+          providerIds: ['kadq'],
+          resourceTypeIds: ['dataset', 'software'],
+        },
+      },
+    ];
+    const ctx = createMockContext();
+    for (const request of requests) await svc.searchWorks(request, ctx);
+    expect(requests.map(worksSearchUrlLength)).toEqual(
+      http.calls.map((call) => call.request.url.length),
+    );
+  });
+
+  it('measures exactly the /repositories URL each search or id lookup sends', async () => {
+    const { http, svc } = build([
+      { match: dataCite('/repositories'), respond: json({ data: [], meta: { total: 0 } }) },
+    ]);
+    const requests: RepositorySearchRequest[] = [
+      { callerQuery: false, page: 1, size: 20 },
+      {
+        callerQuery: true,
+        page: 3,
+        size: 100,
+        query: '(данные) AND subjects.subject:("Psychology")',
+        repositoryTypes: ['disciplinary', 'other'],
+        certificates: ['CoreTrustSeal', 'DIN 31644'],
+        software: 'dataverse',
+        clientType: 'repository',
+        providerId: 'dryad',
+      },
+      { callerQuery: false, page: 1, size: 25, ids: ['dryad.dryad', 'ethz.wgms'] },
+    ];
+    const ctx = createMockContext();
+    for (const request of requests) await svc.searchRepositories(request, ctx);
+    expect(requests.map(repositoriesSearchUrlLength)).toEqual(
+      http.calls.map((call) => call.request.url.length),
+    );
+  });
+
+  it('names the inputs largest first, equal shares in the order given, against the 8,201-byte limit', () => {
+    // The tied shares are given out of alphabetical order, so only the given order puts language first.
+    expect(
+      requestTooLong('search', 8202, [
+        { input: 'language', bytes: 5 },
+        { input: 'text', bytes: 7000 },
+        { input: 'creator', bytes: 5 },
+      ]),
+    ).toEqual({
+      message:
+        'This search would send DataCite an 8,202-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (7,000 bytes), `language` (5 bytes), `creator` (5 bytes).',
+      data: {
+        urlBytes: 8202,
+        maxUrlBytes: 8201,
+        inputs: [
+          { input: 'text', bytes: 7000 },
+          { input: 'language', bytes: 5 },
+          { input: 'creator', bytes: 5 },
+        ],
+      },
+    });
+  });
+
+  it('names a trace input it carries rather than one to shorten, since a DOI cannot be shortened', () => {
+    expect(requestTooLong('trace', 8257, [{ input: 'doi', bytes: 7600 }]).message).toBe(
+      'This trace would send DataCite an 8,257-byte request URL; DataCite refuses URLs over 8,201 bytes. It carries `doi` (7,600 bytes).',
+    );
+  });
+
+  it.each([
+    [9417, 'a 9,417'],
+    [11_945, 'an 11,945'],
+    [12_282, 'a 12,282'],
+    [18_569, 'an 18,569'],
+    [80_001, 'an 80,001'],
+    [180_000, 'a 180,000'],
+    [1_100_000, 'a 1,100,000'],
+    [11_000_000, 'an 11,000,000'],
+  ])('reads %i bytes aloud as "%s", naming the call it fails', (urlBytes, spoken) => {
+    expect(requestTooLong('trace', urlBytes, [{ input: 'doi', bytes: 1 }]).message).toContain(
+      `This trace would send DataCite ${spoken}-byte request URL;`,
+    );
   });
 });
 

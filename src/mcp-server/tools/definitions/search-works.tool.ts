@@ -8,6 +8,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import type { Bbox } from '@/services/datacite/bbox.js';
 import {
   decodeCursor,
   encodeCursor,
@@ -16,8 +17,13 @@ import {
 } from '@/services/datacite/cursor.js';
 import {
   getDataCiteService,
+  MAX_URL_CHARS,
+  requestTooLong,
+  type UrlShare,
   type WorkSearchFilters,
+  type WorkSearchRequest,
   worksSearchFits,
+  worksSearchUrlLength,
 } from '@/services/datacite/datacite-service.js';
 import { mapWorkRow } from '@/services/datacite/mappers.js';
 import {
@@ -33,6 +39,7 @@ import {
 import {
   affiliationNameClause,
   anyPhrase,
+  bboxClause,
   composeQuery,
   escapeQueryText,
   exactPlaceClause,
@@ -83,6 +90,34 @@ const START_CURSOR = { literals: ['*'] };
 /** The notice for a place matched exactly, whichever limit sent it there. */
 const PLACE_EXACT_NOTICE = `place matched whole deposited place names exactly and case-sensitively, since one of the case forms it is tried in is over ${PLACE_SUBSTRING_MAX_CHARS} characters or matching inside place names would make the request longer than DataCite accepts; pass a shorter part of it to match inside place names.`;
 
+/**
+ * The URI path of a Creative Commons SPDX id: CC0 1.0, and the six CC BY licenses
+ * at 2.0 through 4.0. A `rightsUri` wildcard on it matches the http and https,
+ * deed and legalcode forms alike. Ported, 1.0, and non-CC ids have none.
+ */
+function creativeCommonsPath(id: string): string | undefined {
+  if (id === 'cc0-1.0') return 'creativecommons.org/publicdomain/zero/1.0';
+  const match = /^cc-(by(?:-nc)?(?:-sa|-nd)?)-(2\.0|2\.5|3\.0|4\.0)$/.exec(id);
+  return match ? `creativecommons.org/licenses/${match[1]}/${match[2]}` : undefined;
+}
+
+/**
+ * The zero-hit notice for the licenses filter, which reads deposited ids only: it
+ * names a case-sensitive `rightsUri` query that reaches works depositing the
+ * license as a URI, for each requested id with a Creative Commons path.
+ */
+function licensesZeroHitNotice(licenses: readonly string[]): string {
+  const clauses = licenses.flatMap((id) => {
+    const path = creativeCommonsPath(id);
+    return path ? [`rightsList.rightsUri:*${path}*`] : [];
+  });
+  const reach =
+    clauses.length > 0
+      ? `query ${clauses.join(' OR ')} reaches such works, matching the URI case-sensitively`
+      : 'query on rightsList.rightsUri reaches such works, matching the URI case-sensitively, e.g. rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* for CC BY 4.0';
+  return `The licenses filter matches deposited license ids (rightsIdentifier) only, exactly as DataCite lowercases them, including internal spaces; check the licenses facet or datacite_list_reference topic licenses. A license deposited only as a URI has no id; ${reach}.`;
+}
+
 const VERSION_SCOPE_IDS = ['all', 'series', 'releases'] as const;
 const resolveVersionScope = buildResolver(VERSION_SCOPE_IDS.map((id) => ({ id })));
 
@@ -132,6 +167,7 @@ const AppliedFiltersSchema = z
     licenses: z.string().optional().describe('license as sent.'),
     language: z.string().optional().describe('Language clause as sent.'),
     place: z.string().optional().describe('Place clause as sent.'),
+    bbox: z.string().optional().describe('Bounding-box clause as sent.'),
     published: z.string().optional().describe('Publication-year clause as sent.'),
     version_scope: z.string().optional().describe('Version-relation clause as sent.'),
     min_citations: z.string().optional().describe('has-citations as sent.'),
@@ -143,10 +179,59 @@ type AppliedFilters = z.infer<typeof AppliedFiltersSchema>;
 const facetList = (list: RawFacet[] | undefined) =>
   (list ?? []).map((f) => ({ id: f.id, title: f.title?.trim() || f.id, count: f.count }));
 
+/** The input, by its appliedFilters key, that sets each `/dois` parameter filter. */
+const FILTER_INPUTS = {
+  affiliationCountry: 'affiliation_country',
+  affiliationId: 'affiliation',
+  clientIds: 'repository_ids',
+  fundedBy: 'funder',
+  includeFunderChildOrganizations: 'funder',
+  licenses: 'licenses',
+  minCitations: 'min_citations',
+  providerIds: 'provider_ids',
+  resourceTypeIds: 'resource_types',
+} as const satisfies Record<keyof WorkSearchFilters, keyof AppliedFilters>;
+
+/** The hint for a later page of a walk whose URL is over DataCite's limit, where page 1's was not. */
+const RESTART_WALK_HINT =
+  'Shorten or drop the inputs this error names, then start a new walk with cursor "*": a later page of a walk sends DataCite a longer cursor token than its first page, and a walk cannot continue under changed inputs.';
+
+/**
+ * Each input's share of a work search's request URL: the bytes the URL would lose
+ * without it. An input `echoed` as one of the query's `clauses` loses that clause
+ * (bbox also loses the `geoLocations` it adds to `fields[dois]`); a parameter
+ * filter loses the parameters it sets.
+ */
+function workUrlShares(
+  request: WorkSearchRequest,
+  clauses: readonly string[],
+  echoed: Readonly<Record<string, string | undefined>>,
+): UrlShare[] {
+  const urlBytes = worksSearchUrlLength(request);
+  const shares: UrlShare[] = [];
+  for (const [input, sent] of Object.entries(echoed)) {
+    const at = sent === undefined ? -1 : clauses.indexOf(sent);
+    if (at < 0) continue;
+    const without = {
+      ...request,
+      query: composeQuery(clauses.toSpliced(at, 1)),
+      ...(input === 'bbox' && { withGeoLocations: false }),
+    };
+    shares.push({ input, bytes: urlBytes - worksSearchUrlLength(without) });
+  }
+  const fields = Object.keys(request.filters) as Array<keyof WorkSearchFilters>;
+  for (const [input, set] of Map.groupBy(fields, (field) => FILTER_INPUTS[field])) {
+    const filters = { ...request.filters };
+    for (const field of set) delete filters[field];
+    shares.push({ input, bytes: urlBytes - worksSearchUrlLength({ ...request, filters }) });
+  }
+  return shares;
+}
+
 export const searchWorksTool = tool('datacite_search_works', {
   title: 'Search DataCite works',
   description:
-    'Search DataCite DOI metadata for datasets, software, samples, workflows, and other research outputs. Combine plain words (`text`) or OpenSearch query syntax (`query`) with filters for resource type, creator (ORCID iD or name), affiliation (ROR ID or name), affiliation country, funder (ROR ID, Crossref Funder ID, or name), subject, field of science, repository, provider, license, language, geographic place, publication-year range, and minimum citation count. Returns the total match count and compact rows — DOI, title, first creators, year, type, repository, licenses, and citation/view/download counts — plus optional top facet counts. The total counts DOIs, so a versioned work counts once per DOI — its concept DOI and each version DOI, as Zenodo registers them; set version_scope to series to count each version series once, or releases to count only the versions. Page numbers reach the first 10,000 ranked matches; pass cursor "*" to walk any result set in full, in registration order.',
+    'Search DataCite DOI metadata for datasets, software, samples, workflows, and other research outputs. Combine plain words (`text`) or OpenSearch query syntax (`query`) with filters for resource type, creator (ORCID iD or name), affiliation (ROR ID or name), affiliation country, funder (ROR ID, Crossref Funder ID, or name), subject, field of science, repository, provider, license, language, geographic place name or bounding box, publication-year range, and minimum citation count. Returns the total match count and compact rows — DOI, title, first creators, year, type, repository, licenses, citation/view/download counts, and, with a bounding box, whether the work lies in it — plus optional top facet counts. The total counts DOIs, so a versioned work counts once per DOI — its concept DOI and each version DOI, as Zenodo registers them; set version_scope to series to count each version series once, or releases to count only the versions. Page numbers reach the first 10,000 ranked matches; pass cursor "*" to walk any result set in full, in registration order.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
 
   errors: [
@@ -170,7 +255,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     {
       reason: 'invalid_filter',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a never-assigned affiliation country code, a creator or funder with no letters or digits, a reversed year range, or include_child_funders with a funder name, no funder, or a Crossref Funder ID that ROR maps to no single organization.',
+      when: 'A filter value is malformed: an ORCID iD failing its checksum, a ror.org or 10.13039/ value that is not a ROR ID or Crossref Funder ID, a language outside ISO 639-1, a never-assigned affiliation country code, a creator or funder with no letters or digits, a reversed year range, a bbox missing a side or with south greater than north, or include_child_funders with a funder name, no funder, or a Crossref Funder ID that ROR maps to no single organization.',
       severity: 'notice',
       recovery:
         'Correct the filter the error names to the form it states (identifier forms: datacite_list_reference topic identifier_formats), then retry.',
@@ -198,6 +283,14 @@ export const searchWorksTool = tool('datacite_search_works', {
       severity: 'notice',
       recovery:
         'A cursor walk runs in registration order and ignores ranking; drop page and sort, or drop cursor to use ranked pages.',
+    },
+    {
+      reason: 'request_too_long',
+      code: JsonRpcErrorCode.ValidationError,
+      when: `The request URL would be longer than the ${num(MAX_URL_CHARS)} bytes DataCite accepts, checked before any request: each non-Latin letter or escaped punctuation mark in text, query, or a name filter takes several bytes, and an affiliation name is sent twice.`,
+      severity: 'notice',
+      recovery:
+        'Shorten or drop the inputs this error names, largest first; each non-Latin letter or escaped punctuation mark takes several bytes of the request URL, so search a few distinctive words rather than a whole passage.',
     },
     {
       reason: 'ror_unavailable',
@@ -279,7 +372,7 @@ export const searchWorksTool = tool('datacite_search_works', {
         ),
       10,
     ).describe(
-      "The work's own license ids (any match), e.g. cc-by-4.0, cc0-1.0, cc0 1.0, mit. Trimmed and lowercased, then matched exactly, preserving internal spaces; reuse ids from the licenses facet or datacite_list_reference topic licenses.",
+      "The work's own license ids (any match), e.g. cc-by-4.0, cc0-1.0, cc0 1.0, mit. Matches the deposited rightsIdentifier only, so a work that deposits its license only as a URI is not matched; reach those with query rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* (case-sensitive). Trimmed and lowercased, then matched exactly, preserving internal spaces; reuse ids from the licenses facet or datacite_list_reference topic licenses.",
     ),
     language: optionalString(
       z
@@ -292,6 +385,26 @@ export const searchWorksTool = tool('datacite_search_works', {
     place: optionalString(z.string().max(MAX_CHARS.phrase)).describe(
       'A place name, matched anywhere inside deposited place names, so India also matches Indiana. Tried as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized: give a multi-word name its usual capitalization (Gulf of Mexico). For one exact, case-sensitive name, use query geoLocations.geoLocationPlace:"Svalbard" instead.',
     ),
+    // Strict, as the tool's own input is: a box under other keys (minLon, xmin, West) would otherwise read as all sides unset and search unfiltered.
+    bbox: z
+      .strictObject({
+        west: blankAsUnset(z.number().min(-180).max(180).optional()).describe(
+          'Western edge: a longitude in decimal degrees, -180 to 180.',
+        ),
+        south: blankAsUnset(z.number().min(-90).max(90).optional()).describe(
+          'Southern edge: a latitude in decimal degrees, -90 to 90, no greater than north.',
+        ),
+        east: blankAsUnset(z.number().min(-180).max(180).optional()).describe(
+          'Eastern edge: a longitude in decimal degrees, -180 to 180. Less than west crosses the antimeridian.',
+        ),
+        north: blankAsUnset(z.number().min(-90).max(90).optional()).describe(
+          'Northern edge: a latitude in decimal degrees, -90 to 90.',
+        ),
+      })
+      .optional()
+      .describe(
+        "A bounding box, all four sides in decimal degrees: matches works that deposit a point inside it, a box intersecting it, or a polygon vertex inside it. DataCite pools each work's coordinates, so a latitude and a longitude from two different deposited locations can match together; every row then carries inBbox, false for such a work. Reaches deposited coordinates only; place matches place names. All sides blank is unset.",
+      ),
     published_from: blankAsUnset(z.number().int().min(1000).max(2100).optional()).describe(
       'Earliest publication year (inclusive). Alone, the range is open-ended.',
     ),
@@ -347,7 +460,11 @@ export const searchWorksTool = tool('datacite_search_works', {
           .object({
             doi: z.string().describe('DOI, lowercase — pass to datacite_get_work.'),
             title: z.string().optional().describe('First title.'),
-            creators: z.array(z.string()).describe('First five creator names.'),
+            creators: z
+              .array(z.string())
+              .describe(
+                'First five creator names, as plain text: formatting tags removed, entities decoded once.',
+              ),
             creatorCount: z.number().describe('Total creators.'),
             publicationYear: z.number().optional().describe('Publication year.'),
             resourceTypeGeneral: z
@@ -355,7 +472,7 @@ export const searchWorksTool = tool('datacite_search_works', {
               .optional()
               .describe('resourceTypeGeneral, e.g. Dataset.'),
             resourceType: z.string().optional().describe('Free-text resource type.'),
-            publisher: z.string().optional().describe('Publisher name.'),
+            publisher: z.string().optional().describe('Publisher name, as plain text.'),
             repositoryId: z.string().optional().describe('Repository id (repository_ids filter).'),
             repositoryName: z.string().optional().describe('Repository name.'),
             providerId: z
@@ -365,7 +482,15 @@ export const searchWorksTool = tool('datacite_search_works', {
             version: z.string().optional().describe('Version string.'),
             licenses: z
               .array(z.string())
-              .describe("The work's own license ids; empty when none declared."),
+              .describe(
+                "The work's own license ids, each deposited rightsIdentifier; empty when none is deposited, though a license may still be given as a URI (rightsUris) or only as a statement (datacite_get_work rights).",
+              ),
+            rightsUris: z
+              .array(z.string())
+              .optional()
+              .describe(
+                'Every deposited rights or license URI, in deposit order; absent when none is deposited. No license id is derived from a URI.',
+              ),
             citationCount: z
               .number()
               .optional()
@@ -397,6 +522,12 @@ export const searchWorksTool = tool('datacite_search_works', {
               .string()
               .optional()
               .describe('First 300 characters of the abstract, else of the first description.'),
+            inBbox: z
+              .boolean()
+              .optional()
+              .describe(
+                "Only with bbox: true when one of the work's own deposited points lies in the box, or one of its boxes or polygons intersects it; false when it matched only by pairing coordinates from different deposited locations or polygon vertices.",
+              ),
           })
           .describe('One matching work.'),
       )
@@ -419,7 +550,9 @@ export const searchWorksTool = tool('datacite_search_works', {
         providers: FacetSchema.describe('Providers (provider_ids).'),
         affiliations: FacetSchema.describe('Creator affiliations (ROR ids).'),
         fieldsOfScience: FacetSchema.describe('Fields of science (fields_of_science ids).'),
-        licenses: FacetSchema.describe('License ids.'),
+        licenses: FacetSchema.describe(
+          'License ids (licenses), counted from the deposited rightsIdentifier only; works that deposit a license only as a URI are not counted.',
+        ),
       })
       .optional()
       .describe('Top facet counts — only with include_facets.'),
@@ -728,6 +861,45 @@ export const searchWorksTool = tool('datacite_search_works', {
     const placeAt = clauses.length;
     if (place) addClause('place', place.clause);
 
+    // Form clients send every side; all of them blank leaves the box unset.
+    const { west, south, east, north } = input.bbox ?? {};
+    let bbox: Bbox | undefined;
+    if (west !== undefined && south !== undefined && east !== undefined && north !== undefined) {
+      if (south > north) {
+        throw ctx.fail(
+          'invalid_filter',
+          'bbox.south is greater than bbox.north, so the latitude range is reversed.',
+          {
+            field: 'bbox.south',
+            recovery: {
+              hint: 'Set bbox.south to a latitude no greater than bbox.north (swap the two if they were reversed), then retry; a west greater than east is valid and crosses the antimeridian.',
+            },
+          },
+        );
+      }
+      bbox = { west, south, east, north };
+      addClause('bbox', bboxClause(bbox));
+    } else if (
+      west !== undefined ||
+      south !== undefined ||
+      east !== undefined ||
+      north !== undefined
+    ) {
+      const missing = Object.entries({ west, south, east, north })
+        .filter(([, value]) => value === undefined)
+        .map(([side]) => side);
+      throw ctx.fail(
+        'invalid_filter',
+        `bbox has no ${new Intl.ListFormat('en', { type: 'disjunction' }).format(missing)}; a box needs west, south, east, and north.`,
+        {
+          field: `bbox.${missing[0]}`,
+          recovery: {
+            hint: 'Give bbox all four sides in decimal degrees (west and east as longitudes, south and north as latitudes), or leave every side blank to search without a box.',
+          },
+        },
+      );
+    }
+
     if (input.published_from !== undefined || input.published_to !== undefined) {
       if (
         input.published_from !== undefined &&
@@ -778,7 +950,7 @@ export const searchWorksTool = tool('datacite_search_works', {
     if (
       placeValue &&
       place?.match === 'substring' &&
-      !worksSearchFits(composeQuery(clauses), filters)
+      !worksSearchFits(composeQuery(clauses), filters, bbox !== undefined)
     ) {
       place = { clause: exactPlaceClause(placeValue), match: 'exact' };
       clauses[placeAt] = place.clause;
@@ -804,18 +976,36 @@ export const searchWorksTool = tool('datacite_search_works', {
     ctx.enrich.echo(effectiveQuery);
     ctx.enrich({ sortApplied, appliedFilters: applied });
 
-    const list = await getDataCiteService().searchWorks(
-      {
-        query: effectiveQuery,
-        callerQuery: query !== undefined,
-        filters,
-        page: cursorMode ? { cursor: cursorToken ?? '1' } : { number: page },
-        size: limit,
-        sort: SORT_ORDERS[sortApplied],
-        facets: input.include_facets,
-      },
-      ctx,
-    );
+    const request: WorkSearchRequest = {
+      query: effectiveQuery,
+      callerQuery: query !== undefined,
+      filters,
+      page: cursorMode ? { cursor: cursorToken ?? '1' } : { number: page },
+      size: limit,
+      sort: SORT_ORDERS[sortApplied],
+      facets: input.include_facets,
+      withGeoLocations: bbox !== undefined,
+    };
+    // The exact URL this request sends: after the place fallback, with this page's own cursor token.
+    const urlBytes = worksSearchUrlLength(request);
+    if (urlBytes > MAX_URL_CHARS) {
+      const echoed = {
+        ...(query !== undefined && { query: `(${query})` }),
+        ...(text !== undefined && { text: `(${text})` }),
+        ...applied,
+      };
+      const shares = workUrlShares(request, clauses, echoed);
+      const { message, data } = requestTooLong('search', urlBytes, shares);
+      throw continuing
+        ? ctx.fail(
+            'request_too_long',
+            message,
+            { ...data, recovery: { hint: RESTART_WALK_HINT } },
+            START_CURSOR,
+          )
+        : ctx.fail('request_too_long', message, data);
+    }
+    const list = await getDataCiteService().searchWorks(request, ctx);
     const total = list.meta.total ?? 0;
     ctx.enrich.total(total);
 
@@ -842,7 +1032,14 @@ export const searchWorksTool = tool('datacite_search_works', {
     }
 
     const clients = new Map<string, RawClientResource>((list.included ?? []).map((c) => [c.id, c]));
-    const works = list.data.map((record) => mapWorkRow(record, clients));
+    const works = list.data.map((record) => mapWorkRow(record, clients, bbox));
+    const crossPaired = works.filter((work) => work.inBbox === false).length;
+    if (crossPaired > 0) {
+      const one = crossPaired === 1;
+      notices.push(
+        `${num(crossPaired)} of the ${num(works.length)} ${works.length === 1 ? 'work' : 'works'} on this page ${one ? 'has' : 'have'} inBbox false: ${one ? 'it' : 'they'} matched bbox only by pairing coordinates from different deposited locations or polygon vertices, and none of ${one ? 'its' : 'their'} own points, boxes, or polygons lies in or intersects the box. totalCount includes works matched this way.`,
+      );
+    }
 
     let nextPage: number | undefined;
     let nextCursor: string | undefined;
@@ -873,11 +1070,12 @@ export const searchWorksTool = tool('datacite_search_works', {
           `"${singleLine(unknownField)}:" is not a DataCite field, so the query searched a field that does not exist; put plain words in text instead, or see datacite_list_reference topic query_syntax.`,
         );
       }
-      if (filters.licenses) {
+      if (query?.includes('\\*')) {
         notices.push(
-          "License ids must match DataCite's lowercase ids exactly, including internal spaces; check the licenses facet or datacite_list_reference topic licenses.",
+          'The query escapes an asterisk (\\*), which matches a literal * rather than a wildcard; a query copied from content[] carries its Markdown escapes, so copy it from structuredContent or drop the backslashes.',
         );
       }
+      if (filters.licenses) notices.push(licensesZeroHitNotice(filters.licenses));
       if (filters.clientIds || filters.providerIds) {
         notices.push('Confirm the repository or provider ids with datacite_search_repositories.');
       }
@@ -894,6 +1092,11 @@ export const searchWorksTool = tool('datacite_search_works', {
       if (place?.match === 'substring') {
         notices.push(
           'Place matching looks for the value inside deposited place names as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized; give a multi-word name its usual capitalization (Gulf of Mexico), or try one word of it.',
+        );
+      }
+      if (bbox) {
+        notices.push(
+          'bbox matches only works that deposit coordinates (a point, box, or polygon); place reaches works that name a place without them.',
         );
       }
       if (Object.keys(applied).length >= 3) {
@@ -946,10 +1149,16 @@ export const searchWorksTool = tool('datacite_search_works', {
       lines.push(
         `- **DOI:** ${flattenInline(w.doi)} · **Year:** ${orNA(w.publicationYear)} · **Type:** ${orNA(w.resourceTypeGeneral)}${w.resourceType ? ` (${flattenInline(w.resourceType)})` : ''} · **Version:** ${orNA(w.version)} · **Created:** ${orNA(w.created)}`,
         `- **Repository:** ${repository} · **Publisher:** ${orNA(w.publisher)}`,
-        `- **Licenses:** ${w.licenses.length > 0 ? w.licenses.map(flattenInline).join(', ') : 'none declared'} · **Citations:** ${numOrNA(w.citationCount)} · **Views:** ${numOrNA(w.viewCount)} · **Downloads:** ${numOrNA(w.downloadCount)} · **Versions:** ${numOrNA(w.versionCount)}`,
+        `- **Licenses:** ${w.licenses.length > 0 ? w.licenses.map(flattenInline).join(', ') : 'no license id'} · **Citations:** ${numOrNA(w.citationCount)} · **Views:** ${numOrNA(w.viewCount)} · **Downloads:** ${numOrNA(w.downloadCount)} · **Versions:** ${numOrNA(w.versionCount)}`,
+        ...(w.rightsUris ? [`- **Rights URIs:** ${w.rightsUris.map(urlLink).join(', ')}`] : []),
         `- **Creators (${num(w.creatorCount)}):** ${creators}`,
         `- **Landing page:** ${w.landingUrl === undefined ? 'Not available' : urlLink(w.landingUrl)}`,
       );
+      if (w.inBbox !== undefined) {
+        lines.push(
+          `- **In bbox:** ${w.inBbox ? 'yes, one of its own deposited locations lies in or intersects the box' : 'no, matched only by pairing coordinates from different deposited locations or polygon vertices'}`,
+        );
+      }
       if (w.descriptionSnippet) lines.push('', blockquote(w.descriptionSnippet));
       lines.push('');
     }

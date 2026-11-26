@@ -12,7 +12,13 @@ import { type FetchMockHarness, runToolContract } from '@cyanheads/mcp-ts-core/t
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { searchWorksTool } from '@/mcp-server/tools/definitions/search-works.tool.js';
 import { decodeCursor, encodeCursor } from '@/services/datacite/cursor.js';
-import { funderIdClause, placeClause, stableHash } from '@/services/datacite/query-builder.js';
+import { worksSearchFits } from '@/services/datacite/datacite-service.js';
+import {
+  bboxClause,
+  funderIdClause,
+  placeClause,
+  stableHash,
+} from '@/services/datacite/query-builder.js';
 import type {
   RawDoiAttributes,
   RawDoiList,
@@ -36,6 +42,7 @@ import {
   once,
   onPath,
   param,
+  refuseLongUrls,
   requestUrl,
   structured,
   type ToolResultLike,
@@ -683,7 +690,7 @@ describe('page shapes and required enrichment', () => {
       '### Cryptocalciella – a new Mortierellaceae genus from Alpine glacier forefields\n' +
         '- **DOI:** 10.48580/dgwv7 · **Year:** 2026 · **Type:** Dataset (Dataset) · **Version:** Not available · **Created:** Not available\n' +
         '- **Repository:** The Catalogue of Life (gbif.col), provider gbif · **Publisher:** Plazi\n' +
-        '- **Licenses:** none declared · **Citations:** 0 · **Views:** 0 · **Downloads:** 0 · **Versions:** 1\n' +
+        '- **Licenses:** no license id · **Citations:** 0 · **Views:** 0 · **Downloads:** 0 · **Versions:** 1\n' +
         '- **Creators (10):** Mandolini, Edoardo; Szedlacsek, Sophie; Abramczyk, Beniamin; Szucs, Attila; Staykova, Anastasiya +5 more\n' +
         '- **Landing page:** [https://www.checklistbank.org/dataset/314394](<https://www.checklistbank.org/dataset/314394>)',
     );
@@ -991,6 +998,30 @@ describe('request parameters', () => {
       expect(markdownText(contentText(pastLimit))).toContain(`place → ${exact}`);
     });
 
+    it('counts the bbox clause and the geoLocations field it adds when sizing the place clause', async () => {
+      const { http } = zeroHits();
+      const text = '中'.repeat(720);
+      const bbox = { west: -115.5, south: 31, east: -105.5, north: 43.5 };
+      await run({ ...widest, text, bbox });
+      expect(requestUrl(http, 0).searchParams.get('fields[dois]')).toMatch(/,geoLocations$/);
+      const fits = MAX_URL_CHARS - PAGE_ALLOWANCE;
+      const digits = fits - sentLength(http, 0) - SUBSTRING_OVERHEAD;
+      expect(digits).toBeGreaterThan(1);
+      expect(digits).toBeLessThan(250);
+
+      const atLimit = await run({ ...widest, text, bbox, place: '1'.repeat(digits) });
+      expect(sentLength(http, 1)).toBe(fits);
+      expect(output(atLimit).appliedFilters.place).toBe(
+        `geoLocations.geoLocationPlace:(*${'1'.repeat(digits)}*)`,
+      );
+
+      const pastLimit = await run({ ...widest, text, bbox, place: '1'.repeat(digits + 1) });
+      expect(output(pastLimit).appliedFilters.place).toBe(
+        `geoLocations.geoLocationPlace:"${'1'.repeat(digits + 1)}"`,
+      );
+      expect(output(pastLimit).notice).toContain(PLACE_EXACT_NOTICE);
+    });
+
     it('matches a 250-character mixed-case non-Latin place exactly, inside the limit, where its forms would pass it', async () => {
       const { http } = zeroHits();
       const place = `${'ⰰⰀⰱⰁ ⰲⰂ '.repeat(31)}ⰰⰀ`;
@@ -1227,6 +1258,310 @@ describe('request parameters', () => {
     expect(url.searchParams.get('query')).toBe('publicationYear:[1000 TO 2100]');
     await run({ limit: 1 });
     expect(requestUrl(http, 1).searchParams.get('page[size]')).toBe('1');
+  });
+});
+
+describe('bbox', () => {
+  /** `fields[dois]` of a search row, percent-encoded as the request carries it. */
+  const SEARCH_FIELDS_ENCODED =
+    'doi%2Ctitles%2Ccreators%2CpublicationYear%2Ctypes%2Cpublisher%2Cversion%2CrightsList%2Cdescriptions%2Curl%2CcitationCount%2CviewCount%2CdownloadCount%2CversionCount%2Ccreated%2Cclient';
+
+  it('sends a call without bbox byte for byte as 0.2.2 did, with no inBbox on any surface', async () => {
+    const { http } = initServices([
+      {
+        match: dataCite('/dois'),
+        respond: json(
+          doiList([
+            row('10.5555/geo', {
+              geoLocations: [{ geoLocationPoint: { pointLatitude: 40, pointLongitude: -110 } }],
+            }),
+          ]),
+        ),
+      },
+    ]);
+    const result = await run({ text: 'streamflow', place: 'Colorado', limit: 5 });
+    expect((http.calls[0] as FetchMockHarness['calls'][number]).request.url).toBe(
+      'https://api.datacite.org/dois?query=%28streamflow%29+AND+geoLocations.geoLocationPlace%3A%28*Colorado*+OR+*colorado*+OR+*COLORADO*%29' +
+        `&sort=relevance&page%5Bsize%5D=5&page%5Bnumber%5D=1&fields%5Bdois%5D=${SEARCH_FIELDS_ENCODED}` +
+        '&include=client&affiliation=true&publisher=true',
+    );
+    const [work] = output(result).works;
+    expect(work).toEqual({ doi: '10.5555/geo', creators: [], creatorCount: 0, licenses: [] });
+    expect(output(result).appliedFilters).not.toHaveProperty('bbox');
+    expect(contentText(result)).not.toContain('bbox');
+  });
+
+  /** Live: with text streamflow, this clause matched 186 works (streamflow alone: 9,987). */
+  const COLORADO_CLAUSE =
+    '((geoLocations.geoLocationPoint.pointLatitude:[31 TO 43.5] AND geoLocations.geoLocationPoint.pointLongitude:[-115.5 TO -105.5])' +
+    ' OR (geoLocations.geoLocationBox.westBoundLongitude:[* TO -105.5] AND geoLocations.geoLocationBox.eastBoundLongitude:[-115.5 TO *]' +
+    ' AND geoLocations.geoLocationBox.southBoundLatitude:[* TO 43.5] AND geoLocations.geoLocationBox.northBoundLatitude:[31 TO *])' +
+    ' OR (geoLocations.geoLocationPolygon.polygonPoint.pointLatitude:[31 TO 43.5] AND geoLocations.geoLocationPolygon.polygonPoint.pointLongitude:[-115.5 TO -105.5]))';
+  const COLORADO = { west: -115.5, south: 31, east: -105.5, north: 43.5 };
+  /** The recorded page's box: lat 36–37, lon -90 to -89. */
+  const KENTUCKY = { west: -90, south: 36, east: -89, north: 37 };
+  const RECORDED_DOIS = [
+    '10.58052/iejel01cg',
+    '10.5281/zenodo.19169636',
+    '10.1594/pangaea.983386',
+    '10.5281/zenodo.23569793',
+    '10.15485/3018019',
+    '10.21233/h02q-c571',
+  ];
+  const recordedQuery = `doi:(${RECORDED_DOIS.map((doi) => `"${doi}"`).join(' OR ')})`;
+  const CROSS_PAIRED_NOTICE =
+    '3 of the 6 works on this page have inBbox false: they matched bbox only by pairing coordinates from different deposited locations or polygon vertices, and none of their own points, boxes, or polygons lies in or intersects the box. totalCount includes works matched this way.';
+  const recordedPage = () =>
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: fixtureResponse('datacite/works/bbox-cross-paired.json'),
+      },
+    ]);
+
+  it('ANDs the clause after text, fetches geoLocations, and echoes the clause on both surfaces', async () => {
+    const { http } = zeroHits();
+    const result = await run({ text: 'streamflow', bbox: COLORADO });
+    const url = requestUrl(http);
+    expect(url.searchParams.get('query')).toBe(`(streamflow) AND ${COLORADO_CLAUSE}`);
+    expect(url.searchParams.get('fields[dois]')).toBe(
+      `${decodeURIComponent(SEARCH_FIELDS_ENCODED)},geoLocations`,
+    );
+    expect(output(result).effectiveQuery).toBe(`(streamflow) AND ${COLORADO_CLAUSE}`);
+    expect(output(result).appliedFilters).toEqual({ bbox: COLORADO_CLAUSE });
+    expect(markdownText(contentText(result))).toContain(`bbox → ${COLORADO_CLAUSE}`);
+  });
+
+  it('searches with bbox alone, newest first', async () => {
+    const { http } = zeroHits();
+    const result = await run({ bbox: COLORADO });
+    expect(result.isError).toBeFalsy();
+    expect(requestUrl(http).searchParams.get('query')).toBe(COLORADO_CLAUSE);
+    expect(output(result).sortApplied).toBe('newest');
+  });
+
+  it('flags each recorded row by its own locations and counts the cross-paired ones in one notice', async () => {
+    const { http } = recordedPage();
+    const result = await run({ query: recordedQuery, bbox: KENTUCKY, sort: 'newest', limit: 10 });
+    const recorded = fixtureJson<RawDoiList>('datacite/works/bbox-cross-paired.json');
+    expect((http.calls[0] as FetchMockHarness['calls'][number]).request.url).toBe(
+      recorded.links?.self,
+    );
+    const flags = Object.fromEntries(output(result).works.map((w) => [w.doi, w.inBbox]));
+    expect(flags).toEqual({
+      // Two boxes split at ±180; one's east side and the other's west side pair across the box.
+      '10.5281/zenodo.23569793': false,
+      // One point at 36.309299, -89.05354: a sparse IGSN sample with no description or license.
+      '10.58052/iejel01cg': true,
+      // Ten scattered points: one's latitude and another's longitude fall in the box.
+      '10.5281/zenodo.19169636': false,
+      // Four degenerate polygons, one vertex each repeated, at four sites none of which is in the box.
+      '10.15485/3018019': false,
+      // One box from -177.4 to 172.15, -54.9 to 79.2.
+      '10.1594/pangaea.983386': true,
+      // One polygon of string coordinates wholly inside the box.
+      '10.21233/h02q-c571': true,
+    });
+    for (const work of output(result).works) expect(work).not.toHaveProperty('geoLocations');
+    expect(output(result).notice).toBe(CROSS_PAIRED_NOTICE);
+    const text = markdownText(contentText(result));
+    expect(text).toContain(CROSS_PAIRED_NOTICE);
+    expect(contentText(result)).toContain(
+      '- **In bbox:** no, matched only by pairing coordinates from different deposited locations or polygon vertices',
+    );
+    expect(contentText(result)).toContain(
+      '- **In bbox:** yes, one of its own deposited locations lies in or intersects the box',
+    );
+  });
+
+  it.each([
+    // The cross-paired row alone, then beside a row whose own point lies in the box.
+    [['10.5281/zenodo.23569793'], '1 of the 1 work on this page has'],
+    [['10.5281/zenodo.23569793', '10.58052/iejel01cg'], '1 of the 2 works on this page has'],
+  ])(
+    'counts a single cross-paired row in the singular, the page by its own size: %j',
+    async (dois, lead) => {
+      const recorded = fixtureJson<RawDoiList>('datacite/works/bbox-cross-paired.json');
+      const page = recorded.data.filter((r) => dois.includes(r.id));
+      initServices([
+        {
+          match: dataCite('/dois'),
+          respond: json({
+            ...recorded,
+            data: page,
+            meta: { ...recorded.meta, total: dois.length },
+          }),
+        },
+      ]);
+      const result = await run({ query: recordedQuery, bbox: KENTUCKY, limit: dois.length });
+      const notice = `${lead} inBbox false: it matched bbox only by pairing coordinates from different deposited locations or polygon vertices, and none of its own points, boxes, or polygons lies in or intersects the box. totalCount includes works matched this way.`;
+      expect(output(result).notice).toBe(notice);
+      expect(markdownText(contentText(result))).toContain(notice);
+    },
+  );
+
+  it('joins the cross-pairing notice to an earlier one', async () => {
+    recordedPage();
+    const result = await run({ query: recordedQuery, bbox: KENTUCKY, affiliation_country: 'UK' });
+    const notice = `Normalized affiliation_country UK → GB. ${CROSS_PAIRED_NOTICE}`;
+    expect(output(result).notice).toBe(notice);
+    expect(markdownText(contentText(result))).toContain(notice);
+  });
+
+  it('adds the coordinates-only fragment to a zero-hit notice, joined with the others', async () => {
+    zeroHits();
+    const result = await run({ place: 'colorado', language: 'en', bbox: COLORADO });
+    const notice = [
+      'No DataCite works matched.',
+      'Place matching looks for the value inside deposited place names as typed, in lowercase, in uppercase, with every word capitalized, and with the first word capitalized; give a multi-word name its usual capitalization (Gulf of Mexico), or try one word of it.',
+      'bbox matches only works that deposit coordinates (a point, box, or polygon); place reaches works that name a place without them.',
+      'Several filters are ANDed together; drop one at a time to find the one excluding everything.',
+    ].join(' ');
+    expect(output(result).notice).toBe(notice);
+    expect(markdownText(contentText(result))).toContain(notice);
+  });
+
+  it('tests rows against both halves of a box crossing the antimeridian', async () => {
+    const at = (doi: string, latitude: number, longitude: number) =>
+      row(doi, {
+        geoLocations: [
+          { geoLocationPoint: { pointLatitude: latitude, pointLongitude: longitude } },
+        ],
+      });
+    const { http } = initServices([
+      {
+        match: dataCite('/dois'),
+        respond: json(
+          doiList([
+            at('10.5555/east', -17.7, 178.4),
+            at('10.5555/west', -17.7, -178.4),
+            at('10.5555/far', -17.7, 0),
+          ]),
+        ),
+      },
+    ]);
+    const result = await run({ bbox: { west: 175, south: -20, east: -175, north: -15 } });
+    expect(requestUrl(http).searchParams.get('query')).toContain(
+      '(geoLocations.geoLocationPoint.pointLongitude:[175 TO 180] OR geoLocations.geoLocationPoint.pointLongitude:[-180 TO -175])',
+    );
+    expect(output(result).works.map((w) => w.inBbox)).toEqual([true, true, false]);
+  });
+
+  it.each([{ bbox: { west: '', south: '', east: ' ', north: '' } }, { bbox: {} }])(
+    'treats %j as unset',
+    async (input) => {
+      const { http } = zeroHits();
+      const result = await run(input as Input);
+      expect(result.isError).toBeFalsy();
+      expect(requestUrl(http).searchParams.get('query')).toBe('*');
+      expect(requestUrl(http).searchParams.get('fields[dois]')).toBe(
+        decodeURIComponent(SEARCH_FIELDS_ENCODED),
+      );
+      expect(output(result).appliedFilters).toEqual({});
+    },
+  );
+
+  it.each([
+    [{ west: -90, south: 36, east: -89 }, 'north', 'bbox has no north'],
+    [{ west: -90, north: 37 }, 'south', 'bbox has no south or east'],
+    [{ west: -90, south: '', east: '', north: '' }, 'south', 'bbox has no south, east, or north'],
+  ])(
+    'rejects %j as invalid_filter naming bbox.%s before any request',
+    async (bbox, side, message) => {
+      const { http } = zeroHits();
+      const result = await run({ bbox } as Input);
+      const error = expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe(`${message}; a box needs west, south, east, and north.`);
+      expect(error.data?.field).toBe(`bbox.${side}`);
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+
+  it('rejects a south greater than north as invalid_filter naming bbox.south, before any request', async () => {
+    const { http } = zeroHits();
+    const result = await run({ bbox: { west: -90, south: 37, east: -89, north: 36 } });
+    const error = expectToolError(result, 'invalid_filter', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toBe(
+      'bbox.south is greater than bbox.north, so the latitude range is reversed.',
+    );
+    expect(error.data?.field).toBe('bbox.south');
+    expect(contentText(result)).toContain('Recovery:');
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('accepts a south equal to north, a line of latitude, and sends its clause', async () => {
+    const { http } = zeroHits();
+    const result = await run({ bbox: { west: -90, south: 36.5, east: -89, north: 36.5 } });
+    expect(result.isError).toBeFalsy();
+    expect(requestUrl(http).searchParams.get('query')).toContain(
+      '(geoLocations.geoLocationPoint.pointLatitude:[36.5 TO 36.5] AND geoLocations.geoLocationPoint.pointLongitude:[-90 TO -89])',
+    );
+  });
+
+  it('accepts every side at its bound and rejects one past it as invalid_arguments', async () => {
+    const { http } = zeroHits();
+    const edges = await run({ bbox: { west: -180, south: -90, east: 180, north: 90 } });
+    expect(edges.isError).toBeFalsy();
+    for (const bbox of [
+      { west: -180.5, south: 0, east: 0, north: 1 },
+      { west: 0, south: -90.5, east: 1, north: 1 },
+      { west: 0, south: 0, east: 180.5, north: 1 },
+      { west: 0, south: 0, east: 1, north: 90.5 },
+    ]) {
+      const error = toolError(await run({ bbox }));
+      expect(error.code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(error.data?.reason).toBe('invalid_arguments');
+    }
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it.each([
+    { minLon: -10, minLat: -10, maxLon: 10, maxLat: 10 },
+    { xmin: -10, ymin: -10, xmax: 10, ymax: 10 },
+    { West: -10, South: -10, East: 10, North: 10 },
+    { west: -10, south: -10, east: 10, north: 10, crs: 'EPSG:3857' },
+  ])(
+    'rejects bbox %j, whose keys are not only west, south, east, and north, as invalid_arguments before any request',
+    async (bbox) => {
+      const { http } = zeroHits();
+      const error = toolError(await run({ text: 'streamflow', bbox } as Input));
+      expect(error.code).toBe(JsonRpcErrorCode.InvalidParams);
+      expect(error.data?.reason).toBe('invalid_arguments');
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+
+  it('keeps the box through a walk and rejects resuming it under another box, before any request', async () => {
+    const { http } = initServices([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: json({
+          data: [row('10.1234/first', { created: '2026-01-01' })],
+          meta: { total: 2 },
+          links: { next: 'https://api.datacite.org/dois?page%5Bcursor%5D=second' },
+        }),
+      },
+      {
+        match: dataCite('/dois', param('page[cursor]', 'second')),
+        respond: json(doiList([row('10.1234/second', { created: '2026-01-02' })], { total: 2 })),
+      },
+    ]);
+    const first = await run({ bbox: COLORADO, cursor: '*' });
+    const nextCursor = output(first).nextCursor as string;
+    expect(decodeCursor(nextCursor)?.q).toBe(
+      stableHash(JSON.stringify({ q: COLORADO_CLAUSE, f: {} })),
+    );
+    for (const other of [{}, { bbox: { ...COLORADO, north: 44 } }]) {
+      const wrong = await run({ ...other, cursor: nextCursor });
+      const error = expectToolError(wrong, 'invalid_cursor', JsonRpcErrorCode.ValidationError);
+      expect(error.message).toBe('cursor belongs to a different query or filter set.');
+    }
+    expect(http.calls).toHaveLength(1);
+    const last = await run({ bbox: COLORADO, cursor: nextCursor });
+    expect(last.isError).toBeFalsy();
+    expect(requestUrl(http, 1).searchParams.get('query')).toBe(COLORADO_CLAUSE);
+    expect(requestUrl(http, 1).searchParams.get('fields[dois]')).toContain(',geoLocations');
+    expect(output(last).works[0]?.inBbox).toBe(false);
   });
 });
 
@@ -1883,6 +2218,220 @@ describe('cursor walks', () => {
   });
 });
 
+describe('request URL length', () => {
+  /** Measured: DataCite answered an 8,201-byte URL and refused 8,202 bytes with HTTP 414. */
+  const MAX_URL_CHARS = 8201;
+  const RECOVERY =
+    'Shorten or drop the inputs this error names, largest first; each non-Latin letter or escaped punctuation mark takes several bytes of the request URL, so search a few distinctive words rather than a whole passage.';
+  const served = (routes = [{ match: dataCite('/dois'), respond: json(emptyDoiList()) }]) =>
+    initServices([refuseLongUrls, ...routes]);
+  const sentLength = (http: FetchMockHarness, index: number) =>
+    (http.calls[index] as FetchMockHarness['calls'][number]).request.url.length;
+  /** The request_too_long error, its message on both surfaces. */
+  const expectTooLong = (result: ToolResultLike, message: string) => {
+    const error = expectToolError(result, 'request_too_long', JsonRpcErrorCode.ValidationError);
+    expect(error.message).toBe(message);
+    expect(markdownText(contentText(result))).toContain(`Error: ${message}`);
+    return error;
+  };
+
+  it.each([
+    {
+      name: 'text of 1,990 Cyrillic letters',
+      input: { text: 'д'.repeat(1990) },
+      message:
+        'This search would send DataCite a 12,282-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (11,945 bytes).',
+      data: { urlBytes: 12_282, inputs: [{ input: 'text', bytes: 11_945 }] },
+    },
+    {
+      name: 'a query of 2,000 CJK characters',
+      input: { query: '中'.repeat(2000) },
+      message:
+        'This search would send DataCite an 18,342-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `query` (18,005 bytes).',
+      data: { urlBytes: 18_342, inputs: [{ input: 'query', bytes: 18_005 }] },
+    },
+    {
+      // The name goes into the URL twice: once for creators, once for contributors.
+      name: 'a 500-character CJK affiliation',
+      input: { affiliation: '中'.repeat(500) },
+      message:
+        'This search would send DataCite a 9,417-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `affiliation` (9,081 bytes).',
+      data: { urlBytes: 9417, inputs: [{ input: 'affiliation', bytes: 9081 }] },
+    },
+  ] satisfies Array<{ name: string; input: Input; message: string; data: object }>)(
+    'rejects $name before any request, naming the input and its bytes',
+    async ({ input, message, data }) => {
+      const { http } = served();
+      const result = await run(input);
+      const error = expectTooLong(result, message);
+      expect(error.data).toMatchObject({ ...data, maxUrlBytes: MAX_URL_CHARS });
+      expect(error.data?.recovery).toEqual({ hint: RECOVERY });
+      expect(markdownText(contentText(result))).toContain(`Recovery: ${RECOVERY}`);
+      expect(http.calls).toHaveLength(0);
+    },
+  );
+
+  it('names five non-Latin name filters largest first, the twice-sent affiliation leading', async () => {
+    const { http } = served();
+    const name = 'д'.repeat(500);
+    const result = await run({
+      creator: name,
+      affiliation: name,
+      funder: name,
+      subject: name,
+      place: name,
+    });
+    const error = expectTooLong(
+      result,
+      'This search would send DataCite an 18,569-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `affiliation` (6,087 bytes), `funder` (3,047 bytes), `place` (3,043 bytes), `creator` (3,032 bytes), `subject` (3,030 bytes).',
+    );
+    expect(error.data).toMatchObject({
+      urlBytes: 18_569,
+      maxUrlBytes: MAX_URL_CHARS,
+      inputs: [
+        { input: 'affiliation', bytes: 6087 },
+        { input: 'funder', bytes: 3047 },
+        { input: 'place', bytes: 3043 },
+        { input: 'creator', bytes: 3032 },
+        { input: 'subject', bytes: 3030 },
+      ],
+    });
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('measures each parameter filter by the parameters it adds, ranked with the clause inputs', async () => {
+    const { http } = served();
+    const result = await run({
+      text: 'д'.repeat(1990),
+      affiliation: '05gq02987',
+      funder: '021nxhr62',
+      include_child_funders: true,
+      repository_ids: ['dryad.dryad'],
+      language: 'en',
+      published_from: 2010,
+      min_citations: 2,
+    });
+    /**
+     * &funded-by=021nxhr62 (20) + &include-funder-child-organizations=true (40); &affiliation-id=05gq02987 (25);
+     * &client-id=dryad.dryad (22); &has-citations=2 (16); +AND+language%3Aen (18); +AND+publicationYear%3A%5B2010+TO+*%5D (38).
+     */
+    const error = expectTooLong(
+      result,
+      'This search would send DataCite a 12,461-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (11,951 bytes), `funder` (60 bytes), `published` (38 bytes), `affiliation` (25 bytes), `repository_ids` (22 bytes), `language` (18 bytes), `min_citations` (16 bytes).',
+    );
+    expect(error.data?.inputs).toEqual([
+      { input: 'text', bytes: 11_951 },
+      { input: 'funder', bytes: 60 },
+      { input: 'published', bytes: 38 },
+      { input: 'affiliation', bytes: 25 },
+      { input: 'repository_ids', bytes: 22 },
+      { input: 'language', bytes: 18 },
+      { input: 'min_citations', bytes: 16 },
+    ]);
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('sends an 8,201-byte request and rejects an 8,202-byte one unsent', async () => {
+    const { http } = served();
+    // 1,300 Cyrillic letters take six URL bytes each; a Latin letter takes one.
+    const atLimit = await run({ text: `${'д'.repeat(1300)}${'a'.repeat(59)}` });
+    expect(atLimit.isError).toBeFalsy();
+    expect(http.calls).toHaveLength(1);
+    expect(sentLength(http, 0)).toBe(MAX_URL_CHARS);
+
+    const pastLimit = await run({ text: `${'д'.repeat(1300)}${'a'.repeat(60)}` });
+    const error = expectTooLong(
+      pastLimit,
+      'This search would send DataCite an 8,202-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (7,865 bytes).',
+    );
+    expect(error.data).toMatchObject({ urlBytes: 8202, maxUrlBytes: MAX_URL_CHARS });
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it("searches 1,300 Cyrillic letters (8,142 bytes), though the place fallback's worst case counts them over", async () => {
+    const { http } = served();
+    const text = 'д'.repeat(1300);
+    expect(worksSearchFits(`(${text})`, {})).toBe(false);
+    const result = await run({ text });
+    expect(result.isError).toBeFalsy();
+    expect(http.calls).toHaveLength(1);
+    expect(sentLength(http, 0)).toBe(8142);
+  });
+
+  it('measures place after its exact fallback: sends the call that brings under the limit, rejects one still over', async () => {
+    const { http } = served();
+    const text = 'д'.repeat(1300);
+    const fits = await run({ text, place: 'Alps' });
+    expect(fits.isError).toBeFalsy();
+    expect(requestUrl(http).searchParams.get('query')).toBe(
+      `(${text}) AND geoLocations.geoLocationPlace:"Alps"`,
+    );
+    expect(sentLength(http, 0)).toBe(8189);
+
+    const over = await run({ text, place: 'a'.repeat(60) });
+    const error = expectTooLong(
+      over,
+      'This search would send DataCite an 8,245-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (7,811 bytes), `place` (103 bytes).',
+    );
+    expect(error.data?.recovery).toEqual({ hint: RECOVERY });
+    expect(http.calls).toHaveLength(1);
+  });
+
+  it('counts a bbox clause and the geoLocations field it adds to fields[dois] as its share', async () => {
+    const { http } = served();
+    const bbox = { west: -115.5, south: 31, east: -105.5, north: 43.5 };
+    /** The clause percent-encoded, with the +AND+ joining it to the text clause. */
+    const clauseBytes =
+      '+AND+'.length + new URLSearchParams([['', bboxClause(bbox)]]).toString().length - '='.length;
+    const fieldBytes = '%2CgeoLocations'.length;
+    const result = await run({ text: 'д'.repeat(1300), bbox });
+    const error = expectToolError(result, 'request_too_long', JsonRpcErrorCode.ValidationError);
+    expect(error.data).toMatchObject({
+      urlBytes: 8142 + clauseBytes + fieldBytes,
+      inputs: [
+        { input: 'text', bytes: 7811 },
+        { input: 'bbox', bytes: clauseBytes + fieldBytes },
+      ],
+    });
+    expect(error.message).toContain('Shorten `text` (7,811 bytes), `bbox` (');
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('rejects the cursor page whose own token pushes its URL past the limit, after serving the first', async () => {
+    const text = 'д'.repeat(1300);
+    const token = 'T'.repeat(100);
+    const { http } = served([
+      {
+        match: dataCite('/dois', param('page[cursor]', '1')),
+        respond: json({
+          data: [row('10.1234/first', { created: '2026-01-01' })],
+          meta: { total: 2 },
+          links: { next: `https://api.datacite.org/dois?page%5Bcursor%5D=${token}` },
+        }),
+      },
+      {
+        match: dataCite('/dois'),
+        respond: json(doiList([row('10.1234/second', { created: '2026-01-02' })], { total: 2 })),
+      },
+    ]);
+    const first = await run({ text, cursor: '*' });
+    expect(first.isError).toBeFalsy();
+    expect(sentLength(http, 0)).toBe(8140);
+
+    // Page 2 sends the 100-character token where page 1 sent "1".
+    const second = await run({ text, cursor: output(first).nextCursor as string });
+    const error = expectTooLong(
+      second,
+      'This search would send DataCite an 8,239-byte request URL; DataCite refuses URLs over 8,201 bytes. Shorten `text` (7,805 bytes).',
+    );
+    const hint =
+      'Shorten or drop the inputs this error names, then start a new walk with cursor "*": a later page of a walk sends DataCite a longer cursor token than its first page, and a walk cannot continue under changed inputs.';
+    expect(error.data?.recovery).toEqual({ hint });
+    expectStartCursorSpan(second, `Recovery: ${hint}`);
+    expect(http.calls).toHaveLength(1);
+  });
+});
+
 describe('declared errors', () => {
   it.each([
     { text: '<>' },
@@ -1930,6 +2479,7 @@ describe('declared errors', () => {
       page_ceiling: 'notice',
       invalid_cursor: 'notice',
       conflicting_paging: 'notice',
+      request_too_long: 'notice',
       ror_unavailable: 'error',
       rate_limited: 'error',
     });
@@ -2153,13 +2703,32 @@ describe('zero-hit notices', () => {
     const notice = [
       'No DataCite works matched.',
       '"titel:" is not a DataCite field, so the query searched a field that does not exist; put plain words in text instead, or see datacite_list_reference topic query_syntax.',
-      "License ids must match DataCite's lowercase ids exactly, including internal spaces; check the licenses facet or datacite_list_reference topic licenses.",
+      'The licenses filter matches deposited license ids (rightsIdentifier) only, exactly as DataCite lowercases them, including internal spaces; check the licenses facet or datacite_list_reference topic licenses. A license deposited only as a URI has no id; query rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* reaches such works, matching the URI case-sensitively.',
       'Confirm the repository or provider ids with datacite_search_repositories.',
       "Name matching needs every token in one creator field; try a surname alone or the creator's ORCID iD.",
       'Several filters are ANDed together; drop one at a time to find the one excluding everything.',
     ].join(' ');
     expect(output(result).notice).toBe(notice);
-    expect(contentText(result)).toContain(`> ${notice}`);
+    // The rightsUri query's wildcards are escaped as \* in content[]; a Markdown parse reads them back.
+    expect(markdownText(contentText(result))).toContain(notice);
+  });
+
+  it('names the Markdown escape when a zero-hit query carries an escaped asterisk', async () => {
+    zeroHits();
+    // The licenses notice's query as copied raw from content[], escapes included.
+    const result = await run({
+      query: 'rightsList.rightsUri:\\*creativecommons.org/licenses/by/4.0\\*',
+    });
+    const notice =
+      'No DataCite works matched. The query escapes an asterisk (\\*), which matches a literal * rather than a wildcard; a query copied from content[] carries its Markdown escapes, so copy it from structuredContent or drop the backslashes.';
+    expect(output(result).notice).toBe(notice);
+    expect(markdownText(contentText(result))).toContain(notice);
+
+    zeroHits();
+    const plain = await run({
+      query: 'rightsList.rightsUri:*creativecommons.org/licenses/by/4.0*',
+    });
+    expect(output(plain).notice).toBe('No DataCite works matched.');
   });
 
   it('joins the creator-name, funder-name, and place fragments into one notice', async () => {
@@ -2253,7 +2822,7 @@ describe('rows, facets, and rendering', () => {
       '### 10.5555/sparse\n' +
         '- **DOI:** 10.5555/sparse · **Year:** Not available · **Type:** Not available · **Version:** Not available · **Created:** Not available\n' +
         '- **Repository:** Not available · **Publisher:** Not available\n' +
-        '- **Licenses:** none declared · **Citations:** Not available · **Views:** Not available · **Downloads:** Not available · **Versions:** Not available\n' +
+        '- **Licenses:** no license id · **Citations:** Not available · **Views:** Not available · **Downloads:** Not available · **Versions:** Not available\n' +
         '- **Creators (0):** Not available\n' +
         '- **Landing page:** Not available',
     );
@@ -2287,7 +2856,7 @@ describe('rows, facets, and rendering', () => {
     const text = contentText(result);
     expect(text).toContain('· **Created:** 2020-01-02T03:04:05Z\n');
     expect(text).toContain(
-      '- **Licenses:** none declared · **Citations:** 0 · **Views:** Not available · **Downloads:** 1,234 · **Versions:** Not available\n',
+      '- **Licenses:** no license id · **Citations:** 0 · **Views:** Not available · **Downloads:** 1,234 · **Versions:** Not available\n',
     );
   });
 
@@ -2366,5 +2935,153 @@ describe('rows, facets, and rendering', () => {
     expect(facets?.providers).toEqual([]);
     expect(contentText(result)).toContain('**Providers:** none');
     expect(contentText(result)).toContain('**Licenses:** mit (mit) — 3');
+  });
+});
+
+describe('row creators and publisher as plain text', () => {
+  it('decodes references and strips tags in creator names and the publisher on both surfaces', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: json(
+          doiList([
+            row('10.21256/zhaw-37927', {
+              titles: [{ title: 'A chapter' }],
+              creators: [{ name: 'Str&ouml;m, <i>&Aring;sa</i>' }, { name: 'Kipp &amp; Zonen' }],
+              publisher: 'Taylor &amp; Francis',
+            }),
+          ]),
+        ),
+      },
+    ]);
+    const result = await run({ query: 'doi:"10.21256/zhaw-37927"' });
+    const [work] = output(result).works;
+    expect(work).toMatchObject({
+      creators: ['Ström, Åsa', 'Kipp & Zonen'],
+      creatorCount: 2,
+      publisher: 'Taylor & Francis',
+    });
+    const text = contentText(result);
+    expect(text).toContain('· **Publisher:** Taylor & Francis\n');
+    expect(text).toContain('- **Creators (2):** Ström, Åsa; Kipp & Zonen\n');
+    expect(text).not.toMatch(/&(amp|ouml|Aring);/);
+  });
+});
+
+describe('rights URIs and the licenses filter', () => {
+  const BY_NC = 'https://creativecommons.org/licenses/by-nc/4.0/';
+  const BY_LEGALCODE = 'https://creativecommons.org/licenses/by/4.0/legalcode';
+  /** The licenses zero-hit fragment, up to the query it names. */
+  const LICENSE_SCOPE =
+    'The licenses filter matches deposited license ids (rightsIdentifier) only, exactly as DataCite lowercases them, including internal spaces; check the licenses facet or datacite_list_reference topic licenses. A license deposited only as a URI has no id;';
+  const GENERIC_REACH =
+    'query on rightsList.rightsUri reaches such works, matching the URI case-sensitively, e.g. rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* for CC BY 4.0.';
+  const reach = (...paths: string[]) =>
+    `query ${paths.map((path) => `rightsList.rightsUri:*creativecommons.org/${path}*`).join(' OR ')} reaches such works, matching the URI case-sensitively.`;
+
+  it('carries each row rightsUri, says "no license id" for an empty licenses list, and links the URIs on both surfaces', async () => {
+    initServices([
+      {
+        match: dataCite('/dois'),
+        respond: json(
+          doiList([
+            row('10.5281/zenodo.24415496', {
+              titles: [{ title: 'URI only' }],
+              rightsList: [
+                {
+                  rights:
+                    'Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)',
+                  rightsUri: BY_NC,
+                },
+              ],
+            }),
+            row('10.5555/both', {
+              titles: [{ title: 'Both' }],
+              rightsList: [
+                { rightsIdentifier: 'cc-by-4.0', rightsUri: BY_LEGALCODE },
+                { rightsUri: 'info:eu-repo/semantics/openAccess' },
+              ],
+            }),
+            row('10.5555/statement', {
+              titles: [{ title: 'Statement' }],
+              rightsList: [{ rights: 'All rights reserved' }],
+            }),
+          ]),
+        ),
+      },
+    ]);
+    const result = await run({ query: 'doi:"10.5281/zenodo.24415496"' });
+    const [uriOnly, both, statement] = output(result).works;
+    expect(uriOnly).toMatchObject({ licenses: [], rightsUris: [BY_NC] });
+    expect(both).toMatchObject({
+      licenses: ['cc-by-4.0'],
+      rightsUris: [BY_LEGALCODE, 'info:eu-repo/semantics/openAccess'],
+    });
+    expect(statement?.licenses).toEqual([]);
+    expect(statement).not.toHaveProperty('rightsUris');
+    const text = contentText(result);
+    expect(text).toContain(
+      `### URI only\n- **DOI:** 10.5281/zenodo.24415496 · **Year:** Not available · **Type:** Not available · **Version:** Not available · **Created:** Not available\n- **Repository:** Not available · **Publisher:** Not available\n- **Licenses:** no license id · **Citations:** Not available · **Views:** Not available · **Downloads:** Not available · **Versions:** Not available\n- **Rights URIs:** [${BY_NC}](<${BY_NC}>)\n- **Creators (0):** Not available\n`,
+    );
+    expect(text).toContain(
+      `- **Licenses:** cc-by-4.0 · **Citations:** Not available · **Views:** Not available · **Downloads:** Not available · **Versions:** Not available\n- **Rights URIs:** [${BY_LEGALCODE}](<${BY_LEGALCODE}>), info:eu-repo/semantics/openAccess\n`,
+    );
+    expect(text).toContain(
+      '### Statement\n- **DOI:** 10.5555/statement · **Year:** Not available · **Type:** Not available · **Version:** Not available · **Created:** Not available\n- **Repository:** Not available · **Publisher:** Not available\n- **Licenses:** no license id · **Citations:** Not available · **Views:** Not available · **Downloads:** Not available · **Versions:** Not available\n- **Creators (0):** Not available\n',
+    );
+    expect(text).not.toContain('none declared');
+    expect(markdownText(text)).toContain(`Rights URIs: ${BY_NC}`);
+  });
+
+  it.each([
+    [['cc-by-nc-4.0'], reach('licenses/by-nc/4.0')],
+    [['CC0-1.0'], reach('publicdomain/zero/1.0')],
+    [['cc-by-nc-nd-2.5'], reach('licenses/by-nc-nd/2.5')],
+    [['cc-by-2.0'], reach('licenses/by/2.0')],
+    [['cc-by-sa-3.0', 'mit', 'cc0-1.0'], reach('licenses/by-sa/3.0', 'publicdomain/zero/1.0')],
+    [['mit'], GENERIC_REACH],
+    [['cc0 1.0'], GENERIC_REACH],
+    [['cc-by-3.0-at'], GENERIC_REACH],
+    [['cc-by-nc-nd-1.0'], GENERIC_REACH],
+    [['cc-by-5.0'], GENERIC_REACH],
+  ])(
+    'names the rightsIdentifier-only scope and a rightsUri query for zero hits on licenses %j',
+    async (licenses, reached) => {
+      zeroHits();
+      const result = await run({ licenses });
+      const notice = `No DataCite works matched. ${LICENSE_SCOPE} ${reached}`;
+      expect(output(result).notice).toBe(notice);
+      expect(markdownText(contentText(result))).toContain(notice);
+    },
+  );
+
+  it('joins the licenses fragment to the other zero-hit fragments in one notice on both surfaces', async () => {
+    zeroHits();
+    const result = await run({ licenses: ['cc-by-nc-4.0'], repository_ids: ['cern.zenodo'] });
+    const notice = [
+      'No DataCite works matched.',
+      `${LICENSE_SCOPE} ${reach('licenses/by-nc/4.0')}`,
+      'Confirm the repository or provider ids with datacite_search_repositories.',
+    ].join(' ');
+    expect(output(result).notice).toBe(notice);
+    expect(markdownText(contentText(result))).toContain(notice);
+  });
+
+  it('names no unknown field for a zero-hit query on rightsList.rightsUri and _exists_', async () => {
+    zeroHits();
+    const result = await run({
+      query:
+        'rightsList.rightsUri:*creativecommons.org/licenses/by/4.0* AND NOT _exists_:rightsList.rightsIdentifier',
+    });
+    expect(output(result).notice).toBe('No DataCite works matched.');
+  });
+
+  it('says the licenses input and facet read rightsIdentifier only', () => {
+    expect(searchWorksTool.input.shape.licenses.description).toContain(
+      'the deposited rightsIdentifier only',
+    );
+    expect(searchWorksTool.output.shape.facets.unwrap().shape.licenses.description).toContain(
+      'rightsIdentifier only',
+    );
   });
 });

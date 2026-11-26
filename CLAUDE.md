@@ -261,7 +261,8 @@ src/
   services/
     datacite/
       datacite-service.ts               # DataCite REST client (init/accessor): /dois, /repositories, /events, content negotiation
-      query-builder.ts                  # Filters → query params and escaped query clauses (name proximity, place case forms)
+      query-builder.ts                  # Filters → query params and escaped query clauses (name proximity, place case forms, bbox)
+      bbox.ts                           # Antimeridian split and the per-location in-box test behind bbox and inBbox
       normalize.ts                      # DOI, ORCID iD, ROR ID, Crossref Funder ID, language normalizers
       mappers.ts                        # Raw DataCite records → output shapes
       relation-graph.ts                 # datacite_trace_relations graph builder
