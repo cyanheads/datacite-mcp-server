@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.3](changelog/0.2.x/0.2.3.md) — 2026-11-25
+
+datacite_search_works gains a bbox filter with per-row inBbox, datacite_get_work gains sections to skip heavy record groups, and requests past DataCite's URL limit fail as request_too_long instead of a bare HTTP 414.
+
 ## [0.2.2](changelog/0.2.x/0.2.2.md) — 2026-11-15
 
 Creator, funder, and place filters match inside one name or record, datacite_get_citation pages long documents, datacite_get_work filters relatedIdentifiers by relation type, and datacite_search_works adds version_scope and Crossref Funder ID child expansion.
