@@ -17,6 +17,8 @@ export default mergeConfig(
   defineConfig({
     resolve: { alias },
     test: {
+      // Vitest's fork watchdog calls ChildProcess.channel.unref(), unavailable on Bun.
+      ...(process.versions.bun && { pool: 'threads' }),
       // Every project inherits the tripwire: real fetch or TCP connects fail loudly.
       setupFiles: ['./tests/helpers/network-tripwire.ts'],
       projects: [
